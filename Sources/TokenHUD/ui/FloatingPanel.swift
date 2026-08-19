@@ -46,9 +46,21 @@ final class PanelController: ObservableObject {
     private(set) var expanded = false
     private var panel: FloatingPanel?
     private let engine: DataEngine
+    private var openWindowAction: OpenWindowAction?
 
     init(engine: DataEngine) {
         self.engine = engine
+    }
+
+    /// openWindow 只能从 View environment 取到; MenuBarRoot.onAppear 时注入
+    func bindOpenWindow(_ action: OpenWindowAction) {
+        openWindowAction = action
+    }
+
+    /// LSUIElement App 开窗前必须 activate, 否则窗开了也不带焦点/可能不显
+    func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindowAction?(id: "settings")
     }
 
     func toggle() {
