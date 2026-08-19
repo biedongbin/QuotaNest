@@ -111,6 +111,7 @@ struct SettingsView: View {
     private func delete(_ slug: String) {
         try? PluginGenerator.removePlugin(slug: slug, in: userDir)
         engine.reloadRegistry()
+        syncHUD()  // 立即同步: 从 envs.json / ACCOUNT_ENVS 移除幽灵条目
     }
 
     private func syncHUD() {

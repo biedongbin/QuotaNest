@@ -32,5 +32,6 @@ if pgrep -x TokenHUD >/dev/null; then
   echo "TokenHUD 正在运行, 先退出再安装 (菜单栏 → 退出)"; exit 1
 fi
 mkdir -p "$DEST"
+rm -rf "$DEST/TokenHUD.app"  # 旧 bundle 先删: BSD cp -R 会合并进旧目录, 残留旧文件并破坏签名
 cp -R "$OUT" "$DEST/"
 echo "✓ 安装完成: $DEST/TokenHUD.app"
