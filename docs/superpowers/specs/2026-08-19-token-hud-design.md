@@ -44,7 +44,7 @@
 TokenHUD.app (LSUIElement=true, 无 Dock 图标)
 │
 ├─ MenuBarExtra
-│    图标: min(各家最紧张桶) 的 used%
+│    图标: 全部桶中最高 used% (最紧张者)
 │    下拉: 4 家明细 + 悬浮窗开关 + 立即刷新 + 退出
 │
 ├─ FloatingPanel (NSPanel)
