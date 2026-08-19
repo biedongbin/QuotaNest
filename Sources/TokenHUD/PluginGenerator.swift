@@ -29,7 +29,7 @@ enum PluginGenerator {
         END=$(date -v+1d +%Y-%m-%d)
         SUB=$(curl -s --max-time 10 -H "$AUTH" "$BASE/v1/dashboard/billing/subscription")
         USAGE=$(curl -s --max-time 10 -H "$AUTH" "$BASE/v1/dashboard/billing/usage?start_date=$START&end_date=$END")
-        print -r -- "$SUB\\n$USAGE" | python3 -c '
+        printf '%s\\n%s\\n' "$SUB" "$USAGE" | python3 -c '
         import json, sys
         lines = sys.stdin.read().split("\\n")
         sub = json.loads(lines[0])
