@@ -1,0 +1,9 @@
+{
+  "name": "Ollama",
+  "label": "Ol",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "buckets": { "five_hour": "5h", "seven_day": "周" },
+  "cacheFile": "~/.claude/hud/.ollama-usage-cache.json",
+  "enabled": true
+}

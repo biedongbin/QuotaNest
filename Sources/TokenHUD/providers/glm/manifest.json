@@ -1,0 +1,9 @@
+{
+  "name": "CC-GLM",
+  "label": "GLM",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "buckets": { "five_hour": "5h", "seven_day": "周" },
+  "cacheFile": "~/.claude/hud/.glm-usage-cache.json",
+  "enabled": true
+}

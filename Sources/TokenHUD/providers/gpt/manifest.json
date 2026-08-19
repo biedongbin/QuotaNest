@@ -1,0 +1,9 @@
+{
+  "name": "GPT",
+  "label": "GPT",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "buckets": { "seven_day": "周" },
+  "cacheFile": "~/.claude/hud/.gpt-usage-cache.json",
+  "enabled": true
+}
