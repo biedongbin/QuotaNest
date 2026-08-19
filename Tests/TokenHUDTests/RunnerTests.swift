@@ -75,4 +75,17 @@ final class RunnerTests {
         let cache = await runner.run(PluginProvider(slug: "bad", manifest: m, dir: d), timeout: 5)
         #expect(cache == nil)
     }
+
+    /// trap '' TERM 的脚本须 SIGKILL 兜底, 不得无限阻塞
+    @Test func runnerSigtermIgnoredStillBounded() async throws {
+        let d = tmp.appendingPathComponent("p/stubborn", isDirectory: true)
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try "#!/bin/zsh\ntrap '' TERM\nsleep 30".write(to: d.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
+        let m = ProviderManifest(name: "Stubborn", label: "T")
+        let runner = ProviderRunner(nodePath: nil)
+        let t0 = Date()
+        let cache = await runner.run(PluginProvider(slug: "stubborn", manifest: m, dir: d), timeout: 1)
+        #expect(cache == nil)
+        #expect(Date().timeIntervalSince(t0) < 8)
+    }
 }

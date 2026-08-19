@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum NodeLocator {
@@ -65,13 +66,37 @@ final class ProviderRunner {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         if p.isRunning {
+            // SIGTERM 宽限 2s, 仍存活则 SIGKILL (防脚本 trap/ignore TERM 致 waitUntilExit 无限阻塞)
             p.terminate()
-            p.waitUntilExit()
+            let grace = Date().addingTimeInterval(2)
+            while p.isRunning && Date() < grace {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            p.waitUntilExit() // SIGKILL 后进程必死, 此等待有界
             return nil
         }
         guard p.terminationStatus == 0 else { return nil }
 
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        let data = Self.readAllBounded(out.fileHandleForReading, within: 2)
         return UsageCache.make(body: data, now: Date().timeIntervalSince1970 * 1000)
+    }
+
+    /// 有界读取: 进程已退出但孤儿孙进程可能仍持有 stdout 写端; 同步读丢后台队列, 超时放弃
+    private static func readAllBounded(_ handle: FileHandle, within window: TimeInterval) -> Data {
+        final class Box: @unchecked Sendable {
+            private let lock = NSLock()
+            private var d = Data()
+            func set(_ v: Data) { lock.lock(); d = v; lock.unlock() }
+            func get() -> Data { lock.lock(); defer { lock.unlock() }; return d }
+        }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            box.set(handle.readDataToEndOfFile())
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + window)
+        return box.get()
     }
 }
