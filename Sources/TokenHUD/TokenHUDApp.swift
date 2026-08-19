@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct TokenHUDApp: App {
     @StateObject private var engine: DataEngine
+    @StateObject private var panelCtrl: PanelController
 
     init() {
         let home = NSHomeDirectory()
@@ -18,13 +19,14 @@ struct TokenHUDApp: App {
                            runner: ProviderRunner(nodePath: node))
         e.start()
         _engine = StateObject(wrappedValue: e)
+        _panelCtrl = StateObject(wrappedValue: PanelController(engine: e))
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(engine: engine,
                         onOpenSettings: {},
-                        onTogglePanel: {},
+                        onTogglePanel: { panelCtrl.toggle() },
                         onRefresh: { Task { await engine.refreshNow() } })
         } label: {
             let worst = engine.states.compactMap(\.worstPct).max()
