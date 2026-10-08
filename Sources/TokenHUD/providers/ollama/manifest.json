@@ -1,9 +1,23 @@
 {
-  "name": "Ollama",
-  "label": "Ol",
-  "fetch": "./fetch.sh",
-  "intervalSec": 60,
-  "buckets": { "five_hour": "5h", "seven_day": "周" },
+  "accent": "green",
+  "authFile": "~/.claude/hud/.ollama-usage-auth.json",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周"
+  },
   "cacheFile": "~/.claude/hud/.ollama-usage-cache.json",
-  "enabled": true
+  "displayName": "Ollama",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "shippingbox",
+  "intervalSec": 60,
+  "label": "Ol",
+  "name": "Ollama",
+  "needsCredential": false,
+  "queryAuth": "bearer",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>\nanthropic-version: 2023-06-01",
+  "refreshProtocol": "anthropic",
+  "refreshUrl": "https://ollama.com/v1/messages",
+  "testModel": "deepseek-v4-flash"
 }

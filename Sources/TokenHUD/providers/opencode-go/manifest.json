@@ -1,9 +1,24 @@
 {
-  "name": "OC-Go",
-  "label": "OC",
-  "fetch": "./fetch.sh",
-  "intervalSec": 60,
-  "buckets": { "five_hour": "5h", "seven_day": "周", "monthly": "月" },
+  "accent": "purple",
+  "authFile": "~/.claude/hud/.oc-go-usage-auth.json",
+  "buckets": {
+    "five_hour": "5h",
+    "monthly": "月",
+    "seven_day": "周"
+  },
   "cacheFile": "~/.claude/hud/.oc-go-usage-cache.json",
-  "enabled": true
+  "displayName": "OpenCode Go",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "label": "OC",
+  "name": "OC-Go",
+  "needsCredential": false,
+  "queryAuth": "bearer",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://opencode.ai/zen/go/v1/chat/completions",
+  "testModel": "deepseek-v4-flash"
 }

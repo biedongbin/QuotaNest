@@ -9,21 +9,79 @@ enum PluginGenerator {
         return s.isEmpty ? "custom" : s
     }
 
-    static func oneAPIManifest(label: String, intervalSec: Int = 60) -> ProviderManifest {
-        ProviderManifest(name: label, label: label, fetch: "./fetch.sh",
-                         intervalSec: intervalSec, buckets: ["seven_day": "周"],
-                         cacheFile: nil, enabled: true)
+    /// 自定义供应商 manifest: 协议抓取配置来自编辑弹窗 config (manifest 驱动, 主框架通用)
+    static func customManifest(name: String, config: ProviderConfig, authFile: String) -> ProviderManifest {
+        ProviderManifest(
+            name: name, label: name, displayName: name,
+            buckets: ["seven_day": "周"],
+            authFile: authFile,
+            testModel: config.testModel.isEmpty ? nil : config.testModel,
+            testPrompt: config.testPrompt.isEmpty ? nil : config.testPrompt,
+            queryUrl: config.queryUrl.isEmpty ? nil : config.queryUrl,
+            queryAuth: "bearer",
+            refreshUrl: config.refreshUrl.isEmpty ? nil : config.refreshUrl,
+            refreshProtocol: config.refreshProtocol,
+            refreshAuth: "bearer",
+            refreshHeader: config.refreshHeader.isEmpty ? nil : config.refreshHeader)
     }
 
-    static func oneAPIFetchScript(baseURL: String, apiKey: String) -> String {
-        // baseURL 去尾斜杠; key 内嵌明文 (与 .glm-usage-auth.json 同级安全，不做 Keychain)
-        let base = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
-        return """
+    // MARK: - 类型模板 → 账号实例
+
+    /// 从类型模板实例化账号插件 (幂等): manifest 派生 + fetch.sh {SLUG} 替换 + auth 模板复制 (不覆盖已有 auth)
+    /// 返回实例 manifest, 调用方继续用 ProviderConfigStore.write 写凭证
+    @discardableResult
+    static func instantiate(template: PluginProvider, slug: String, name: String,
+                            into root: URL, hudDir: URL) throws -> ProviderManifest {
+        let t = template.manifest
+        // manifest 路径: hudDir 在 HOME 下用 ~ 相对形式, 否则绝对路径 (测试隔离)
+        let home = NSHomeDirectory()
+        let rel = hudDir.path.hasPrefix(home) ? "~" + hudDir.path.dropFirst(home.count) : hudDir.path
+        let manifest = ProviderManifest(
+            name: t.name, label: t.label, displayName: name,
+            buckets: t.buckets,
+            cacheFile: rel + "/.\(slug)-usage-cache.json",
+            authFile: rel + "/.\(slug)-usage-auth.json",
+            needsCredential: t.needsCredential,
+            testModel: t.testModel,
+            testPrompt: t.testPrompt,
+            queryUrl: t.queryUrl,
+            queryAuth: t.queryAuth,
+            refreshUrl: t.refreshUrl,
+            refreshProtocol: t.refreshProtocol,
+            refreshAuth: t.refreshAuth,
+            refreshHeader: t.refreshHeader,
+            template: template.slug,
+            accent: t.accent, icon: t.icon)
+        // fetch.sh: 读模板脚本, {SLUG} 替换后写入实例目录
+        let script = (try? String(contentsOf: template.dir.appendingPathComponent("fetch.sh"), encoding: .utf8))
+            .map { $0.replacingOccurrences(of: "{SLUG}", with: slug) }
+            ?? ""
+        try writePlugin(slug: slug, manifest: manifest, script: script, into: root)
+        // auth 模板 → 实例 auth (不覆盖: 迁移保凭证, 新建给缺省抓取配置)
+        // auth 模板 -> 实例 auth (不覆盖: 迁移保凭证, 新建给缺省抓取配置)
+        guard let authFile = manifest.authFile else { return manifest }
+        let authURL = authFile.hasPrefix("~")
+            ? URL(fileURLWithPath: home + String(authFile.dropFirst()))
+            : URL(fileURLWithPath: authFile)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: authURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !fm.fileExists(atPath: authURL.path),
+           let tpl = try? Data(contentsOf: template.dir.appendingPathComponent("auth-template.json")) {
+            try tpl.write(to: authURL, options: .atomic)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path)
+        }
+        return manifest
+    }
+
+    /// 读 auth 文件版: url/key 运行时取自 .{slug}-usage-auth.json, 编辑弹窗保存后自动生效
+    static func oneAPIFetchScript(slug: String) -> String {
+        """
         #!/bin/zsh
-        # TokenHUD 生成: one-api / OpenAI 兼容模板
+        # TokenHUD 生成: one-api / OpenAI 兼容 (url/key 读 auth 文件)
         set -eu
-        BASE='\(base)'
-        KEY='\(apiKey)'
+        AUTH_FILE="$HOME/.claude/hud/.\(slug)-usage-auth.json"
+        BASE=$(python3 -c "import json;print(json.load(open('$AUTH_FILE')).get('apiUrl','').rstrip('/'))")
+        KEY=$(python3 -c "import json;print((json.load(open('$AUTH_FILE')).get('headers') or {}).get('Authorization','').replace('Bearer ',''))")
         AUTH="Authorization: Bearer $KEY"
         START=$(date +%Y-%m-01)
         END=$(date -v+1d +%Y-%m-%d)

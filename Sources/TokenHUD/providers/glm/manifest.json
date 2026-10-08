@@ -1,9 +1,23 @@
 {
-  "name": "CC-GLM",
-  "label": "GLM",
-  "fetch": "./fetch.sh",
-  "intervalSec": 60,
-  "buckets": { "five_hour": "5h", "seven_day": "周" },
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.glm-usage-auth.json",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周"
+  },
   "cacheFile": "~/.claude/hud/.glm-usage-cache.json",
-  "enabled": true
+  "displayName": "GLM",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "brain",
+  "intervalSec": 60,
+  "label": "GLM",
+  "name": "CC-GLM",
+  "needsCredential": true,
+  "queryAuth": "jwt",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>\nanthropic-version: 2023-06-01",
+  "refreshProtocol": "anthropic",
+  "refreshUrl": "https://open.bigmodel.cn/api/anthropic/v1/messages",
+  "testModel": "glm-4.7"
 }

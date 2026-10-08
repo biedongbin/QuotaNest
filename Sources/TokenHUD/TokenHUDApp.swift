@@ -5,11 +5,6 @@ struct TokenHUDApp: App {
     @StateObject private var engine: DataEngine
     @StateObject private var panelCtrl: PanelController
 
-    private let hudDir: URL
-    private let userDir: URL
-    private let settingsURL: URL
-    private let bundleDir: URL?
-
     init() {
         let home = NSHomeDirectory()
         let hud = URL(fileURLWithPath: home + "/.claude/hud")
@@ -25,45 +20,29 @@ struct TokenHUDApp: App {
                            runner: ProviderRunner(nodePath: node))
         e.start()
         _engine = StateObject(wrappedValue: e)
-        _panelCtrl = StateObject(wrappedValue: PanelController(engine: e))
-        hudDir = hud
-        userDir = user
-        bundleDir = bundle
-        settingsURL = URL(fileURLWithPath: home + "/.claude/settings.json")
+        let pc = PanelController(engine: e)
+        _panelCtrl = StateObject(wrappedValue: pc)
+
+        // 自绘状态栏 (NSStatusItem): 左键面板 + 右键菜单; 替代 MenuBarExtra (右键被系统拦截)
+        _ = StatusItemController(engine: e, panelCtrl: pc)
+        // 供应商管理窗口工厂 (单例 NSWindow, 全局唯一)
+        SettingsWindowManager.shared.makeContent = {
+            NSHostingController(rootView: SettingsView(
+                engine: e, hudDir: hud, userDir: user,
+                settingsURL: URL(fileURLWithPath: home + "/.claude/settings.json"),
+                bundleDir: bundle))
+        }
+
+        if ProcessInfo.processInfo.environment["TOKENHUD_AUTO_TOGGLE"] == "1" {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                pc.toggle()
+            }
+        }
     }
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarRoot(engine: engine, panelCtrl: panelCtrl,
-                        onRefresh: { Task { await engine.refreshNow() } })
-        } label: {
-            let worst = engine.states.compactMap(\.worstPct).max()
-            Text(worst.map { "\(Int($0.rounded()))%" } ?? "…")
-        }
-        .menuBarExtraStyle(.window)
-
-        // macOS 14 SDK 的 openWindow 必须带 id (无参调用不可用), 故显式给 id
-        WindowGroup("TokenHUD 供应商管理", id: "settings") {
-            SettingsView(engine: engine, hudDir: hudDir, userDir: userDir,
-                         settingsURL: settingsURL, bundleDir: bundleDir)
-        }
-        .windowResizability(.contentSize)
-    }
-}
-
-/// MenuBarExtra 内容与 App 之间的桥: openWindow 只能从 View 的 environment 取,
-/// onAppear 时把 action 绑给 PanelController, 之后菜单回调直接用
-private struct MenuBarRoot: View {
-    @ObservedObject var engine: DataEngine
-    @ObservedObject var panelCtrl: PanelController
-    let onRefresh: () -> Void
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        MenuBarView(engine: engine,
-                    onOpenSettings: { panelCtrl.openSettings() },
-                    onTogglePanel: { panelCtrl.toggle() },
-                    onRefresh: onRefresh)
-            .onAppear { panelCtrl.bindOpenWindow(openWindow) }
+        // LSUIElement: 菜单栏图标由 StatusItemController 自绘, 此处仅占位满足 Scene 要求
+        Settings { EmptyView() }
     }
 }

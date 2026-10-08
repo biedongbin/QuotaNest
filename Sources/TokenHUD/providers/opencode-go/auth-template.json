@@ -1,0 +1,5 @@
+{
+  "apiUrl": "https://opencode.ai/zen/go/v1/usage",
+  "refreshApiKey": "",
+  "testModel": "deepseek-v4-flash"
+}

@@ -1,0 +1,19 @@
+{
+  "_note": "GPT localhost:20128 看板；session 配额(周重置)；重开授权后 errorField 兜底",
+  "apiUrl": "",
+  "authFailValues": [
+    "Unauthorized"
+  ],
+  "errorField": "error",
+  "headers": {
+    "Accept": ""
+  },
+  "limitsArrayPath": "quotas.session",
+  "method": "GET",
+  "seven_day": {
+    "resetsAtField": "resetAt",
+    "resetsAtUnit": "s",
+    "totalField": "total",
+    "usedField": "used"
+  }
+}

@@ -1,6 +1,8 @@
 #!/bin/zsh
 # TokenHUD 打包: swift build → 拼 .app → ad-hoc 签名 → 装到 ~/Applications
 set -euo pipefail
+# 必须 swiftly 工具链 (系统 CLT Swift 6.1.2 与 ManifestAPI ABI 不匹配, 裸 swift build 链接失败)
+export PATH="$HOME/.swiftly/bin:$PATH"
 cd "$(dirname "$0")/.."
 OUT=".build/TokenHUD.app"
 rm -rf "$OUT"

@@ -40,27 +40,66 @@ extension FloatingPanel: NSWindowDelegate {
 
 // MARK: - Panel 生命周期 (App struct 是值语义, NSPanel 引用放这里)
 
+/// 悬浮窗风格
+enum PanelStyle: String, CaseIterable, Identifiable {
+    case card      // 卡片式
+    case glass     // 玻璃拟态
+    case compact   // 紧凑单行 (横排多桶)
+    case list      // 列表: 每行只显示一个用量桶
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .card: return "卡片"
+        case .glass: return "玻璃"
+        case .compact: return "紧凑"
+        case .list: return "列表"
+        }
+    }
+}
+
 @MainActor
 final class PanelController: ObservableObject {
     @Published private(set) var isVisible = false
-    private(set) var expanded = false
+    private(set) var expanded = false // 默认紧凑 (单行迷你条)
+    @Published var style: PanelStyle
+    @Published var bgOpacity: Double
+    @Published var textOpacity: Double
     private var panel: FloatingPanel?
     private let engine: DataEngine
-    private var openWindowAction: OpenWindowAction?
+
+
+    static let defaultsStyleKey = "tokenhud.panelStyle"
+    static let defaultsBgOpacityKey = "tokenhud.panelBgOpacity"
+    static let defaultsTextOpacityKey = "tokenhud.panelTextOpacity"
 
     init(engine: DataEngine) {
         self.engine = engine
+        let d = UserDefaults.standard
+        self.style = PanelStyle(rawValue: d.string(forKey: Self.defaultsStyleKey) ?? "") ?? .card
+        self.bgOpacity = d.object(forKey: Self.defaultsBgOpacityKey) as? Double ?? 0.85
+        self.textOpacity = d.object(forKey: Self.defaultsTextOpacityKey) as? Double ?? 1.0
     }
 
-    /// openWindow 只能从 View environment 取到; MenuBarRoot.onAppear 时注入
-    func bindOpenWindow(_ action: OpenWindowAction) {
-        openWindowAction = action
+    func setStyle(_ s: PanelStyle) {
+        style = s
+        UserDefaults.standard.set(s.rawValue, forKey: Self.defaultsStyleKey)
+        rebuild() // 布局结构变, 需重建
     }
 
-    /// LSUIElement App 开窗前必须 activate, 否则窗开了也不带焦点/可能不显
+    func setBgOpacity(_ v: Double) {
+        bgOpacity = v
+        UserDefaults.standard.set(v, forKey: Self.defaultsBgOpacityKey)
+        // @Published 驱动 FloatingView 重渲染, 无需 rebuild (避免打断 Slider)
+    }
+
+    func setTextOpacity(_ v: Double) {
+        textOpacity = v
+        UserDefaults.standard.set(v, forKey: Self.defaultsTextOpacityKey)
+    }
+
+    /// 供应商管理窗 (单例 NSWindow, 全局唯一)
     func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindowAction?(id: "settings")
+        SettingsWindowManager.shared.show()
     }
 
     func toggle() {
@@ -92,8 +131,15 @@ final class PanelController: ObservableObject {
     }
 
     private func makeHosting() -> NSHostingView<FloatingView> {
-        NSHostingView(rootView: FloatingView(engine: engine, expanded: expanded) { [weak self] in
-            self?.toggleExpanded()
-        })
+        NSHostingView(rootView: FloatingView(
+            engine: engine, controller: self, expanded: expanded,
+            onToggle: { [weak self] in self?.toggleExpanded() },
+            onQuit: { NSApplication.shared.terminate(nil) },
+            onRefreshAll: { [weak self] in
+                guard let self else { return }
+                Task { await self.engine.triggerAndRefreshAll() }
+            },
+            onOpenSettings: { [weak self] in self?.openSettings() }
+        ))
     }
 }

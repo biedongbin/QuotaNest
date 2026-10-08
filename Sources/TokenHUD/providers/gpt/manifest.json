@@ -1,9 +1,15 @@
 {
-  "name": "GPT",
-  "label": "GPT",
-  "fetch": "./fetch.sh",
-  "intervalSec": 60,
-  "buckets": { "seven_day": "周" },
+  "accent": "orange",
+  "authFile": "~/.claude/hud/.gpt-usage-auth.json",
+  "buckets": {
+    "seven_day": "周"
+  },
   "cacheFile": "~/.claude/hud/.gpt-usage-cache.json",
-  "enabled": true
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "bolt",
+  "intervalSec": 60,
+  "label": "GPT",
+  "name": "GPT",
+  "queryAuth": "header"
 }

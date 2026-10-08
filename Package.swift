@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TokenHUD",
-            resources: [.copy("providers")]
+            resources: [.copy("providers"), .copy("mjs")]
         ),
         .testTarget(
             name: "TokenHUDTests",

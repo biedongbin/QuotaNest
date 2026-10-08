@@ -1,0 +1,10 @@
+{
+  "apiUrl": "https://ollama.com/api/usage",
+  "headers": {
+    "Accept": "application/json",
+    "Authorization": ""
+  },
+  "method": "GET",
+  "refreshApiKey": "",
+  "testModel": "deepseek-v4-flash"
+}

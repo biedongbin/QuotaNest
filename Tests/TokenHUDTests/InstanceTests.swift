@@ -1,0 +1,135 @@
+import Testing
+import Foundation
+@testable import TokenHUD
+
+/// 类型模板 -> 账号实例: manifest 派生 / fetch.sh {SLUG} 替换 / auth 不覆盖 / mjs 安装 / 迁移不变量
+struct InstanceTests {
+    private func makeTmp() -> URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tokenhud-instance-" + UUID().uuidString, isDirectory: true)
+    }
+
+    /// 假模板: manifest + fetch.sh({SLUG} 占位) + auth-template.json
+    private func makeTemplate(slug: String, in tmp: URL) throws -> PluginProvider {
+        let dir = tmp.appendingPathComponent("bundle").appendingPathComponent(slug, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let manifest = ProviderManifest(
+            name: "CC-Test", label: "TT", displayName: "TestType",
+            buckets: ["five_hour": "5h"],
+            needsCredential: true, testModel: "test-model",
+            queryAuth: "jwt",
+            refreshUrl: "https://x.example/v1/messages",
+            refreshProtocol: "anthropic",
+            refreshAuth: "bearer",
+            refreshHeader: "Authorization: Bearer <key>",
+            accent: "blue", icon: "brain")
+        let enc = JSONEncoder()
+        try enc.encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
+        let script = "#!/bin/zsh\nexport USAGE_AUTH_FILE=\"$HOME/.claude/hud/.{SLUG}-usage-auth.json\"\ncat \"$HOME/.claude/hud/.{SLUG}-usage-cache.json\"\n"
+        try script.write(to: dir.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
+        let authTpl = "{\"apiUrl\": \"https://q.example\", \"headers\": {\"authorization\": \"\"}}"
+        try authTpl.write(to: dir.appendingPathComponent("auth-template.json"), atomically: true, encoding: .utf8)
+        return PluginProvider(slug: slug, manifest: manifest, dir: dir)
+    }
+
+    @Test func instantiateDerivesManifestAndScript() throws {
+        let tmp = makeTmp()
+        let tmpl = try makeTemplate(slug: "testtype", in: tmp)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+
+        let m = try PluginGenerator.instantiate(template: tmpl, slug: "tt-work", name: "TT-工作", into: userDir, hudDir: hudDir)
+
+        #expect(m.displayName == "TT-工作")
+        #expect(m.template == "testtype")
+        #expect(m.authFile?.hasSuffix(".tt-work-usage-auth.json") == true)
+        #expect(m.cacheFile?.hasSuffix(".tt-work-usage-cache.json") == true)
+        #expect(m.buckets == ["five_hour": "5h"])
+        #expect(m.queryAuth == "jwt")
+        #expect(m.refreshUrl == "https://x.example/v1/messages")
+        #expect(m.accent == "blue")
+
+        let script = try String(contentsOf: userDir.appendingPathComponent("tt-work/fetch.sh"), encoding: .utf8)
+        #expect(!script.contains("{SLUG}"))
+        #expect(script.contains(".tt-work-usage-auth.json"))
+
+        let auth = try String(contentsOf: hudDir.appendingPathComponent(".tt-work-usage-auth.json"), encoding: .utf8)
+        #expect(auth.contains("https://q.example"))
+        cleanup(tmp)
+    }
+
+    @Test func instantiateDoesNotOverwriteExistingAuth() throws {
+        let tmp = makeTmp()
+        let tmpl = try makeTemplate(slug: "testtype", in: tmp)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+
+        let auth = hudDir.appendingPathComponent(".tt-live-usage-auth.json")
+        try "{\"secret\": \"keep-me\"}".write(to: auth, atomically: true, encoding: .utf8)
+
+        _ = try PluginGenerator.instantiate(template: tmpl, slug: "tt-live", name: "TT", into: userDir, hudDir: hudDir)
+        let after = try String(contentsOf: auth, encoding: .utf8)
+        #expect(after.contains("keep-me"))
+        #expect(!after.contains("q.example"))
+        cleanup(tmp)
+    }
+
+    @Test @MainActor func migrateSkipsTombstoneAndIsIdempotent() throws {
+        let tmp = makeTmp()
+        _ = try makeTemplate(slug: "glm", in: tmp)
+        let bundleDir = tmp.appendingPathComponent("bundle", isDirectory: true)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+
+        let defaults = UserDefaults(suiteName: "instance-tests")!
+        defaults.removePersistentDomain(forName: "instance-tests")
+        defaults.set(["glm"], forKey: "tokenhud.deletedTemplates")
+        let runner = ProviderRunner(nodePath: "/usr/bin/true")
+        let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: bundleDir,
+                                userProvidersDir: userDir, runner: runner, defaults: defaults)
+        engine.migrateAccounts()
+        let m = "glm/manifest.json"
+        #expect(!FileManager.default.fileExists(atPath: userDir.appendingPathComponent(m).path),
+                "tombstone 模板不得迁移复活")
+
+        defaults.set([], forKey: "tokenhud.deletedTemplates")
+        engine.migrateAccounts()
+        #expect(FileManager.default.fileExists(atPath: userDir.appendingPathComponent(m).path))
+        engine.migrateAccounts()
+        let s1 = try String(contentsOf: userDir.appendingPathComponent("glm/fetch.sh"), encoding: .utf8)
+        #expect(!s1.contains("{SLUG}"))
+        cleanup(tmp)
+    }
+
+    @Test func installMjsCopiesAndUpgrades() throws {
+        let tmp = makeTmp()
+        let bundleDir = tmp.appendingPathComponent("bundle/anyprov", isDirectory: true)
+        let mjsDir = bundleDir.deletingLastPathComponent().appendingPathComponent("mjs", isDirectory: true)
+        try FileManager.default.createDirectory(at: mjsDir, withIntermediateDirectories: true)
+        try "// engine v2".write(to: mjsDir.appendingPathComponent("x-usage-provider.mjs"), atomically: true, encoding: .utf8)
+
+        try FileManager.default.createDirectory(at: hudDirOf(tmp), withIntermediateDirectories: true)
+        DataEngine.installMjs(bundleDir: bundleDir, hudDir: hudDirOf(tmp))
+        let dst = hudDirOf(tmp).appendingPathComponent("x-usage-provider.mjs")
+        #expect(try String(contentsOf: dst, encoding: .utf8) == "// engine v2")
+
+        try "// engine v3".write(to: mjsDir.appendingPathComponent("x-usage-provider.mjs"), atomically: true, encoding: .utf8)
+        DataEngine.installMjs(bundleDir: bundleDir, hudDir: hudDirOf(tmp))
+        #expect(try String(contentsOf: dst, encoding: .utf8) == "// engine v3")
+        cleanup(tmp)
+    }
+
+    private func hudDirOf(_ tmp: URL) -> URL {
+        tmp.appendingPathComponent("hud", isDirectory: true)
+    }
+
+    private func cleanup(_ tmp: URL) {
+        try? FileManager.default.removeItem(at: tmp)
+    }
+}

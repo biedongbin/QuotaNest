@@ -23,6 +23,15 @@ struct ModelTests {
         #expect(m.fetch == "./fetch.sh")
         #expect(m.intervalSec == nil)
         #expect(m.enabled == true) // 默认
+        #expect(m.refreshModel == "") // 缺省空, 不默认任何私有模型
+        #expect(m.isBuiltin == false)
+    }
+
+    @Test func manifestDecodesAccentAndBuiltin() throws {
+        let json = #"{"name":"GPT","label":"GPT","builtin":true,"accent":"orange"}"#.data(using: .utf8)!
+        let m = try JSONDecoder().decode(ProviderManifest.self, from: json)
+        #expect(m.isBuiltin)
+        #expect(m.accent == "orange")
     }
 
     @Test func cacheDecodesNodeProviderFormat() throws {
