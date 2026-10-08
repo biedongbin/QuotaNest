@@ -96,11 +96,30 @@ struct ProviderManifest: Codable {
 
 struct Bucket: Codable {
     var usedPercentage: Double?
+    /// 整数 epoch 秒 (glm 等) 或 ISO8601 字符串 (ollama /api/balance) — 统一存 epoch 秒
     var resetsAt: Int?
 
     enum CodingKeys: String, CodingKey {
         case usedPercentage = "used_percentage"
         case resetsAt = "resets_at"
+    }
+
+    init(usedPercentage: Double? = nil, resetsAt: Int? = nil) {
+        self.usedPercentage = usedPercentage
+        self.resetsAt = resetsAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        usedPercentage = try c.decodeIfPresent(Double.self, forKey: .usedPercentage)
+        if let n = try? c.decodeIfPresent(Int.self, forKey: .resetsAt) {
+            resetsAt = n
+        } else if let s = (try? c.decodeIfPresent(String.self, forKey: .resetsAt)) ?? nil {
+            let f = ISO8601DateFormatter()
+            resetsAt = f.date(from: s).map { Int($0.timeIntervalSince1970) }
+        } else {
+            resetsAt = nil
+        }
     }
 }
 

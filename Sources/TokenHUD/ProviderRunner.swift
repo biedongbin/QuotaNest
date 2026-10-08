@@ -44,7 +44,7 @@ final class ProviderRunner {
     /// 以 zsh 直呼脚本路径而非 exec, 免依赖执行位 (测试/打包资源均无 x 位)
     /// 成功: stdout -> UsageCache.make; 任何失败(非0退出/解析失败/超时) -> nil
     /// 失败时 stderr 尾部写 hudDir 下 .{slug}-usage-stderr.log 供诊断 (不进 cache, 免覆盖旧桶数据)
-    func run(_ plugin: PluginProvider, timeout: TimeInterval = 15) async -> UsageCache? {
+    func run(_ plugin: PluginProvider, timeout: TimeInterval = 20) async -> UsageCache? {
         let script = plugin.dir.appendingPathComponent(plugin.manifest.fetch).standardizedFileURL.path
         guard FileManager.default.fileExists(atPath: script) else { return nil }
 

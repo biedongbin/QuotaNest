@@ -355,6 +355,8 @@ final class DataEngine: ObservableObject {
             var old = states[i].cache ?? UsageCache(generatedAt: now, fiveHour: nil, sevenDay: nil,
                                                     monthly: nil, error: "fetch", stale: true)
             old.stale = true
+            // 失败也前移时间戳: 否则 isFresh 恒 false, 10s timer 每轮重刷, 与下一轮叠加致请求量超限频
+            old.generatedAt = now
             if old.error == nil { old.error = "fetch" }
             states[i].cache = old
             states[i].isStale = true

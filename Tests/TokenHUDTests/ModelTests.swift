@@ -48,6 +48,19 @@ struct ModelTests {
         #expect(c.error == nil)
     }
 
+    @Test func bucketDecodesISO8601ResetsAt() throws {
+        // ollama /api/balance 返回 ISO8601 字符串 (旧格式为整数) — 两者都要能解
+        let json = """
+        {"generatedAt":1755600000000,"ttlMs":60000,
+         "five_hour":{"used_percentage":12.5,"resets_at":"2026-10-08T09:00:00Z"},
+         "seven_day":{"used_percentage":3.0,"resets_at":null},
+         "monthly":null,"error":null,"stale":false}
+        """.data(using: .utf8)!
+        let c = try JSONDecoder().decode(UsageCache.self, from: json)
+        #expect(c.fiveHour?.usedPercentage == 12.5)
+        #expect(c.fiveHour?.resetsAt == 1791450000)  // 2026-10-08T09:00:00Z epoch
+    }
+
     @Test func makeStampsGeneratedAt() throws {
         let stdout = #"{"seven_day":{"used_percentage":28.2}}"#.data(using: .utf8)!
         let c = try #require(UsageCache.make(body: stdout, now: 1234))
