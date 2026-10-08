@@ -123,8 +123,7 @@ final class DataEngine: ObservableObject {
     }
 
     /// 固化脚本安装: bundle 的 mjs/ 目录覆盖安装到 hudDir (App 分发固化引擎, 幂等升级)
-    nonisolated static func installMjs(bundleDir: URL?, hudDir: URL) {
-        guard let bundleDir else { return }
+    nonisolated static func installMjs(bundleDir: URL?, hudDir: URL) {        guard let bundleDir else { return }
         let srcDir = bundleDir.deletingLastPathComponent().appendingPathComponent("mjs", isDirectory: true)
         guard let files = try? FileManager.default.contentsOfDirectory(at: srcDir, includingPropertiesForKeys: nil) else { return }
         let fm = FileManager.default
@@ -133,6 +132,11 @@ final class DataEngine: ObservableObject {
             try? fm.removeItem(at: dst)
             try? fm.copyItem(at: f, to: dst)
         }
+    }
+
+    /// 分发 mjs 脚本 (statusline + provider) 到 hudDir; 供"写入 Claude Code HUD"按钮调用
+    func installScripts() {
+        Self.installMjs(bundleDir: bundleDir, hudDir: hudDir)
     }
 
     /// 首启迁移: 每个类型模板若无对应用户实例, 按原 slug 生成缺省实例 (幂等)

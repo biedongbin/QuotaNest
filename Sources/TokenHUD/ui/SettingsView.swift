@@ -197,6 +197,8 @@ struct SettingsView: View {
 
     private func syncHUD() {
         do {
+            // 脚本分发: statusline + provider .mjs 从 bundle 同步到 hudDir (按钮即"写入完整能力")
+            engine.installScripts()
             let plugins = engine.allPlugins
             let builtinNames = Set(plugins.filter { $0.manifest.template != nil }.map { $0.manifest.name })
             let new = HUDSync.envsDict(plugins: plugins, hudDir: hudDir, builtinNames: builtinNames)
