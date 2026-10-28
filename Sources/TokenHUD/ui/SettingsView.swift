@@ -167,9 +167,13 @@ struct SettingsView: View {
     private func moveTo(_ dragged: String, _ target: String) {
         var order = engine.providerOrder
         if order.isEmpty { order = allProviders.map(\.slug) }
+        // 新供应商不在已存顺序里 → 补齐 (缺 dragged 追加尾部, 缺 target 按当前列表序插入)
+        for s in allProviders.map(\.slug) where !order.contains(s) { order.append(s) }
         guard let from = order.firstIndex(of: dragged),
-              let to = order.firstIndex(of: target) else { return }
+              var to = order.firstIndex(of: target) else { return }
         order.remove(at: from)
+        // 移除后索引偏移: 目标在源之后则前移一位
+        if from < to { to -= 1 }
         order.insert(dragged, at: to)
         engine.setProviderOrder(order)
     }

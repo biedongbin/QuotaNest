@@ -1,0 +1,4 @@
+{
+  "_note": "ClinePass 直查官方 api.cline.bot。apiKey 取自 app.cline.bot/settings/api-keys (clp_ 开头), 原样 Bearer 发送; 套餐上限与用量均由官方接口返回",
+  "apiKey": ""
+}

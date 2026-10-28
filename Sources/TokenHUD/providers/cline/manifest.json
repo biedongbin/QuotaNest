@@ -1,0 +1,18 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.cline-usage-auth.json",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周"
+  },
+  "cacheFile": "~/.claude/hud/.cline-usage-cache.json",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "bolt",
+  "intervalSec": 300,
+  "label": "Cline",
+  "name": "Cline",
+  "needsCredential": true,
+  "queryAuth": "bearer",
+  "queryUrl": "https://api.cline.bot/api/v1/users/me/plan"
+}

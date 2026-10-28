@@ -20,6 +20,7 @@ const OCG_AUTH = join(HUD_DIR, '.oc-go-usage-auth.json');
 const OCG_PROVIDER = join(HUD_DIR, 'oc-go-usage-provider.mjs'); // OC Go 专用：抓 HTML
 const OLLAMA_PROVIDER = join(HUD_DIR, 'ollama-usage-provider.mjs'); // Ollama 专用：/api/balance
 const GPT_PROVIDER = join(HUD_DIR, 'gpt-usage-provider.mjs'); // GPT 专用：ChatGPT 官方 wham/usage
+const CLINE_PROVIDER = join(HUD_DIR, 'cline-usage-provider.mjs'); // Cline 专用：官方 api.cline.bot
 const USAGE_PROVIDER = join(HUD_DIR, 'glm-usage-provider.mjs'); // 泛用：USAGE_PROVIDER_NAME=gpt 切换
 const GIT_CACHE = join(HUD_DIR, '.git-cache.json');
 
@@ -119,6 +120,7 @@ const ENV_REGISTRY = {
   'GPT':        { label: 'GPT', source: 'cache', cache: GPT_CACHE, auth: GPT_AUTH, provider: GPT_PROVIDER, buckets: { five_hour: '5h', seven_day: '周' } },
   'Ollama':     { label: 'Ollama', source: 'cache', cache: OLLAMA_CACHE, auth: OLLAMA_AUTH, provider: OLLAMA_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
   'OC-Go':      { label: 'OC-Go', source: 'cache', cache: OCG_CACHE, auth: OCG_AUTH, provider: OCG_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
+  'Cline':      { label: 'Cline', source: 'cache', cache: join(HUD_DIR, '.cline-usage-cache.json'), auth: join(HUD_DIR, '.cline-usage-auth.json'), provider: CLINE_PROVIDER, buckets: { five_hour: '5h', seven_day: '周' } },
 };
 
 // 动态 env 注册: ~/.claude/hud/envs.json (TokenHUD 写出), 条目与内置 registry 同构
