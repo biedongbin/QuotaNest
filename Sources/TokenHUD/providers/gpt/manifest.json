@@ -2,6 +2,7 @@
   "accent": "orange",
   "authFile": "~/.claude/hud/.gpt-usage-auth.json",
   "buckets": {
+    "five_hour": "5h",
     "seven_day": "周"
   },
   "cacheFile": "~/.claude/hud/.gpt-usage-cache.json",
@@ -11,5 +12,6 @@
   "intervalSec": 60,
   "label": "GPT",
   "name": "GPT",
-  "queryAuth": "header"
+  "queryAuth": "header",
+  "queryUrl": "https://chatgpt.com/backend-api/wham/usage"
 }
