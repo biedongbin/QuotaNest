@@ -1,5 +1,5 @@
 {
-  "accent": "blue",
+  "accent": "orange",
   "authFile": "~/.claude/hud/.cline-usage-auth.json",
   "buckets": {
     "five_hour": "5h",

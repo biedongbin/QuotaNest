@@ -24,6 +24,9 @@ struct ProviderManifest: Codable {
     var accent: String?         // 品牌色名 (blue/green/purple/orange/teal…), UI 不再硬编码 slug
     var icon: String?           // SF Symbol 名 (如 "brain"); 缺省用 label 首字母
     var enabled: Bool?
+    /// 授权模式: apikey (粘贴密钥) / local (读本机 CLI 已登录凭证) / oauth (预留)
+    /// 只影响 UI 表单呈现, 不影响解析 (解析在各 provider 脚本)
+    var authMode: String?
 
     var isEnabled: Bool { enabled ?? true }
     var interval: Int { intervalSec ?? 60 }
@@ -32,8 +35,11 @@ struct ProviderManifest: Codable {
     var refreshModel: String { testModel ?? "" } // 缺省空: 空则触发时提示配置 (不应默认某家私有模型)
     var isBuiltin: Bool { builtin ?? false }
 
+    /// authMode 归一: manifest 未声明时按 queryAuth 推断 (header 型=读本机凭证)
+    var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
+
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -42,7 +48,8 @@ struct ProviderManifest: Codable {
          testPrompt: String? = nil, queryUrl: String? = nil, queryAuth: String? = nil,
          refreshUrl: String? = nil, refreshProtocol: String? = nil, refreshAuth: String? = nil,
          refreshHeader: String? = nil, builtin: Bool? = nil, template: String? = nil,
-         accent: String? = nil, icon: String? = nil, enabled: Bool? = true) {
+         accent: String? = nil, icon: String? = nil, enabled: Bool? = true,
+         authMode: String? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -65,6 +72,7 @@ struct ProviderManifest: Codable {
         self.accent = accent
         self.icon = icon
         self.enabled = enabled
+        self.authMode = authMode
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +99,7 @@ struct ProviderManifest: Codable {
         accent = try c.decodeIfPresent(String.self, forKey: .accent)
         icon = try c.decodeIfPresent(String.self, forKey: .icon)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        authMode = try c.decodeIfPresent(String.self, forKey: .authMode)
     }
 }
 

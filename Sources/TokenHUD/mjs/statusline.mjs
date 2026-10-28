@@ -33,7 +33,8 @@ const C = {
   red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
   cyan: '\x1b[36m', bYellow: '\x1b[93m', bGreen: '\x1b[92m',
   bRed: '\x1b[91m', bCyan: '\x1b[96m', bBlue: '\x1b[94m', bMagenta: '\x1b[95m', bWhite: '\x1b[97m',
-};
+  // 橙色用 256 色: 亮白(bWhite) 在白底主题下不可见, 橙在中/深/浅底都可读
+  orange: '\x1b[38;5;208m',};
 const wrap = (c, s) => (s === '' || s == null) ? '' : `${c}${s}${C.reset}`;
 const dim = (s) => wrap(C.dim, s);
 const SEP = dim(' | ');
@@ -110,6 +111,7 @@ function envColor(env) {
   if (env === 'GPT') return C.bGreen;
   if (env === 'Ollama') return C.bYellow;
   if (env === 'OC-Go') return C.bRed;
+  if (env === 'Cline') return C.orange;
   return C.bWhite;
 }
 

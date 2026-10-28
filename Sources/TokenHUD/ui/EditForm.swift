@@ -105,6 +105,15 @@ struct EditForm: View {
         _config = State(initialValue: c)
     }
 
+    /// 头部模式徽章: 本机登录 / API Key / OAuth
+    private var modeLabel: String {
+        switch typeManifest?.authStyle ?? "apikey" {
+        case "local": return "本机登录 · 凭证由 CLI 维护"
+        case "oauth": return "OAuth 授权"
+        default: return "API Key"
+        }
+    }
+
     var windowTitle: String {
         if isNew, let cs = copySource { return "复制 — \(cs.manifest.fullName)" }
         if isNew, let t = selectedTemplateSlug.flatMap({ engine.template(bySlug: $0) }) {
@@ -124,21 +133,29 @@ struct EditForm: View {
             if isNew { return "添加供应商" }
             return "编辑 — \(prov!.manifest.fullName)"
         }()
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
                 if let prov {
                     ProviderBadge(icon: prov.manifest.icon, label: prov.manifest.label,
-                                  accent: brandColor(prov.manifest.accent), size: 24)
+                                  accent: brandColor(prov.manifest.accent), size: 30)
                 } else if let cs = copySource {
                     ProviderBadge(icon: cs.manifest.icon, label: cs.manifest.label,
-                                  accent: brandColor(cs.manifest.accent), size: 24)
+                                  accent: brandColor(cs.manifest.accent), size: 30)
                 } else if let t = selectedTemplateSlug.flatMap({ engine.template(bySlug: $0) }) {
                     ProviderBadge(icon: t.manifest.icon, label: t.manifest.label,
-                                  accent: brandColor(t.manifest.accent), size: 24)
+                                  accent: brandColor(t.manifest.accent), size: 30)
                 } else {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+                    Image(systemName: "plus.circle.fill").font(.system(size: 24)).foregroundStyle(.secondary)
                 }
-                Text(kindLabel).font(.system(.headline, design: .rounded))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(kindLabel).font(.system(.headline, design: .rounded))
+                    Text(modeLabel)
+                        .font(.caption2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
             labeledField("名称", TextField("如 my-relay / glm-工作", text: $newName)
                 .textFieldStyle(.roundedBorder))
@@ -150,8 +167,6 @@ struct EditForm: View {
                     }
                 }
                 .pickerStyle(.menu).frame(width: 200))
-            }
-            if isNew {
                 Text("脚本型: 凭证/配置固化解析; 通用: url+apikey 查询与触发")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
