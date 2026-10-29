@@ -19,7 +19,7 @@ struct MenuBarView: View {
                 }
             }
             if engine.nodeMissing {
-                Text("node 未找到 — 供应商管理中手动指定").font(.caption).foregroundStyle(.orange)
+                Text("node 未找到 — 设置中心内手动指定").font(.caption).foregroundStyle(.orange)
             }
             Divider()
             panelControls
@@ -39,7 +39,7 @@ struct MenuBarView: View {
                     }
                 }
                 Button { onOpenSettings() } label: {
-                    Label("供应商管理…", systemImage: "slider.horizontal.3")
+                    Label("设置中心…", systemImage: "slider.horizontal.3")
                 }
                 Divider()
                 Button { NSApplication.shared.terminate(nil) } label: {

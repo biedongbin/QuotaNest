@@ -61,7 +61,7 @@ struct FloatingView: View {
         .contextMenu {
             Button("关闭悬浮窗") { controller.toggle() }
             Button("立刻刷新") { onRefreshAll() }
-            Button("供应商管理…") { onOpenSettings() }
+            Button("设置中心…") { onOpenSettings() }
             Divider()
             Button("退出") { onQuit() }
         }

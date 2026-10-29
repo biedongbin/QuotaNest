@@ -216,13 +216,48 @@ struct RefreshTriggerTests {
     }
 
     @Test func scheduleTimeFormat() {
-        // 与 EditForm.isValidScheduleTime 一致: HH:MM 24h 制
-        #expect(EditForm.isValidScheduleTime("09:00"))
-        #expect(EditForm.isValidScheduleTime("23:59"))
-        #expect(!EditForm.isValidScheduleTime("9:00"))   // 非 2 位
-        #expect(!EditForm.isValidScheduleTime("24:00"))  // 时越界
-        #expect(!EditForm.isValidScheduleTime("09:60"))  // 分越界
-        #expect(!EditForm.isValidScheduleTime("abc"))
-        #expect(!EditForm.isValidScheduleTime(""))
+        // 与 SettingsValidation.isValidTime 一致: HH:MM 24h 制
+        #expect(SettingsValidation.isValidTime("09:00"))
+        #expect(SettingsValidation.isValidTime("23:59"))
+        #expect(!SettingsValidation.isValidTime("9:00"))   // 非 2 位
+        #expect(!SettingsValidation.isValidTime("24:00"))  // 时越界
+        #expect(!SettingsValidation.isValidTime("09:60"))  // 分越界
+        #expect(!SettingsValidation.isValidTime("abc"))
+        #expect(!SettingsValidation.isValidTime(""))
+    }
+
+    @Test func settingsValidationRules() {
+        // URL: 仅 http/https + 非空 host, 拒绝空白/控制字符/百分号 host
+        #expect(SettingsValidation.isValidURL("https://api.example.com/v1"))
+        #expect(SettingsValidation.isValidURL("http://127.0.0.1:8080"))
+        #expect(!SettingsValidation.isValidURL("ftp://api.example.com"))
+        #expect(!SettingsValidation.isValidURL("api.example.com"))
+        #expect(!SettingsValidation.isValidURL("https://"))
+        #expect(!SettingsValidation.isValidURL("https://exa mple.com"))
+        #expect(!SettingsValidation.isValidURL("https://exa\tmple.com"))
+        #expect(!SettingsValidation.isValidURL("https://exa%20mple.com"))
+
+        // 配置: 名称/key 必填; 内置不校 url; 自定义必校
+        var e = SettingsValidation.configErrors(name: " ", key: "", url: "",
+                                                authStyle: "apikey", builtin: false)
+        #expect(e["name"] != nil && e["key"] != nil && e["url"] != nil)
+        e = SettingsValidation.configErrors(name: "a", key: "k", url: "",
+                                           authStyle: "apikey", builtin: true)
+        #expect(e.isEmpty)
+        e = SettingsValidation.configErrors(name: "a", key: "", url: "",
+                                           authStyle: "local", builtin: false)
+        #expect(e.isEmpty)  // 本机凭证型不要求 key/url
+
+        // 定时: 格式 / 重复 / 开启需至少一个
+        #expect(SettingsValidation.triggerErrors(times: [], timeInput: "9:00",
+                                                 triggerEnabled: false, canCall: true)["time"] != nil)
+        #expect(SettingsValidation.triggerErrors(times: ["09:00"], timeInput: "09:00",
+                                                 triggerEnabled: false, canCall: true)["time"] != nil)
+        #expect(SettingsValidation.triggerErrors(times: [], timeInput: "",
+                                                 triggerEnabled: true, canCall: true)["times"] != nil)
+        #expect(SettingsValidation.triggerErrors(times: ["09:00"], timeInput: "",
+                                                 triggerEnabled: true, canCall: true).isEmpty)
+        #expect(SettingsValidation.triggerErrors(times: [], timeInput: "9:00",
+                                                 triggerEnabled: true, canCall: false).isEmpty)
     }
 }

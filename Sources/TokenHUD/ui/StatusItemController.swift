@@ -60,7 +60,7 @@ final class StatusItemController: ObservableObject {
         togglePanel.target = self
         let refresh = NSMenuItem(title: "立刻刷新", action: #selector(refreshAll), keyEquivalent: "")
         refresh.target = self
-        let settings = NSMenuItem(title: "供应商管理…", action: #selector(openSettings), keyEquivalent: "")
+        let settings = NSMenuItem(title: "设置中心…", action: #selector(openSettings), keyEquivalent: "")
         settings.target = self
         let quit = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -115,14 +115,15 @@ final class StatusItemController: ObservableObject {
     }
 }
 
-// MARK: - 供应商管理窗口 (独立 NSWindow, 替代 openWindow: 不依赖 SwiftUI scene)
+// MARK: - 设置中心窗口 (单例 NSWindow, 内容 = SettingsCenterView)
 
 @MainActor
-final class SettingsWindowManager {
+final class SettingsWindowManager: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowManager()
     private var window: NSWindow?
-    /// App init 时注入内容工厂 (engine/URL 等在 App 侧)
-    var makeContent: (() -> NSViewController)?
+    private weak var model: SettingsModel?
+    /// App init 时注入 (engine / 路径在 App 侧)
+    var makeModel: (() -> SettingsModel)?
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
@@ -130,17 +131,26 @@ final class SettingsWindowManager {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        guard let vc = makeContent?() else { return }
-        let w = NSWindow(contentViewController: vc)
-        w.title = "TokenHUD 供应商管理"
+        guard let model = makeModel?() else { return }
+        self.model = model
+        let host = NSHostingController(rootView: SettingsCenterView(model: model, engine: model.engine))
+        let w = NSWindow(contentViewController: host)
+        w.title = "TokenHUD 设置中心"
         w.styleMask.insert(.closable)
         w.styleMask.insert(.miniaturizable)
-        w.styleMask.insert(.resizable) // 自由缩放 (HIG 2.1)
-        w.minSize = NSSize(width: 480, height: 400)
-        w.setFrameAutosaveName("settingsWindow") // 位置/大小记忆 (HIG 2.5)
-        w.center()
+        w.styleMask.insert(.resizable)
+        w.minSize = NSSize(width: 760, height: 480)
+        w.setFrameAutosaveName("settingsWindow")
+        w.delegate = self
         w.isReleasedWhenClosed = false
+        w.center()
         w.makeKeyAndOrderFront(nil)
         window = w
+    }
+
+    /// 关窗: 有未保存草稿先确认 (返回 false 阻止关闭)
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard let model, model.draft != nil else { return true }
+        return model.leaveGuard()
     }
 }

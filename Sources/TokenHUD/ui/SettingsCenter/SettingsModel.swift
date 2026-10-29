@@ -1,0 +1,647 @@
+import Foundation
+import SwiftUI
+import AppKit
+
+// MARK: - 校验 (纯函数, 可测)
+
+enum SettingsValidation {
+    /// 严格 HH:MM (24h, 两位); 9:00 / 24:00 / 09:60 均非法
+    static func isValidTime(_ t: String) -> Bool {
+        let parts = t.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0].count == 2, parts[1].count == 2,
+              let h = Int(parts[0]), let m = Int(parts[1]) else { return false }
+        return (0...23).contains(h) && (0...59).contains(m)
+    }
+
+    /// 有效 http(s) URL: scheme 限 http/https, host 非空且不含空白/百分号
+    static func isValidURL(_ s: String) -> Bool {
+        guard !s.isEmpty,
+              s.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              s.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7F }),
+              let u = URL(string: s),
+              let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = u.host, !host.isEmpty,
+              !host.contains("%"), !host.contains(" ")
+        else { return false }
+        return true
+    }
+
+    /// 配置校验: key 为字段名 (name/key/url)
+    static func configErrors(name: String, key: String, url: String,
+                             authStyle: String, builtin: Bool) -> [String: String] {
+        var e: [String: String] = [:]
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { e["name"] = "账号名称不能为空" }
+        guard authStyle == "apikey" else { return e }
+        if key.trimmingCharacters(in: .whitespaces).isEmpty { e["key"] = "API Key 不能为空" }
+        if !builtin {
+            let u = url.trimmingCharacters(in: .whitespaces)
+            if u.isEmpty {
+                e["url"] = "查询地址不能为空"
+            } else if !isValidURL(u) {
+                e["url"] = "地址必须是有效的 http(s) URL（含主机名）"
+            }
+        }
+        return e
+    }
+
+    /// 定时校验: 待添加输入 + 已存在时间点 + 开启时至少一个
+    static func triggerErrors(times: [String], timeInput: String,
+                              triggerEnabled: Bool, canCall: Bool) -> [String: String] {
+        guard canCall else { return [:] }
+        var e: [String: String] = [:]
+        let pending = timeInput.trimmingCharacters(in: .whitespaces)
+        if !pending.isEmpty, !isValidTime(pending) {
+            e["time"] = "时间必须是严格 HH:MM，例如 09:00；9:00 不合法"
+        } else if !pending.isEmpty, times.contains(pending) {
+            e["time"] = "此时间点已存在，请勿重复添加"
+        }
+        if times.contains(where: { !isValidTime($0) }) { e["times"] = "已有时间点格式错误，请移除后重填" }
+        if Set(times).count != times.count { e["times"] = "时间点不可重复" }
+        if triggerEnabled && times.isEmpty && pending.isEmpty {
+            e["times"] = "开启模型定时调用时至少需要一个时间点"
+        }
+        return e
+    }
+}
+
+// MARK: - 草稿
+
+/// 草稿值 (可比较 → dirty 判定)
+struct DraftValues: Equatable {
+    var name = ""
+    var url = ""
+    var key = ""
+    var model = ""
+    var prompt = ""
+    var proto = "openai"
+    var autoQuery = true
+    var autoTrigger = false
+    var times: [String] = []
+}
+
+struct Draft: Equatable {
+    /// nil = 新建
+    var slug: String?
+    /// 能力来源模板 slug (bundle); nil = 通用自定义
+    var template: String?
+    var isNew: Bool
+    var values: DraftValues
+    /// 进入草稿时的原值 (dirty 判据)
+    var base: DraftValues
+    var timeInput = ""
+
+    var dirty: Bool { values != base }
+}
+
+// MARK: - 账号模型
+
+struct AccountRow: Identifiable {
+    let plugin: PluginProvider
+    let state: ProviderState?
+    let autoQuery: Bool
+
+    var id: String { plugin.slug }
+    var name: String { plugin.manifest.fullName }
+    /// 有 queryUrl = 可查额度 (GPT/Cline 也有); 脚本型实例由 fetch.sh 直查, 由 cacheFile 声明
+    var canQuery: Bool { plugin.manifest.queryUrl != nil || plugin.manifest.cacheFile != nil }
+    /// 有 refreshUrl = 可定时调用
+    var canCall: Bool { plugin.manifest.refreshUrl != nil }
+    /// 模板实例 = 内置 (地址锁定)
+    var builtin: Bool { plugin.manifest.template != nil }
+    var authStyle: String { plugin.manifest.authStyle }
+    var authLabel: String {
+        switch authStyle {
+        case "apikey": return "API Key"
+        case "oauth": return "授权登录 · OAuth"
+        default: return "授权登录"
+        }
+    }
+
+    /// 列表状态点: (色, 文案)
+    var status: (Color, String) {
+        if !autoQuery { return (Palette.warn, "自动查询关") }
+        guard let c = state?.cache else { return (Palette.muted, "未查询") }
+        if c.error != nil { return (Palette.danger, "异常") }
+        return (Palette.ok, "正常")
+    }
+}
+
+/// 模板目录项 (bundle 模板 + 两个通用兼容项)
+struct TemplateChoice: Identifiable {
+    let id: String          // bundle slug / "generic-openai" / "generic-anthropic"
+    let label: String
+    let detail: String
+    let tag: String
+    let authStyle: String
+    let manifest: ProviderManifest?   // nil = 通用自定义
+    let proto: String?
+}
+
+// MARK: - 模型
+
+@MainActor
+final class SettingsModel: ObservableObject {
+    enum Tab: String, CaseIterable, Identifiable {
+        case quota, config, trigger
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .quota: return "额度"
+            case .config: return "配置"
+            case .trigger: return "自动触发"
+            }
+        }
+    }
+
+    struct Toast: Equatable {
+        let text: String
+        let isError: Bool
+    }
+
+    let engine: DataEngine
+    let hudDir: URL
+    let userDir: URL
+    let settingsURL: URL
+    let bundleDir: URL?
+
+    @Published var search = ""
+    @Published var selected: String?
+    @Published var tab: Tab = .quota
+    @Published var showingTemplates = false
+    @Published var draft: Draft?
+    @Published var errors: [String: String] = [:]
+    @Published var topError = ""
+    @Published var running: Set<String> = []
+    @Published var toast: Toast?
+    @Published var importOpen = false
+    /// 每账号最近一次手动操作结果 (耗时/结果)
+    @Published var lastRun: [String: (ok: Bool, ms: Int, at: Date)] = [:]
+
+    private var toastTask: Task<Void, Never>?
+    /// 导入 sheet 的状态源 (跨视图刷新保持; 关窗后丢弃)
+    lazy var importer = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
+
+    init(engine: DataEngine, hudDir: URL, userDir: URL, settingsURL: URL, bundleDir: URL?) {
+        self.engine = engine
+        self.hudDir = hudDir
+        self.userDir = userDir
+        self.settingsURL = settingsURL
+        self.bundleDir = bundleDir
+        self.selected = engine.allPlugins.first?.slug
+    }
+
+    // MARK: 派生
+
+    var accounts: [AccountRow] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return engine.allPlugins
+            .filter { p in
+                q.isEmpty || p.manifest.fullName.lowercased().contains(q)
+                    || p.manifest.label.lowercased().contains(q)
+            }
+            .map { p in
+                AccountRow(plugin: p,
+                           state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
+                           autoQuery: !engine.disabledSlugs.contains(p.slug))
+            }
+    }
+
+    /// 左栏分组 (API Key / 授权登录)
+    var grouped: [(String, [AccountRow])] {
+        let all = accounts
+        return [("API Key", all.filter { $0.authStyle == "apikey" }),
+                ("授权登录", all.filter { $0.authStyle != "apikey" })]
+            .filter { !$0.1.isEmpty }
+    }
+
+    func row(_ slug: String?) -> AccountRow? {
+        guard let slug, let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return nil }
+        return AccountRow(plugin: p,
+                          state: engine.states.first { $0.slug == slug } ?? cachedState(for: p),
+                          autoQuery: !engine.disabledSlugs.contains(slug))
+    }
+
+    /// 关闭自动查询后账号不在 states 里, 但缓存文件仍在 → 直接读盘 (手动查询结果照常显示)
+    private func cachedState(for p: PluginProvider) -> ProviderState? {
+        let path = DataEngine.cachePath(for: p, hudDir: hudDir)
+        guard let data = try? Data(contentsOf: path),
+              let cache = try? JSONDecoder().decode(UsageCache.self, from: data) else { return nil }
+        return ProviderState(slug: p.slug, manifest: p.manifest, cache: cache,
+                             isStale: !HUDFmt.isFresh(cache, interval: p.manifest.interval,
+                                                      now: Date().timeIntervalSince1970 * 1000))
+    }
+
+    var current: AccountRow? { row(selected) }
+
+    var choices: [TemplateChoice] {
+        let builtin = engine.templates.map { t -> TemplateChoice in
+            let queries = t.manifest.queryUrl != nil || t.manifest.cacheFile != nil
+            return TemplateChoice(id: t.slug, label: t.manifest.fullName,
+                                  detail: queries ? "内置 · 地址锁定" : "内置 · 仅监控",
+                                  tag: t.manifest.authStyle == "apikey" ? "API Key" : "本机 CLI",
+                                  authStyle: t.manifest.authStyle, manifest: t.manifest,
+                                  proto: t.manifest.refreshProtocol)
+        }
+        return builtin + [
+            TemplateChoice(id: "generic-openai", label: "通用 OpenAI 兼容", detail: "自定义 · 可改地址",
+                           tag: "API Key", authStyle: "apikey", manifest: nil, proto: "openai"),
+            TemplateChoice(id: "generic-anthropic", label: "通用 Anthropic 兼容", detail: "自定义 · 可改地址",
+                           tag: "API Key", authStyle: "apikey", manifest: nil, proto: "anthropic"),
+        ]
+    }
+
+    /// 当前草稿的能力来源 manifest
+    func draftManifest() -> ProviderManifest? {
+        guard let d = draft else { return nil }
+        if let t = d.template { return engine.template(bySlug: t)?.manifest }
+        return nil
+    }
+
+    func draftCanCall() -> Bool { draftManifest()?.refreshUrl != nil }
+    func draftBuiltin() -> Bool { draft?.template != nil }
+    func draftAuthStyle() -> String { draftManifest()?.authStyle ?? "apikey" }
+
+    /// 模板 auth-template.json 的 apiUrl (脚本型模板的查询地址事实源)
+    private func templateAuthURL(_ slug: String) -> String {
+        guard let t = engine.template(bySlug: slug),
+              let data = try? Data(contentsOf: t.dir.appendingPathComponent("auth-template.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return "" }
+        return obj["apiUrl"] as? String ?? ""
+    }
+
+    // MARK: 草稿动作
+
+    func selectAccount(_ slug: String) {
+        guard leaveGuard() else { return }
+        draft = nil; errors = [:]; topError = ""
+        selected = slug
+        showingTemplates = false
+        tab = .quota
+    }
+
+    func openTemplates() {
+        guard leaveGuard() else { return }
+        clearDraft()
+        showingTemplates = true
+    }
+
+    func startEdit() {
+        guard let row = current else { return }
+        let p = row.plugin
+        let cfg = readConfig(p)
+        let v = DraftValues(name: p.manifest.fullName,
+                            url: p.manifest.queryUrl ?? cfg.queryUrl,
+                            key: cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey,
+                            model: cfg.testModel.isEmpty ? p.manifest.refreshModel : cfg.testModel,
+                            prompt: cfg.testPrompt,
+                            proto: cfg.refreshProtocol,
+                            autoQuery: !engine.disabledSlugs.contains(p.slug),
+                            autoTrigger: !engine.triggerDisabledSlugs.contains(p.slug)
+                                && p.manifest.refreshUrl != nil,
+                            times: cfg.scheduleTimes)
+        draft = Draft(slug: p.slug, template: p.manifest.template, isNew: false, values: v, base: v)
+        errors = [:]; topError = ""
+    }
+
+    func pickTemplate(_ choice: TemplateChoice) {
+        guard leaveGuard() else { return }
+        let m = choice.manifest
+        // 脚本型模板的查询地址在 auth 模板的 apiUrl 里, 只读展示用
+        let urlHint = m?.queryUrl ?? templateAuthURL(choice.id)
+        let v = DraftValues(name: (m?.fullName ?? choice.label) + " 新账号",
+                            url: urlHint,
+                            key: "",
+                            model: m?.testModel ?? "",
+                            prompt: m?.testPrompt ?? "回复 OK 即视为连通。",
+                            proto: m?.refreshProtocol ?? choice.proto ?? "openai",
+                            autoQuery: true,
+                            autoTrigger: false,
+                            times: [])
+        draft = Draft(slug: nil, template: choice.manifest.map { _ in choice.id }, isNew: true,
+                      values: v, base: DraftValues())
+        errors = [:]; topError = ""
+        showingTemplates = false
+        tab = .config
+    }
+
+    /// 取消草稿 (未保存改动先确认)
+    func cancelEdit() {
+        guard leaveGuard() else { return }
+        let wasNew = draft?.isNew ?? false
+        clearDraft()
+        if wasNew {
+            showingTemplates = true
+        } else {
+            tab = .config
+        }
+        flash("草稿已取消", error: false)
+    }
+
+    func addTime() {
+        guard var d = draft else { return }
+        let t = d.timeInput.trimmingCharacters(in: .whitespaces)
+        guard SettingsValidation.isValidTime(t) else {
+            errors["time"] = "请使用严格的 HH:MM 格式，例如 09:00；9:00 不合法"
+            topError = errors["time"] ?? ""
+            return
+        }
+        guard !d.values.times.contains(t) else {
+            errors["time"] = "此时间点已存在，请勿重复添加"
+            topError = errors["time"] ?? ""
+            return
+        }
+        d.values.times.append(t)
+        d.values.times.sort()
+        d.timeInput = ""
+        errors["time"] = nil; errors["times"] = nil
+        topError = ""
+        draft = d
+        flash("已加入草稿：\(t)", error: false)
+    }
+
+    func removeTime(at index: Int) {
+        guard var d = draft, d.values.times.indices.contains(index) else { return }
+        let removed = d.values.times.remove(at: index)
+        draft = d
+        flash("已从草稿移除 \(removed)", error: false)
+    }
+
+    func save() {
+        guard let d = draft else { return }
+        var errs = SettingsValidation.configErrors(
+            name: d.values.name, key: d.values.key, url: d.values.url,
+            authStyle: draftAuthStyle(), builtin: draftBuiltin())
+        let triggerErrs = SettingsValidation.triggerErrors(
+            times: d.values.times, timeInput: d.timeInput,
+            triggerEnabled: d.values.autoTrigger, canCall: draftCanCall())
+        errs.merge(triggerErrs) { a, _ in a }
+        errors = errs
+        topError = errs.values.sorted().joined(separator: "；")
+        guard errs.isEmpty else {
+            if !d.isNew { tab = errs["time"] != nil || errs["times"] != nil ? .trigger : .config }
+            return
+        }
+        // 待添加时间点在保存时并入
+        var values = d.values
+        let pending = d.timeInput.trimmingCharacters(in: .whitespaces)
+        if draftCanCall(), !pending.isEmpty {
+            values.times.append(pending)
+            values.times.sort()
+        }
+        do {
+            let slug = d.isNew ? try create(values: values, draft: d)
+                               : try update(values: values, draft: d)
+            engine.reloadRegistry()
+            clearDraft()
+            showingTemplates = false
+            selected = slug
+            tab = .quota
+            flash("已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
+            Task { await engine.forceRefresh(slug: slug) }
+        } catch {
+            topError = "保存失败：\(error.localizedDescription)"
+            flash("保存失败：\(error.localizedDescription)", error: true)
+        }
+    }
+
+    // MARK: 读/写
+
+    func readConfig(_ p: PluginProvider) -> ProviderConfig {
+        guard let af = authURL(p) else { return ProviderConfig() }
+        return ProviderConfigStore.read(authFile: af, manifest: p.manifest)
+    }
+
+    func authURL(_ p: PluginProvider) -> URL? {
+        if let af = p.manifest.authFile { return PluginGenerator.expandPath(af) }
+        return hudDir.appendingPathComponent(".\(p.slug)-usage-auth.json")
+    }
+
+    private func create(values: DraftValues, draft d: Draft) throws -> String {
+        let name = values.name.trimmingCharacters(in: .whitespaces)
+        // 凭据型模板: 空 Key 由校验已挡; 此处只保证落盘不写入空替换
+        let base = PluginGenerator.slugify(name)
+        let existing = ProviderRegistry.load(bundleDir: bundleDir, userDir: userDir).plugins.map(\.slug)
+        var slug = base
+        var n = 2
+        while existing.contains(slug) || FileManager.default.fileExists(
+            atPath: userDir.appendingPathComponent(slug).path) {
+            slug = "\(base)-\(n)"; n += 1
+        }
+        var cfg = ProviderConfig()
+        cfg.queryUrl = values.url
+        cfg.queryKey = values.key
+        cfg.refreshKey = values.key
+        cfg.testModel = values.model
+        cfg.testPrompt = values.prompt
+        cfg.refreshProtocol = values.proto
+        cfg.scheduleTimes = values.times
+        if let tslug = d.template, let tmpl = engine.template(bySlug: tslug) {
+            let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: name,
+                                                           into: userDir, hudDir: hudDir)
+            guard let af = manifest.authFile.map(PluginGenerator.expandPath) else { return slug }
+            var merged = ProviderConfigStore.read(authFile: af, manifest: manifest)
+            merged.queryKey = cfg.queryKey
+            merged.refreshKey = cfg.refreshKey
+            merged.testModel = cfg.testModel
+            merged.testPrompt = cfg.testPrompt
+            merged.scheduleTimes = cfg.scheduleTimes
+            try ProviderConfigStore.write(merged, manifest: manifest, to: af)
+            applyToggles(slug: slug, values: values, manifest: manifest)
+            return slug
+        }
+        // 通用自定义: manifest + one-api 脚本 + auth
+        let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
+        let manifest = PluginGenerator.customManifest(name: name, config: cfg, authFile: authPath)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
+                                        script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
+        let af = PluginGenerator.expandPath(authPath)
+        try FileManager.default.createDirectory(at: af.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: af.path) {
+            try ProviderConfigStore.createCustom(slug: slug, to: af)
+        }
+        try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
+        applyToggles(slug: slug, values: values, manifest: manifest)
+        return slug
+    }
+
+    private func update(values: DraftValues, draft d: Draft) throws -> String {
+        guard let slug = d.slug,
+              let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return d.slug ?? "" }
+        let name = values.name.trimmingCharacters(in: .whitespaces)
+        var cfg = readConfig(p)
+        cfg.queryKey = values.key
+        cfg.refreshKey = values.key
+        cfg.queryUrl = values.url
+        cfg.testModel = values.model
+        cfg.testPrompt = values.prompt
+        cfg.scheduleTimes = values.times
+        guard let af = authURL(p) else { throw NSError(domain: "TokenHUD", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "凭证文件路径缺失"]) }
+        if p.manifest.template == nil {
+            // 通用: name/address/protocol 进 manifest, 同步脚本
+            cfg.refreshProtocol = values.proto
+            cfg.refreshUrl = ImportCandidateTriggerURL(values.url, proto: values.proto)
+            cfg.refreshHeader = values.proto == "anthropic"
+                ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
+                : "Authorization: Bearer <key>"
+            let manifest = PluginGenerator.customManifest(
+                name: name, config: cfg,
+                authFile: PluginGenerator.authPath(slug: slug, hudDir: hudDir))
+            try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
+                                            script: PluginGenerator.oneAPIFetchScript(slug: slug),
+                                            into: userDir)
+            try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
+        } else {
+            var m = p.manifest
+            m.displayName = name
+            let script = (try? String(contentsOf: userDir.appendingPathComponent(slug + "/fetch.sh"),
+                                      encoding: .utf8)) ?? ""
+            try PluginGenerator.writePlugin(slug: slug, manifest: m, script: script, into: userDir)
+            try ProviderConfigStore.write(cfg, manifest: m, to: af)
+        }
+        if var m = engine.allPlugins.first(where: { $0.slug == slug })?.manifest {
+            m.displayName = name
+            applyToggles(slug: slug, values: values, manifest: m)
+        } else {
+            applyToggles(slug: slug, values: values, manifest: p.manifest)
+        }
+        return slug
+    }
+
+    private func applyToggles(slug: String, values: DraftValues, manifest: ProviderManifest) {
+        engine.setTracking(slug, enabled: values.autoQuery)
+        let callable = manifest.refreshUrl != nil
+        engine.setTriggerEnabled(slug, enabled: callable && values.autoTrigger)
+    }
+
+    private func ImportCandidateTriggerURL(_ base: String, proto: String) -> String {
+        let b = base.hasSuffix("/") ? String(base.dropLast()) : base
+        if proto == "anthropic" {
+            return b.hasSuffix("/v1") ? b + "/messages" : b + "/v1/messages"
+        }
+        return b.hasSuffix("/v1") ? b + "/chat/completions" : b + "/v1/chat/completions"
+    }
+
+    // MARK: 动作
+
+    func query(_ slug: String) {
+        guard let row = row(slug), row.canQuery else {
+            flash("该账号没有额度查询地址（manifest 未声明 queryUrl）", error: true)
+            return
+        }
+        guard !running.contains(slug) else { return }
+        running.insert(slug)
+        let started = Date()
+        Task {
+            let outcome = await engine.forceRefresh(slug: slug)
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            running.remove(slug)
+            lastRun[slug] = (outcome.ok, ms, Date())
+            flash(outcome.ok ? "额度已更新（\(ms) ms）" : "查询失败：\(outcome.reason)", error: !outcome.ok)
+            if outcome.ok { engine.reloadRegistry() }
+        }
+    }
+
+    func testCall(_ slug: String) {
+        guard let row = row(slug), row.canCall else {
+            flash("该账号的调用协议未适配，无法发送测试调用", error: true)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "发送一次测试调用？"
+        alert.informativeText = "将消耗 \(row.plugin.manifest.fullName) 的额度，使用 \(row.plugin.manifest.refreshProtocol ?? "openai") 协议；调用结果不代表 5 小时窗口会重置。"
+        alert.addButton(withTitle: "发送测试")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .informational
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard !running.contains(slug) else { return }
+        running.insert(slug)
+        flash("测试调用已发送…", error: false)
+        let started = Date()
+        Task {
+            var err: String?
+            if let af = authURL(row.plugin), let m = engine.allPlugins.first(where: { $0.slug == slug })?.manifest {
+                err = await RefreshTrigger.trigger(manifest: m, authFile: af)
+            } else {
+                err = "凭证文件缺失"
+            }
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            running.remove(slug)
+            lastRun[slug] = (err == nil, ms, Date())
+            flash(err == nil ? "测试调用成功（\(ms) ms）" : "测试调用失败：\(err ?? "")", error: err != nil)
+        }
+    }
+
+    func delete(_ slug: String) {
+        guard let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "删除 \(p.manifest.fullName)?"
+        alert.informativeText = "将移除插件目录, 不可撤销"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if p.manifest.template != nil { engine.markTemplateDeleted(slug) }
+        try? PluginGenerator.removePlugin(slug: slug, in: userDir)
+        if let af = authURL(p) { try? FileManager.default.trashItem(at: af, resultingItemURL: nil) }
+        draft = nil
+        selected = engine.allPlugins.first { $0.slug != slug }?.slug
+        engine.reloadRegistry()
+        flash("已删除 \(p.manifest.fullName)", error: false)
+    }
+
+    func syncHUD() {
+        do {
+            engine.installScripts()
+            let plugins = engine.allPlugins
+            let builtin = Set(plugins.filter { $0.manifest.template != nil }.map { $0.manifest.name })
+            let new = HUDSync.envsDict(plugins: plugins, hudDir: hudDir, builtinNames: builtin)
+            let envsURL = hudDir.appendingPathComponent("envs.json")
+            let existing = (try? Data(contentsOf: envsURL))
+                .flatMap { try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) } ?? [:]
+            try HUDSync.writeEnvs(HUDSync.mergeEnvs(existing: existing, new: new, builtinNames: builtin),
+                                  to: envsURL)
+            let keys = plugins.filter { $0.manifest.isEnabled && !engine.disabledSlugs.contains($0.slug) }
+                .map(\.manifest.name)
+            let settings = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL))) as? [String: Any]
+            let current = (settings?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String
+            try HUDSync.patchSettings(settingsURL: settingsURL,
+                                      accountEnvs: HUDSync.mergeAccountEnvs(current: current, keys: keys),
+                                      statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)
+            flash("已写入 Claude Code HUD（下次渲染生效）", error: false)
+        } catch {
+            flash("写入 HUD 失败：\(error.localizedDescription)", error: true)
+        }
+    }
+
+    // MARK: 草稿守卫
+
+    private func clearDraft() {
+        draft = nil; errors = [:]; topError = ""
+    }
+
+    /// dirty 则弹确认; 返回 true = 可继续
+    func leaveGuard() -> Bool {
+        guard let d = draft, d.dirty || d.isNew else { return true }
+        let alert = NSAlert()
+        alert.messageText = "放弃未保存的修改？"
+        alert.informativeText = "当前草稿尚未保存，离开后变更将丢失。"
+        alert.addButton(withTitle: "放弃修改")
+        alert.addButton(withTitle: "继续编辑")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    func flash(_ text: String, error: Bool) {
+        toast = Toast(text: text, isError: error)
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.toast = nil
+        }
+    }
+}

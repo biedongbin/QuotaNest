@@ -25,13 +25,13 @@ struct TokenHUDApp: App {
 
         // 自绘状态栏 (NSStatusItem): 左键面板 + 右键菜单; 替代 MenuBarExtra (右键被系统拦截)
         _ = StatusItemController(engine: e, panelCtrl: pc)
-        // 供应商管理窗口工厂 (单例 NSWindow, 全局唯一)
-        SettingsWindowManager.shared.makeContent = {
-            NSHostingController(rootView: ProviderManagerView(
-                engine: e, hudDir: hud, userDir: user,
-                settingsURL: URL(fileURLWithPath: home + "/.claude/settings.json"),
-                bundleDir: bundle))
+        // 设置中心窗口 (单例 NSWindow, 全局唯一)
+        let makeModel = {
+            SettingsModel(engine: e, hudDir: hud, userDir: user,
+                          settingsURL: URL(fileURLWithPath: home + "/.claude/settings.json"),
+                          bundleDir: bundle)
         }
+        SettingsWindowManager.shared.makeModel = makeModel
 
         if ProcessInfo.processInfo.environment["TOKENHUD_AUTO_TOGGLE"] == "1" {
             Task { @MainActor in
@@ -79,27 +79,43 @@ struct TokenHUDApp: App {
         Settings { EmptyView() }
     }
 
-    /// 离屏渲染三版布局 (不需要屏幕录制权限)
+    /// 离屏渲染设置中心 5 个状态 (不需要屏幕录制权限)
     @MainActor
     static func renderSnapshots(engine: DataEngine, hudDir: URL, userDir: URL,
                                 bundleDir: URL?, to dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let settingsURL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/settings.json")
-        var hosts: [NSWindow] = []
-        for l in ManagerLayout.allCases {
-            let view = ProviderManagerView(engine: engine, hudDir: hudDir, userDir: userDir,
-                                           settingsURL: settingsURL, bundleDir: bundleDir,
-                                           layoutOverride: l)
+        // 导入 sheet 用持久模型: 同步扫描真实源后参与离屏渲染
+        let importModel = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
+        let shots: [(String, RenderScript)] = [
+            ("01-quota", RenderScript(mode: .quota, slug: nil, templateID: nil)),
+            ("02-config", RenderScript(mode: .config, slug: nil, templateID: nil)),
+            ("03-trigger", RenderScript(mode: .trigger, slug: nil, templateID: nil)),
+            ("04-templates", RenderScript(mode: .templates, slug: nil, templateID: nil)),
+            ("05-import", RenderScript(mode: .importer, slug: nil, templateID: nil, importModel: importModel)),
+            ("06-edit", RenderScript(mode: .edit, slug: nil, templateID: nil)),
+            ("07-create", RenderScript(mode: .create, slug: nil, templateID: "glm")),
+        ]
+        var hosts: [NSWindow] = []   // 存活到截图完成 (否则视图被释放)
+        for (name, script) in shots {
+            let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
+                                      settingsURL: settingsURL, bundleDir: bundleDir)
+            // 额度 tab 优先渲染有数据的账号
+            if script.mode == .quota {
+                model.selected = engine.states.first(where: { $0.cache?.fiveHour != nil })?.slug
+                    ?? engine.allPlugins.first?.slug
+            }
+            let view = SettingsCenterView(model: model, engine: engine, renderScript: script)
             let host = NSHostingView(rootView: view)
-            host.frame = NSRect(x: 0, y: 0, width: 880, height: 580)
+            host.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
             // 真窗口: List/Picker/Toggle 等 AppKit 控件只在 window 上下文布局
             let win = NSWindow(contentRect: host.frame, styleMask: [.titled, .resizable],
                                backing: .buffered, defer: false)
             win.contentView = host
-            win.appearance = NSAppearance(named: .aqua) // 白底主题验收
+            win.appearance = NSAppearance(named: .aqua) // 浅色主题验收
             win.orderFrontRegardless()
-            hosts.append(win)                            // 存活到截图完成 (否则视图被释放)
-            for _ in 0..<8 {
+            hosts.append(win)
+            for _ in 0..<10 {
                 host.layoutSubtreeIfNeeded()
                 RunLoop.current.run(until: Date().addingTimeInterval(0.15))
             }
@@ -121,10 +137,7 @@ struct TokenHUDApp: App {
             guard let cg = ctx.makeImage(),
                   let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
             else { continue }
-            guard let cg = ctx.makeImage(),
-                  let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
-            else { continue }
-            try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(l.rawValue).png"))
+            try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
         }
     }
 }
