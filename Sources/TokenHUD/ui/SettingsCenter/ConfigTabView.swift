@@ -9,6 +9,14 @@ struct ConfigTabView: View {
     private var m: ProviderManifest { row.plugin.manifest }
     private var cfg: ProviderConfig { model.readConfig(row.plugin) }
 
+    private var addressRows: [AddressRow] {
+        // 脚本型模板把查询地址放在 auth-template 的 apiUrl, 读盘后由 cfg.queryUrl 兜底
+        let query = m.queryUrl ?? (cfg.queryUrl.isEmpty ? nil : cfg.queryUrl)
+        return AddressPresentation.rows(generic: !row.builtin, queryUrl: query,
+                                        refreshUrl: m.refreshUrl,
+                                        configUrl: cfg.queryUrl)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             CardBox {
@@ -35,10 +43,13 @@ struct ConfigTabView: View {
                             }
                         }
                         KeyValueRow("授权方式") { Text(row.authLabel) }
-                        KeyValueRow("查询地址", mono: true) {
-                            HStack(spacing: 6) {
-                                Text(m.queryUrl ?? (cfg.queryUrl.isEmpty ? "未适配" : cfg.queryUrl))
-                                if row.builtin, m.queryUrl != nil { BadgeText(text: "锁定", locked: true) }
+                        // queryUrl 在模板里是额度查询接口, 不是服务根地址 — 标签按语义给
+                        ForEach(Array(addressRows.enumerated()), id: \.offset) { _, a in
+                            KeyValueRow(a.label, mono: true) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(a.value)
+                                    Text(a.note).font(Typo.small).foregroundStyle(Palette.muted)
+                                }
                             }
                         }
                         KeyValueRow("调用协议") {
@@ -180,7 +191,7 @@ struct TemplateCatalogView: View {
             CardBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("选择模板").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("选中模板后直接进入同一编辑区，不弹出新窗口。内置供应商地址锁定；通用模板的额度查询尚未适配。")
+                    Text("选中模板后直接进入同一编辑区，不弹出新窗口。内置模板的地址由模板提供，不可修改；通用模板的额度查询尚未适配。")
                         .font(Typo.small).foregroundStyle(Palette.muted)
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                         ForEach(model.choices) { c in

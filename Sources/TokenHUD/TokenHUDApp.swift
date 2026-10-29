@@ -97,9 +97,18 @@ struct TokenHUDApp: App {
             ("07-create", RenderScript(mode: .create, slug: nil, templateID: "glm")),
         ]
         var hosts: [NSWindow] = []   // 存活到截图完成 (否则视图被释放)
+        // 离屏渲染不碰用户真实偏好 (否则截图会改写选中账号与 tab); 每张图独立 suite, 互不串味
+        let forcedSlug = ProcessInfo.processInfo.environment["TOKENHUD_RENDER_SLUG"]
         for (name, script) in shots {
+            let suite = "tokenhud.render.\(name)"
+            UserDefaults.standard.removePersistentDomain(forName: suite) // 每次截图从干净状态开始
             let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
-                                      settingsURL: settingsURL, bundleDir: bundleDir)
+                                      settingsURL: settingsURL, bundleDir: bundleDir,
+                                      defaults: UserDefaults(suiteName: suite) ?? .standard)
+            if script.mode != .quota, let slug = forcedSlug,
+               engine.allPlugins.contains(where: { $0.slug == slug }) {
+                model.selected = slug
+            }
             // 额度 tab 优先渲染有数据的账号
             if script.mode == .quota {
                 model.selected = engine.states.first(where: { $0.cache?.fiveHour != nil })?.slug

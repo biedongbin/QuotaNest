@@ -74,3 +74,57 @@ struct ModelTests {
         #expect(UsageCache.make(body: bad, now: 0) == nil)
     }
 }
+
+/// 真机验收四项修复的纯函数部分
+@Suite
+struct SettingsPersistTests {
+    @Test func windowFrameNeedsPositiveSize() {
+        #expect(!WindowFrameMemory.hasUsableFrame(nil))
+        #expect(!WindowFrameMemory.hasUsableFrame(""))
+        #expect(!WindowFrameMemory.hasUsableFrame("100 100 0 0 0 0 1920 1049 "))
+        #expect(!WindowFrameMemory.hasUsableFrame("100 100"))
+        #expect(WindowFrameMemory.hasUsableFrame("100 100 900 600 0 0 1920 1049 "))
+        // 负原点 (外接屏左侧) 也有效
+        #expect(WindowFrameMemory.hasUsableFrame("-1500 62 900 600 -1920 0 0 1049 "))
+        #expect(WindowFrameMemory.defaultsKey == "NSWindow Frame settingsWindow")
+    }
+
+    @Test func resumeSlugFallsBackWhenMissing() {
+        #expect(SettingsPersist.resumeSlug(saved: "gpt", available: ["cline", "gpt"]) == "gpt")
+        #expect(SettingsPersist.resumeSlug(saved: "gone", available: ["cline", "gpt"]) == "cline")
+        #expect(SettingsPersist.resumeSlug(saved: nil, available: ["glm"]) == "glm")
+        #expect(SettingsPersist.resumeSlug(saved: "x", available: []) == nil)
+    }
+
+    @Test func resumeTabRejectsInvalid() {
+        #expect(SettingsPersist.resumeTab(saved: "config") == .config)
+        #expect(SettingsPersist.resumeTab(saved: "trigger") == .trigger)
+        #expect(SettingsPersist.resumeTab(saved: "nonsense") == .quota)
+        #expect(SettingsPersist.resumeTab(saved: nil) == .quota)
+    }
+
+    @Test func builtinUsesQuotaQueryLabel() {
+        let rows = AddressPresentation.rows(
+            generic: false, queryUrl: "https://bigmodel.cn/api/monitor/usage/quota/limit",
+            refreshUrl: "https://open.bigmodel.cn/api/anthropic/v1/messages", configUrl: "")
+        #expect(rows.count == 2)
+        #expect(rows[0].label == "额度查询地址")
+        #expect(rows[0].note == AddressPresentation.builtinNote)
+        #expect(rows[1].label == "调用地址")
+        #expect(rows[1].value.contains("/v1/messages"))
+    }
+
+    @Test func scriptTemplateWithoutQueryUrlOmitsAddressRow() {
+        // 脚本型模板查询地址在 auth-template 的 apiUrl, 调用方负责读盘兜底; 纯函数不编造
+        let rows = AddressPresentation.rows(generic: false, queryUrl: nil, refreshUrl: nil, configUrl: "")
+        #expect(rows.isEmpty)
+    }
+
+    @Test func genericUsesServiceAddressLabel() {
+        let rows = AddressPresentation.rows(generic: true, queryUrl: nil, refreshUrl: nil,
+                                            configUrl: "https://api.example.com")
+        #expect(rows.count == 1)
+        #expect(rows[0].label == "服务地址")
+        #expect(rows[0].value == "https://api.example.com")
+    }
+}

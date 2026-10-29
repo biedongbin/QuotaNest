@@ -15,11 +15,6 @@ struct QuotaTabView: View {
                         Text("最近查询：\(lastTimeText)").font(Typo.small).foregroundStyle(Palette.muted)
                     }
                     Spacer()
-                    if row.canQuery {
-                        Button(model.running.contains(row.id) ? "查询中…" : "查询额度") { model.query(row.id) }
-                            .barButton(.primary)
-                            .disabled(model.running.contains(row.id))
-                    }
                 }
                 .padding(.bottom, 12)
 

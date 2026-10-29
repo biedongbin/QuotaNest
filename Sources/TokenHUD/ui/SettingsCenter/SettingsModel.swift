@@ -106,7 +106,7 @@ struct AccountRow: Identifiable {
     var canQuery: Bool { plugin.manifest.queryUrl != nil || plugin.manifest.cacheFile != nil }
     /// 有 refreshUrl = 可定时调用
     var canCall: Bool { plugin.manifest.refreshUrl != nil }
-    /// 模板实例 = 内置 (地址锁定)
+    /// 模板实例 = 内置 (地址由模板提供)
     var builtin: Bool { plugin.manifest.template != nil }
     var authStyle: String { plugin.manifest.authStyle }
     var authLabel: String {
@@ -137,6 +137,55 @@ struct TemplateChoice: Identifiable {
     let proto: String?
 }
 
+// MARK: - 跨重启记忆 (纯函数, 可测)
+
+enum SettingsPersist {
+    static let selectedKey = "tokenhud.settings.selected"
+    static let tabKey = "tokenhud.settings.tab"
+
+    /// 保存的 slug 仍存在则沿用, 否则回落第一个账号
+    static func resumeSlug(saved: String?, available: [String]) -> String? {
+        guard let saved, available.contains(saved) else { return available.first }
+        return saved
+    }
+
+    static func resumeTab(saved: String?) -> SettingsModel.Tab {
+        saved.flatMap(SettingsModel.Tab.init(rawValue:)) ?? .quota
+    }
+}
+
+// MARK: - 地址行语义 (纯函数, 可测)
+
+/// manifest.queryUrl 在模板里是**额度查询接口**, 不是服务根地址; 两者不能共用一行一标签。
+struct AddressRow: Equatable {
+    let label: String
+    let value: String
+    let note: String
+}
+
+enum AddressPresentation {
+    static let builtinNote = "内置供应商，此项由模板提供，不可修改"
+
+    /// 模板实例有 queryUrl → 额度查询地址 (模板提供); 通用自定义 → 服务地址 (用户填); 有调用端点再加一行
+    static func rows(generic: Bool, queryUrl: String?, refreshUrl: String?,
+                     configUrl: String) -> [AddressRow] {
+        var out: [AddressRow] = []
+        if generic {
+            out.append(AddressRow(label: "服务地址",
+                                  value: configUrl.isEmpty ? "未填写" : configUrl,
+                                  note: "兼容 OpenAI / Anthropic 的服务根地址，用于额度查询与测试调用。"))
+        } else if let q = queryUrl, !q.isEmpty {
+            // 脚本型模板 manifest 无 queryUrl: 调用方读 auth 的 apiUrl 兜底
+            out.append(AddressRow(label: "额度查询地址", value: q, note: builtinNote))
+        }
+        if let r = refreshUrl, !r.isEmpty {
+            out.append(AddressRow(label: "调用地址", value: r,
+                                  note: "测试调用实际请求的端点，只读。"))
+        }
+        return out
+    }
+}
+
 // MARK: - 模型
 
 @MainActor
@@ -163,10 +212,11 @@ final class SettingsModel: ObservableObject {
     let userDir: URL
     let settingsURL: URL
     let bundleDir: URL?
+    private let defaults: UserDefaults
 
     @Published var search = ""
-    @Published var selected: String?
-    @Published var tab: Tab = .quota
+    @Published var selected: String? { didSet { persistSelection() } }
+    @Published var tab: Tab = .quota { didSet { defaults.set(tab.rawValue, forKey: SettingsPersist.tabKey) } }
     @Published var showingTemplates = false
     @Published var draft: Draft?
     @Published var errors: [String: String] = [:]
@@ -183,13 +233,30 @@ final class SettingsModel: ObservableObject {
     /// 导入 sheet 的状态源 (跨视图刷新保持; 关窗后丢弃)
     lazy var importer = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
 
-    init(engine: DataEngine, hudDir: URL, userDir: URL, settingsURL: URL, bundleDir: URL?) {
+    init(engine: DataEngine, hudDir: URL, userDir: URL, settingsURL: URL, bundleDir: URL?,
+         defaults: UserDefaults = .standard) {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
         self.settingsURL = settingsURL
         self.bundleDir = bundleDir
-        self.selected = engine.allPlugins.first?.slug
+        self.defaults = defaults
+        // 恢上次的账号与 tab; 账号已不存在则回落第一个
+        let slugs = engine.allPlugins.map(\.slug)
+        self.selected = SettingsPersist.resumeSlug(
+            saved: defaults.string(forKey: SettingsPersist.selectedKey), available: slugs)
+        self.tab = SettingsPersist.resumeTab(saved: defaults.string(forKey: SettingsPersist.tabKey))
+        // QA 自检: 打印跨重启恢复结果后退出 (真机验收用, 不参与业务)
+        if ProcessInfo.processInfo.environment["TOKENHUD_DEBUG_SETTINGS"] == "1" {
+            print("SETTINGS RESUME selected=\(self.selected ?? "nil") tab=\(self.tab.rawValue)")
+            exit(0)
+        }
+    }
+
+    /// 选中账号落盘 (nil 不覆盖, 留给回落逻辑)
+    private func persistSelection() {
+        guard let selected else { return }
+        defaults.set(selected, forKey: SettingsPersist.selectedKey)
     }
 
     // MARK: 派生
@@ -239,7 +306,7 @@ final class SettingsModel: ObservableObject {
         let builtin = engine.templates.map { t -> TemplateChoice in
             let queries = t.manifest.queryUrl != nil || t.manifest.cacheFile != nil
             return TemplateChoice(id: t.slug, label: t.manifest.fullName,
-                                  detail: queries ? "内置 · 地址锁定" : "内置 · 只提供额度查询",
+                                  detail: queries ? "内置 · 地址由模板提供" : "内置 · 只提供额度查询",
                                   tag: t.manifest.authStyle == "apikey" ? "API Key" : "本机 CLI",
                                   authStyle: t.manifest.authStyle, manifest: t.manifest,
                                   proto: t.manifest.refreshProtocol)

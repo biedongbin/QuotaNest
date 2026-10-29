@@ -14,6 +14,11 @@ struct DraftFormView: View {
     private var builtin: Bool { model.draftBuiltin() }
     private var canCall: Bool { model.draftCanCall() }
 
+    /// 内置模板的 url 字段装的是额度查询接口 (脚本型取自 auth-template 的 apiUrl), 通用模板才是服务根地址
+    private var urlFieldLabel: String {
+        builtin ? "额度查询地址" : "服务地址"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             notice
@@ -62,7 +67,8 @@ struct DraftFormView: View {
                             BadgeText(text: m?.fullName ?? "通用兼容")
                             BadgeText(text: isAPIKey ? "API Key" : "授权登录", locked: !isAPIKey)
                         }
-                        Text(builtin ? "内置供应商：地址与协议锁定。" : "自定义供应商：可修改地址与调用协议。")
+                        Text(builtin ? "内置供应商：协议与地址由模板提供，只有密钥/模型/时间可改。"
+                                     : "自定义供应商：可修改地址与调用协议。")
                             .font(Typo.small).foregroundStyle(Palette.muted)
                     }
                 }
@@ -91,15 +97,27 @@ struct DraftFormView: View {
                               : "凭证来自本机 CLI，只读展示。")
                     .font(Typo.small).foregroundStyle(Palette.muted)
 
-                field("查询地址", required: false, error: model.errors["url"]) {
+                field(urlFieldLabel, required: false, error: model.errors["url"]) {
                     TextField("https://…", text: bind(\.url))
                         .textFieldStyle(.plain)
                         .font(Typo.mono)
                         .fieldBox(invalid: model.errors["url"] != nil, readonly: builtin)
                         .disabled(builtin)
-                    Text(builtin ? "内置供应商地址锁定，不可修改。"
+                    Text(builtin ? "\(AddressPresentation.builtinNote)；该地址用于查询额度。"
                                  : (m?.queryUrl != nil ? "留空表示不查询该账号的额度。" : "自定义地址需为有效的 http(s) URL。"))
                         .font(Typo.small).foregroundStyle(Palette.muted)
+                }
+
+                if builtin, let r = m?.refreshUrl {
+                    field("调用地址", required: false, error: nil) {
+                        Text(r)
+                            .font(Typo.mono).foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.readonlyField))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
+                        Text("测试调用实际请求的端点，只读。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
+                    }
                 }
 
                 if isAPIKey {

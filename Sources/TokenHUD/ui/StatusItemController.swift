@@ -115,6 +115,25 @@ final class StatusItemController: ObservableObject {
     }
 }
 
+// MARK: - 窗口位置记忆
+
+/// autosave 名与 defaults 键 ("NSWindow Frame <name>") 的判定 (纯函数, 可测)
+enum WindowFrameMemory {
+    static let autosaveName = "settingsWindow"
+    static var defaultsKey: String { "NSWindow Frame \(autosaveName)" }
+
+    /// 保存值格式 "x y w h sx sy sw sh "; 宽高 > 0 才算有效
+    static func hasUsableFrame(_ raw: String?) -> Bool {
+        guard let raw else { return false }
+        let n = raw.split(separator: " ").compactMap { Double($0) }
+        return n.count >= 4 && n[2] > 0 && n[3] > 0
+    }
+
+    static func hasSavedFrame(in defaults: UserDefaults = .standard) -> Bool {
+        hasUsableFrame(defaults.string(forKey: defaultsKey))
+    }
+}
+
 // MARK: - 设置中心窗口 (单例 NSWindow, 内容 = SettingsCenterView)
 
 @MainActor
@@ -140,11 +159,13 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         w.styleMask.insert(.miniaturizable)
         w.styleMask.insert(.resizable)
         w.minSize = NSSize(width: 760, height: 480)
-        w.setFrameAutosaveName("settingsWindow")
+        let restored = WindowFrameMemory.hasSavedFrame()
+        w.setFrameAutosaveName(WindowFrameMemory.autosaveName)
         w.delegate = self
         w.isReleasedWhenClosed = false
-        w.center()
+        // 首次显示后才套记忆 (此时才有屏幕坐标系), 且不覆盖已恢复的原点
         w.makeKeyAndOrderFront(nil)
+        if restored { w.setFrameUsingName(WindowFrameMemory.autosaveName) } else { w.center() }
         window = w
     }
 

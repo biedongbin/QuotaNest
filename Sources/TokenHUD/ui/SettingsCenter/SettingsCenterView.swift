@@ -270,13 +270,13 @@ struct DetailHeader: View {
         }
         guard let row = model.current else { return [] }
         let m = row.plugin.manifest
-        var out = [m.fullName, row.authLabel, row.builtin ? "内置 · 地址锁定" : "自定义"]
+        var out = [m.fullName, row.authLabel, row.builtin ? "内置 · 地址由模板提供" : "自定义"]
         if !row.autoQuery { out.append("自动查询已关闭") }
         return out
     }
 
     private var lockedBadges: Set<String> {
-        var s: Set<String> = ["内置 · 地址锁定", "模板新建", "授权登录"]
+        var s: Set<String> = ["内置 · 地址由模板提供", "模板新建", "授权登录"]
         if let row = model.current, row.builtin { s.insert(row.plugin.manifest.fullName) }
         return s
     }
@@ -292,13 +292,11 @@ struct DetailHeader: View {
             EmptyView()
         } else if let row = model.current {
             HStack(spacing: 8) {
-                if row.canQuery {
+                // 额度页的主操作才放这里; 编辑按钮贴近内容, 由各 tab 卡片头提供
+                if model.tab == .quota, row.canQuery {
                     Button(model.running.contains(row.id) ? "查询中…" : "查询额度") { model.query(row.id) }
                         .barButton(.primary)
                         .disabled(model.running.contains(row.id))
-                }
-                if model.tab == .config || model.tab == .trigger {
-                    Button("编辑") { model.startEdit() }.barButton()
                 }
             }
         }
