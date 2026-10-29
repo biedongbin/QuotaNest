@@ -113,6 +113,57 @@ struct ConfigStoreTests {
         let obj = try readBack(f)
         #expect(obj["scheduleTimes"] == nil) // 清空后字段移除
     }
+
+    // MARK: queryKeyField — 凭证单一事实源 = auth.<field> (cline 形态)
+
+    @Test func writeKeyedFieldWritesTopLevelKey() throws {
+        let f = try writeAuth(#"{"apiKey":"old","headers":{"Authorization":"stale","x-trace":"1"},"other":true}"#)
+        var m = ProviderManifest(name: "Cline", label: "Cline")
+        m.queryAuth = "bearer"
+        m.queryKeyField = "apiKey"
+        var c = ProviderConfig()
+        c.queryKey = "clp_new"
+        try ProviderConfigStore.write(c, manifest: m, to: f)
+        let obj = try readBack(f)
+        #expect(obj["apiKey"] as? String == "clp_new")             // 既有 apiKey 被更新 (非冻结)
+        #expect((obj["headers"] as? [String: Any])?["x-trace"] as? String == "1") // headers 保留
+        #expect(obj["other"] as? Bool == true)                      // 未知字段保留
+        #expect(ProviderConfigStore.read(authFile: f, manifest: m).queryKey == "clp_new")
+    }
+
+    @Test func instantiateThenWriteKeyedField() throws {
+        // 模板实例化 (auth-template 只有空 apiKey) -> 写新 key -> 文件 auth.apiKey == 新值
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("th-keyed-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let tdir = tmp.appendingPathComponent("bundle/cline", isDirectory: true)
+        try FileManager.default.createDirectory(at: tdir, withIntermediateDirectories: true)
+        let tmplManifest = ProviderManifest(name: "Cline", label: "Cline", buckets: [:],
+                                            queryAuth: "bearer", queryKeyField: "apiKey")
+        try JSONEncoder().encode(tmplManifest).write(to: tdir.appendingPathComponent("manifest.json"))
+        try "#!/bin/zsh\n".write(to: tdir.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
+        try #"{"apiKey":"","_note":"keep"}"#
+            .write(to: tdir.appendingPathComponent("auth-template.json"), atomically: true, encoding: .utf8)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+
+        let tmpl = PluginProvider(slug: "cline", manifest: tmplManifest, dir: tdir)
+        let m = try PluginGenerator.instantiate(template: tmpl, slug: "cline-me", name: "Cline-Me",
+                                               into: userDir, hudDir: hudDir)
+        #expect(m.queryKeyField == "apiKey")   // 实例继承模板字段声明
+        let af = PluginGenerator.expandPath(m.authFile!)
+        var c = ProviderConfigStore.read(authFile: af, manifest: m)
+        c.queryKey = "clp_new"
+        try ProviderConfigStore.write(c, manifest: m, to: af)
+
+        let obj = try readBack(af)
+        #expect(obj["apiKey"] as? String == "clp_new")
+        #expect(obj["_note"] as? String == "keep")  // auth 模板未知字段保留
+        #expect(obj["headers"] == nil)              // 不凭空造 headers.Authorization
+        #expect(ProviderConfigStore.read(authFile: af, manifest: m).queryKey == "clp_new")
+    }
 }
 
 /// RefreshTrigger 纯函数层: header 解析与 <key> 占位替换

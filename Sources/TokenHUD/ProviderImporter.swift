@@ -114,7 +114,7 @@ enum ProviderImporter {
         if let tslug = c.template, let tmpl = templates.first(where: { $0.slug == tslug }) {
             let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
                                                            into: userDir, hudDir: hudDir)
-            guard let af = manifest.authFile.map(expand) else { return slug }
+            guard let af = manifest.authFile.map(PluginGenerator.expandPath) else { return slug }
             var cfg = ProviderConfigStore.read(authFile: af, manifest: manifest)
             cfg.queryKey = c.apiKey
             cfg.refreshKey = c.apiKey
@@ -131,11 +131,11 @@ enum ProviderImporter {
         cfg.refreshHeader = c.proto == "anthropic"
             ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
             : "Authorization: Bearer <key>"
-        let authPath = "~/.claude/hud/.\(slug)-usage-auth.json"
+        let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
         let manifest = PluginGenerator.customManifest(name: c.name, config: cfg, authFile: authPath)
         try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
                                         script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
-        let af = URL(fileURLWithPath: expand(authPath).path)
+        let af = PluginGenerator.expandPath(authPath)
         try FileManager.default.createDirectory(at: af.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: af.path) {
             try ProviderConfigStore.createCustom(slug: slug, to: af)
@@ -165,11 +165,6 @@ enum ProviderImporter {
 
     private static func json(_ d: Data) -> [String: Any]? {
         (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
-    }
-
-    private static func expand(_ p: String) -> URL {
-        p.hasPrefix("~") ? URL(fileURLWithPath: NSHomeDirectory() + String(p.dropFirst()))
-                         : URL(fileURLWithPath: p)
     }
 
     private static func host(_ url: String) -> String {

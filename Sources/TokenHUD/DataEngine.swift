@@ -33,6 +33,18 @@ enum HUDFmt {
 
 // MARK: - 状态
 
+/// 手动刷新结果 (UI 按此显示真实文案, 不无条件报成功)
+enum RefreshOutcome {
+    case ok
+    case failed(String)
+    var ok: Bool { if case .ok = self { return true }; return false }
+    /// toast 文案: 成功带家名, 失败带原因
+    func message(_ name: String) -> String {
+        ok ? "✓ 已刷新 \(name)" : "✗ \(name) 刷新失败: \(reason)"
+    }
+    var reason: String { if case .failed(let r) = self { return r }; return "" }
+}
+
 struct ProviderState: Identifiable {
     let slug: String
     let manifest: ProviderManifest
@@ -64,6 +76,8 @@ final class DataEngine: ObservableObject {
     @Published var iconProviderSlug: String?
     /// 关闭用量跟踪的供应商 (slug 集合), UserDefaults 持久化
     @Published private(set) var disabledSlugs: Set<String> = []
+    /// 关闭「定时触发」的供应商 (slug 集合), 与跟踪开关独立
+    @Published private(set) var triggerDisabledSlugs: Set<String> = []
     /// 供应商显示顺序 (slug 数组), 空则按字母序
     @Published private(set) var providerOrder: [String] = []
     /// 已删除缺省实例的模板 slug (tombstone: 防迁移复活)
@@ -79,6 +93,7 @@ final class DataEngine: ObservableObject {
     static let defaultsNodeKey = "tokenhud.nodePath"
     static let defaultsIconKey = "tokenhud.iconProvider"
     static let defaultsDisabledKey = "tokenhud.disabledProviders"
+    static let defaultsTriggerDisabledKey = "tokenhud.triggerDisabled.slugs"
     static let defaultsOrderKey = "tokenhud.providerOrder"
     static let defaultsDeletedKey = "tokenhud.deletedTemplates"
 
@@ -107,6 +122,7 @@ final class DataEngine: ObservableObject {
         nodeMissing = (runner.nodePath == nil)
         iconProviderSlug = defaults.string(forKey: Self.defaultsIconKey)
         disabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsDisabledKey) ?? [])
+        triggerDisabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsTriggerDisabledKey) ?? [])
         providerOrder = defaults.stringArray(forKey: Self.defaultsOrderKey) ?? []
         deletedTemplates = Set(defaults.stringArray(forKey: Self.defaultsDeletedKey) ?? [])
         // 固化引擎 (mjs) 随 App 分发, 启动覆盖安装 (幂等升级); 再迁移模板缺省实例
@@ -178,6 +194,7 @@ final class DataEngine: ObservableObject {
         let hhmm = String(format: "%02d:%02d", cal.component(.hour, from: now), cal.component(.minute, from: now))
         for sch in cachedSchedules {
             guard sch.times.contains(hhmm) else { continue }
+            guard !triggerDisabledSlugs.contains(sch.slug) else { continue } // 定时触发已关 (与跟踪开关独立)
             if lastScheduledTrigger[sch.slug] == hhmm { continue } // 本分钟已触发
             lastScheduledTrigger[sch.slug] = hhmm
             // 走 trigger() (auth 无 testModel 时回退 manifest.refreshModel), 不能直呼 testRefresh
@@ -250,6 +267,16 @@ final class DataEngine: ObservableObject {
         reloadRegistry()
     }
 
+    /// 开关某家「定时触发」; 与用量跟踪独立 (跟踪关 ≠ 定时关)
+    func setTriggerEnabled(_ slug: String, enabled: Bool) {
+        if enabled {
+            triggerDisabledSlugs.remove(slug)
+        } else {
+            triggerDisabledSlugs.insert(slug)
+        }
+        defaults.set(Array(triggerDisabledSlugs), forKey: Self.defaultsTriggerDisabledKey)
+    }
+
     /// 设置图标默认显示哪家; nil = 全部取最高
     func setIconProvider(_ slug: String?) {
         iconProviderSlug = slug
@@ -292,10 +319,34 @@ final class DataEngine: ObservableObject {
     }
 
     /// 强制刷新单家 (忽略 fresh 状态), 用于"刷新额度"后立即查余额更新
-    func forceRefresh(slug: String) async {
-        guard let st = states.first(where: { $0.slug == slug }) else { return }
-        let plugin = PluginProvider(slug: st.slug, manifest: st.manifest, dir: pluginDir(slug: st.slug))
-        await fetch([(slug, plugin)], now: Date().timeIntervalSince1970 * 1000)
+    /// 停用跟踪的账号同样允许手动查询 (查询不消费额度), 结果写缓存不进 states
+    @discardableResult
+    func forceRefresh(slug: String) async -> RefreshOutcome {
+        let plugin = allPlugins.first { $0.slug == slug }
+            ?? states.first { $0.slug == slug }.map {
+                PluginProvider(slug: $0.slug, manifest: $0.manifest, dir: pluginDir(slug: $0.slug))
+            }
+        guard let plugin else { return .failed("供应商不存在") }
+        let now = Date().timeIntervalSince1970 * 1000
+        guard let fetched = await runner.run(plugin) else { return .failed("查询无结果") }
+        if states.contains(where: { $0.slug == slug }) {
+            apply(slug: slug, fetched: fetched, now: now)
+        } else {
+            writeCache(fetched, plugin: ProviderState(slug: slug, manifest: plugin.manifest,
+                                                      cache: nil, isStale: false))
+        }
+        lastRefresh = Date()
+        if let e = fetched.error { return .failed(Self.reason(for: e)) }
+        return .ok
+    }
+
+    /// 错误码 → 人话 (缓存契约里的 error 字段值不变)
+    nonisolated static func reason(for code: String) -> String {
+        switch code {
+        case "auth", "no-auth": return "缺凭证或凭证失效"
+        case "fetch": return "查询无结果"
+        default: return code
+        }
     }
 
     /// 立刻刷新: 对全部启用供应商发 API 请求触发额度计算, 再强制查余额+重置时间
@@ -317,7 +368,7 @@ final class DataEngine: ObservableObject {
         await withTaskGroup(of: Void.self) { group in
             for st in states {
                 group.addTask { [weak self, slug = st.slug] in
-                    await self?.forceRefresh(slug: slug)
+                    _ = await self?.forceRefresh(slug: slug)
                 }
             }
         }

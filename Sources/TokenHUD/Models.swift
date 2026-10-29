@@ -14,6 +14,8 @@ struct ProviderManifest: Codable {
     var testPrompt: String?     // 额度刷新测试 prompt
     var queryUrl: String?       // 查余额 url (缺省用 auth.apiUrl/url)
     var queryAuth: String?      // 查余额凭证类型: jwt/bearer/cookie/header
+    /// 查余额凭证在 auth 文件里的字段名 (如 "apiKey"); 声明后 read/write 直接读写该字段, 不走 headers.Authorization
+    var queryKeyField: String?
     var refreshUrl: String?      // 触发滚动窗口 url
     var refreshProtocol: String? // 刷新协议: anthropic/openai
     var refreshAuth: String?    // 刷新凭证类型: bearer/cookie
@@ -39,13 +41,14 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
          intervalSec: Int? = nil, buckets: [String: String] = [:], cacheFile: String? = nil,
          authFile: String? = nil, needsCredential: Bool? = nil, testModel: String? = nil,
          testPrompt: String? = nil, queryUrl: String? = nil, queryAuth: String? = nil,
+         queryKeyField: String? = nil,
          refreshUrl: String? = nil, refreshProtocol: String? = nil, refreshAuth: String? = nil,
          refreshHeader: String? = nil, builtin: Bool? = nil, template: String? = nil,
          accent: String? = nil, icon: String? = nil, enabled: Bool? = true,
@@ -63,6 +66,7 @@ struct ProviderManifest: Codable {
         self.testPrompt = testPrompt
         self.queryUrl = queryUrl
         self.queryAuth = queryAuth
+        self.queryKeyField = queryKeyField
         self.refreshUrl = refreshUrl
         self.refreshProtocol = refreshProtocol
         self.refreshAuth = refreshAuth
@@ -90,6 +94,7 @@ struct ProviderManifest: Codable {
         testPrompt = try c.decodeIfPresent(String.self, forKey: .testPrompt)
         queryUrl = try c.decodeIfPresent(String.self, forKey: .queryUrl)
         queryAuth = try c.decodeIfPresent(String.self, forKey: .queryAuth)
+        queryKeyField = try c.decodeIfPresent(String.self, forKey: .queryKeyField)
         refreshUrl = try c.decodeIfPresent(String.self, forKey: .refreshUrl)
         refreshProtocol = try c.decodeIfPresent(String.self, forKey: .refreshProtocol)
         refreshAuth = try c.decodeIfPresent(String.self, forKey: .refreshAuth)

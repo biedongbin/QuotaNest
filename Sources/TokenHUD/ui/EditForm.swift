@@ -361,16 +361,16 @@ struct EditForm: View {
                 if let tmpl = selectedTemplateSlug.flatMap({ engine.template(bySlug: $0) }) {
                     // 脚本型: 模板实例化 (manifest 派生 + fetch.sh {SLUG} + auth 模板复制)
                     let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: name, into: userDir, hudDir: hudDir)
-                    let authFile = URL(fileURLWithPath: NSHomeDirectory() + String(manifest.authFile!.dropFirst()))
+                    let authFile = PluginGenerator.expandPath(manifest.authFile!)
                     try ProviderConfigStore.write(config, manifest: manifest, to: authFile)
                 } else {
                     // generic: 生成 manifest + one-api 脚本 + auth
-                    let authFilePath = "~/.claude/hud/.\(slug)-usage-auth.json"
+                    let authFilePath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
                     let manifest = PluginGenerator.customManifest(name: name, config: config, authFile: authFilePath)
                     try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
                     try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
                                                     script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
-                    let authFile = URL(fileURLWithPath: NSHomeDirectory() + String(authFilePath.dropFirst()))
+                    let authFile = PluginGenerator.expandPath(authFilePath)
                     try ProviderConfigStore.createCustom(slug: slug, to: authFile)
                     try ProviderConfigStore.write(config, manifest: manifest, to: authFile)
                 }
@@ -393,7 +393,7 @@ struct EditForm: View {
                 // generic: name/displayName/协议字段全部按当前表单重写
                 let manifest = PluginGenerator.customManifest(
                     name: displayName, config: config,
-                    authFile: "~/.claude/hud/.\(prov.slug)-usage-auth.json")
+                    authFile: PluginGenerator.authPath(slug: prov.slug, hudDir: hudDir))
                 try PluginGenerator.writePlugin(
                     slug: prov.slug, manifest: manifest,
                     script: PluginGenerator.oneAPIFetchScript(slug: prov.slug), into: userDir)

@@ -85,6 +85,12 @@ struct ImportTests {
         let hudDir = home.appendingPathComponent("hud")
         try? FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        // 真实 ~/.claude/hud 快照: 导入只写传入的 hudDir, 不得外溢
+        let realHud = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud")
+        func realNames() -> Set<String> {
+            Set((try? FileManager.default.contentsOfDirectory(atPath: realHud.path)) ?? [])
+        }
+        let before = realNames()
         let c = ImportCandidate(source: "t", name: "Same Name", template: nil, apiKey: "k",
                                 baseURL: "https://a.example", proto: "openai", note: "")
         let s1 = try? ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
@@ -95,6 +101,11 @@ struct ImportTests {
         #expect(FileManager.default.fileExists(atPath: manifest.path))
         let fetch = userDir.appendingPathComponent(s1!).appendingPathComponent("fetch.sh")
         #expect(FileManager.default.fileExists(atPath: fetch.path))
+        // auth 落在传入 hudDir
+        #expect(FileManager.default.fileExists(atPath: hudDir.appendingPathComponent(".\(s1!)-usage-auth.json").path))
+        // 真实 hud 目录无新增 .same-name*
+        let added = realNames().subtracting(before).filter { $0.hasPrefix(".same-name") }
+        #expect(added.isEmpty, "导入外溢到真实 hud 目录: \(added)")
     }
 
     @Test func triggerURLJoinsOnce() {

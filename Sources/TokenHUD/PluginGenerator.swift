@@ -27,25 +27,44 @@ enum PluginGenerator {
 
     // MARK: - 类型模板 → 账号实例
 
+    /// auth 文件路径: hudDir 在 HOME 下用 ~ 形式, 否则绝对路径 (测试传 tmp 即隔离)
+    static func authPath(slug: String, hudDir: URL) -> String {
+        instancePath(slug: slug, hudDir: hudDir, suffix: "usage-auth.json")
+    }
+
+    static func cachePath(slug: String, hudDir: URL) -> String {
+        instancePath(slug: slug, hudDir: hudDir, suffix: "usage-cache.json")
+    }
+
+    private static func instancePath(slug: String, hudDir: URL, suffix: String) -> String {
+        let home = NSHomeDirectory()
+        let rel = hudDir.path.hasPrefix(home) ? "~" + hudDir.path.dropFirst(home.count) : hudDir.path
+        return rel + "/.\(slug)-\(suffix)"
+    }
+
+    /// `~` 前缀展开为 HOME, 其余按绝对路径
+    static func expandPath(_ p: String) -> URL {
+        p.hasPrefix("~") ? URL(fileURLWithPath: NSHomeDirectory() + String(p.dropFirst()))
+                         : URL(fileURLWithPath: p)
+    }
+
     /// 从类型模板实例化账号插件 (幂等): manifest 派生 + fetch.sh {SLUG} 替换 + auth 模板复制 (不覆盖已有 auth)
     /// 返回实例 manifest, 调用方继续用 ProviderConfigStore.write 写凭证
     @discardableResult
     static func instantiate(template: PluginProvider, slug: String, name: String,
                             into root: URL, hudDir: URL) throws -> ProviderManifest {
         let t = template.manifest
-        // manifest 路径: hudDir 在 HOME 下用 ~ 相对形式, 否则绝对路径 (测试隔离)
-        let home = NSHomeDirectory()
-        let rel = hudDir.path.hasPrefix(home) ? "~" + hudDir.path.dropFirst(home.count) : hudDir.path
         let manifest = ProviderManifest(
             name: t.name, label: t.label, displayName: name,
             buckets: t.buckets,
-            cacheFile: rel + "/.\(slug)-usage-cache.json",
-            authFile: rel + "/.\(slug)-usage-auth.json",
+            cacheFile: cachePath(slug: slug, hudDir: hudDir),
+            authFile: authPath(slug: slug, hudDir: hudDir),
             needsCredential: t.needsCredential,
             testModel: t.testModel,
             testPrompt: t.testPrompt,
             queryUrl: t.queryUrl,
             queryAuth: t.queryAuth,
+            queryKeyField: t.queryKeyField,
             refreshUrl: t.refreshUrl,
             refreshProtocol: t.refreshProtocol,
             refreshAuth: t.refreshAuth,
@@ -60,9 +79,7 @@ enum PluginGenerator {
         // auth 模板 → 实例 auth (不覆盖: 迁移保凭证, 新建给缺省抓取配置)
         // auth 模板 -> 实例 auth (不覆盖: 迁移保凭证, 新建给缺省抓取配置)
         guard let authFile = manifest.authFile else { return manifest }
-        let authURL = authFile.hasPrefix("~")
-            ? URL(fileURLWithPath: home + String(authFile.dropFirst()))
-            : URL(fileURLWithPath: authFile)
+        let authURL = expandPath(authFile)
         let fm = FileManager.default
         try? fm.createDirectory(at: authURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !fm.fileExists(atPath: authURL.path),

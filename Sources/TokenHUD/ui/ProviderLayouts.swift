@@ -507,8 +507,8 @@ struct ProviderDetail: View {
     private func refresh() {
         busy = true
         Task {
-            await engine.forceRefresh(slug: row.id)
-            await MainActor.run { busy = false; onToast("✓ 已刷新 \(row.plugin.manifest.fullName)") }
+            let r = await engine.forceRefresh(slug: row.id)
+            await MainActor.run { busy = false; onToast(r.message(row.plugin.manifest.fullName)) }
         }
     }
 
@@ -587,19 +587,34 @@ struct RowMenu: View {
         }
         Button("刷新额度") {
             Task {
-                await engine.forceRefresh(slug: row.id)
-                onToast("✓ 已刷新 \(row.plugin.manifest.fullName)")
+                let r = await engine.forceRefresh(slug: row.id)
+                onToast(r.message(row.plugin.manifest.fullName))
             }
         }
+        Toggle("定时触发", isOn: Binding(
+            get: { !engine.triggerDisabledSlugs.contains(row.id) },
+            set: { engine.setTriggerEnabled(row.id, enabled: $0) }))
         Button(row.enabled ? "关闭跟踪" : "开启跟踪") {
             engine.setTracking(row.id, enabled: !row.enabled)
         }
         Divider()
         Button("删除", role: .destructive) {
-            if row.plugin.manifest.template != nil { engine.markTemplateDeleted(row.id) }
-            try? PluginGenerator.removePlugin(slug: row.id, in: userDir)
-            engine.reloadRegistry()
-            onToast("已删除 \(row.plugin.manifest.fullName)")
+            deleteWithConfirm()
         }
+    }
+
+    /// 删除确认: 与详情页一致 (NSAlert), 三版右键共用
+    private func deleteWithConfirm() {
+        let alert = NSAlert()
+        alert.messageText = "删除 \(row.plugin.manifest.fullName)?"
+        alert.informativeText = "将移除插件目录, 不可撤销"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if row.plugin.manifest.template != nil { engine.markTemplateDeleted(row.id) }
+        try? PluginGenerator.removePlugin(slug: row.id, in: userDir)
+        engine.reloadRegistry()
+        onToast("已删除 \(row.plugin.manifest.fullName)")
     }
 }

@@ -42,12 +42,17 @@ enum ProviderConfigStore {
         case "header":
             c.queryHeader = headerString(headers)
         default: // bearer
-            // 脚本型: 凭证单一事实源 = refreshApiKey (固化 mjs 即读此字段), 回退 headers.Authorization
-            c.queryKey = manifest.template != nil
-                ? ((obj["refreshApiKey"] as? String) ?? "").isEmpty
+            if let field = manifest.queryKeyField {
+                // 声明字段名: 凭证单一事实源 = auth.<field> (如 cline 的 apiKey, mjs 直读此字段)
+                c.queryKey = obj[field] as? String ?? ""
+            } else if manifest.template != nil {
+                // 脚本型: 凭证单一事实源 = refreshApiKey (固化 mjs 即读此字段), 回退 headers.Authorization
+                c.queryKey = ((obj["refreshApiKey"] as? String) ?? "").isEmpty
                     ? bearer(headers["Authorization"] as? String)
                     : (obj["refreshApiKey"] as? String ?? "")
-                : bearer(headers["Authorization"] as? String)
+            } else {
+                c.queryKey = bearer(headers["Authorization"] as? String)
+            }
             c.queryHeader = headerString(headers)
         }
 
@@ -87,11 +92,16 @@ enum ProviderConfigStore {
         case "header": // 无凭证 (如 gpt 看板), headers 不动
             break
         default: // bearer
-            var h = obj["headers"] as? [String: Any] ?? [:]
-            h["Authorization"] = "Bearer \(c.queryKey)"
-            obj["headers"] = h
-            if manifest.template != nil {
-                obj["refreshApiKey"] = c.queryKey  // 脚本型: mjs 读此字段
+            if let field = manifest.queryKeyField {
+                // 声明字段名: 凭证单一事实源 = auth.<field>; headers 原样保留 (mjs 直读该字段)
+                obj[field] = c.queryKey
+            } else {
+                var h = obj["headers"] as? [String: Any] ?? [:]
+                h["Authorization"] = "Bearer \(c.queryKey)"
+                obj["headers"] = h
+                if manifest.template != nil {
+                    obj["refreshApiKey"] = c.queryKey  // 脚本型: mjs 读此字段
+                }
             }
         }
         // 脚本型实例: 查询配置 (url) 存 auth 文件 (固化 mjs 从 auth.apiUrl 抓取)
