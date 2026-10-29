@@ -98,7 +98,7 @@ struct DraftFormView: View {
                         .fieldBox(invalid: model.errors["url"] != nil, readonly: builtin)
                         .disabled(builtin)
                     Text(builtin ? "内置供应商地址锁定，不可修改。"
-                                 : (m?.queryUrl != nil ? "留空表示该账号未适配额度查询。" : "自定义地址需为有效的 http(s) URL。"))
+                                 : (m?.queryUrl != nil ? "留空表示不查询该账号的额度。" : "自定义地址需为有效的 http(s) URL。"))
                         .font(Typo.small).foregroundStyle(Palette.muted)
                 }
 
@@ -230,7 +230,7 @@ struct DraftFormView: View {
                 }
                 .toggleStyle(.switch)
                 UnsupportedBox(title: "不支持模型定时调用",
-                               detail: "该供应商的 manifest 未声明 refreshUrl，TokenHUD 未适配调用协议，因此不提供定时调用。")
+                               detail: "该供应商未提供模型调用接口，TokenHUD 未适配调用协议，因此不提供定时调用。")
             }
         }
     }

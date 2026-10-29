@@ -176,6 +176,8 @@ final class SettingsModel: ObservableObject {
     @Published var importOpen = false
     /// 每账号最近一次手动操作结果 (耗时/结果)
     @Published var lastRun: [String: (ok: Bool, ms: Int, at: Date)] = [:]
+    /// 每账号最近一次成功查询时刻 (仅本次运行内记录; 失败刷新会把缓存 generatedAt 前移, 不能当成功时间)
+    @Published var lastSuccess: [String: Date] = [:]
 
     private var toastTask: Task<Void, Never>?
     /// 导入 sheet 的状态源 (跨视图刷新保持; 关窗后丢弃)
@@ -237,7 +239,7 @@ final class SettingsModel: ObservableObject {
         let builtin = engine.templates.map { t -> TemplateChoice in
             let queries = t.manifest.queryUrl != nil || t.manifest.cacheFile != nil
             return TemplateChoice(id: t.slug, label: t.manifest.fullName,
-                                  detail: queries ? "内置 · 地址锁定" : "内置 · 仅监控",
+                                  detail: queries ? "内置 · 地址锁定" : "内置 · 只提供额度查询",
                                   tag: t.manifest.authStyle == "apikey" ? "API Key" : "本机 CLI",
                                   authStyle: t.manifest.authStyle, manifest: t.manifest,
                                   proto: t.manifest.refreshProtocol)
@@ -529,7 +531,7 @@ final class SettingsModel: ObservableObject {
 
     func query(_ slug: String) {
         guard let row = row(slug), row.canQuery else {
-            flash("该账号没有额度查询地址（manifest 未声明 queryUrl）", error: true)
+            flash("该账号没有额度查询地址，无法查询额度", error: true)
             return
         }
         guard !running.contains(slug) else { return }
@@ -540,6 +542,7 @@ final class SettingsModel: ObservableObject {
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             running.remove(slug)
             lastRun[slug] = (outcome.ok, ms, Date())
+            if outcome.ok { lastSuccess[slug] = Date() }
             flash(outcome.ok ? "额度已更新（\(ms) ms）" : "查询失败：\(outcome.reason)", error: !outcome.ok)
             if outcome.ok { engine.reloadRegistry() }
         }

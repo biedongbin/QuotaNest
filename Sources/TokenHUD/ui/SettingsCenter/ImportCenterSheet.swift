@@ -162,12 +162,14 @@ final class ImportCenterModel: ObservableObject {
             let state = stateOf(c, existing: existing)
             return Row(candidate: c, state: state, note: noteOf(c, state: state))
         }
-        picked = Set(rows.filter { $0.state.pickable }.map(\.id))
+        // 源里停用的账号仍可导入, 只是默认不勾, 免得不看预览就整批带进来
+        picked = Set(rows.filter { $0.state.pickable && $0.candidate.enabled }.map(\.id))
         scanState = rows.isEmpty ? .empty : .scanned
         lastMessage = rows.isEmpty ? "该源没有可导入的账号（未安装、未登录，或凭证格式不支持）。" : ""
     }
 
     private func stateOf(_ c: ImportCandidate, existing: [PluginProvider]) -> RowState {
+        if c.unsupportedReason != nil { return .unsupported }
         let duplicated = existing.contains { p in
             (c.template != nil && p.manifest.template == c.template
                 && p.manifest.fullName == c.name)
@@ -176,19 +178,24 @@ final class ImportCenterModel: ObservableObject {
         if duplicated { return .exists }
         if c.apiKey.isEmpty && c.template == nil { return .unsupported }
         if c.template == nil { return .unadapted }
-        if let t = c.template, let tmpl = engine.template(bySlug: t), tmpl.manifest.queryUrl == nil {
+        // 与 AccountRow.canQuery 同口径: 脚本型模板只声明 cacheFile 也算能查额度
+        if let t = c.template, let tmpl = engine.template(bySlug: t),
+           tmpl.manifest.queryUrl == nil, tmpl.manifest.cacheFile == nil {
             return .unadapted
         }
         return .addable
     }
 
     private func noteOf(_ c: ImportCandidate, state: RowState) -> String {
+        var note: String
         switch state {
-        case .exists: return "已存在（同名账号），默认跳过，不覆盖 Key"
-        case .unsupported: return "缺少凭证且无通用调用协议，无法导入"
-        case .unadapted: return "额度查询未适配，可导入后手动调用"
-        case .addable: return c.note
+        case .exists: note = "已存在（同名账号），默认跳过，不覆盖 Key"
+        case .unsupported: note = c.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
+        case .unadapted: note = "导入后可手动调用，额度查询需自行适配"
+        case .addable: note = c.note
         }
+        if !c.enabled { note += "（在源工具中已停用）" }
+        return note
     }
 
     var selectedCount: Int { rows.filter { picked.contains($0.id) && !$0.imported }.count }
@@ -224,7 +231,6 @@ final class ImportCenterModel: ObservableObject {
                 rows[i].imported = true
                 rows[i].failure = nil
                 rows[i].note = "已导入"
-                if rows[i].state == .unadapted { rows[i].state = .unadapted }
                 picked.remove(rows[i].id)
                 ok += 1
             } catch {
@@ -367,12 +373,14 @@ struct ImportCenterSheet: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(row.candidate.template == nil ? "API Key" : "API Key")
+                    Text(row.candidate.authLabel)
                         .font(Typo.small).foregroundStyle(Palette.muted)
                         .frame(width: 88, alignment: .leading)
-                    Text(row.candidate.template != nil ? "已适配" : "未适配")
+                    Text(row.candidate.unsupportedReason != nil ? "—"
+                         : (row.candidate.template != nil ? "已适配" : "未适配"))
                         .font(Typo.small)
-                        .foregroundStyle(row.candidate.template != nil ? Palette.ok : Palette.warn)
+                        .foregroundStyle(row.candidate.unsupportedReason != nil ? Palette.muted
+                                         : (row.candidate.template != nil ? Palette.ok : Palette.warn))
                         .frame(width: 78, alignment: .leading)
                     Text(row.imported ? "已导入" : row.state.text)
                         .font(Typo.small)

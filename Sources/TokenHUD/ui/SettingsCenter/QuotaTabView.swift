@@ -31,7 +31,7 @@ struct QuotaTabView: View {
                 }
 
                 if !row.canQuery {
-                    Text("\(row.plugin.manifest.fullName) 未声明 queryUrl，额度查询尚未适配，因此不显示 5 小时 / 本周 / 本月数值。")
+                    Text("\(row.plugin.manifest.fullName) 未提供额度查询接口，因此不显示 5 小时 / 本周 / 本月数值。")
                         .font(Typo.small).foregroundStyle(Palette.muted)
                         .padding(.top, 12)
                 } else {
@@ -82,6 +82,12 @@ struct QuotaTabView: View {
 
     // MARK: 三卡
 
+    /// 缓存里带错误或已被标旧值: 数值只能当"旧值"看, 不能冒充当前额度
+    private var isOldValue: Bool {
+        guard let c = row.state?.cache else { return false }
+        return c.error != nil || c.stale == true
+    }
+
     private var quotaGrid: some View {
         HStack(alignment: .top, spacing: 8) {
             quotaCard("5 小时", row.state?.cache?.fiveHour)
@@ -91,42 +97,73 @@ struct QuotaTabView: View {
     }
 
     private func quotaCard(_ label: String, _ bucket: Bucket?) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let old = isOldValue
+        let pct = bucket?.usedPercentage
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(label).font(Typo.small).foregroundStyle(Palette.muted)
+                Text(label).font(Typo.small).foregroundStyle(old ? Palette.muted.opacity(0.9) : Palette.muted)
                 Spacer()
-                if let p = bucket?.usedPercentage {
-                    Text("\(Int(p.rounded()))%").font(Typo.small).foregroundStyle(Palette.muted)
+                if let p = pct {
+                    Text("\(Int(p.rounded()))%").font(Typo.small)
+                        .foregroundStyle(old ? Palette.muted.opacity(0.75) : Palette.muted)
                 }
             }
-            if let p = bucket?.usedPercentage {
-                Text("\(Int(p.rounded()))%")
-                    .font(.system(size: 22, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.ink)
-                    .padding(.top, 6)
-                ProgressLine(pct: p)
-                    .padding(.top, 10)
-                Text(resetLine(bucket))
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-                    .padding(.top, 6)
+            if let p = pct {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(Int(p.rounded()))%")
+                        .font(.system(size: 22, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(old ? Palette.muted : Palette.ink)
+                    if old {
+                        // 来源标识: 这个数是缓存里的旧值, 不代表现在用了这么多
+                        Text("旧值").font(Typo.small)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Palette.badgeBg))
+                            .overlay(Capsule().strokeBorder(Palette.border, lineWidth: 1))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+                .padding(.top, 6)
+                if old {
+                    // 错误态不画进度条: 满/空都会被读成"当前用量"
+                    Text(oldValueNote)
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
+                } else {
+                    ProgressLine(pct: p)
+                        .padding(.top, 10)
+                    Text(resetLine(bucket))
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                        .padding(.top, 6)
+                }
             } else {
                 Text("—")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 6)
-                Text("此供应商未提供该窗口额度")
+                Text(old || row.state?.cache == nil ? "尚未查询到有效额度" : "此供应商未提供该窗口额度")
                     .font(Typo.small).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             }
             Spacer(minLength: 0)
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
+        .background(RoundedRectangle(cornerRadius: 8)
+            .fill(old ? Palette.readonlyField : Palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.border, lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label)额度")
+        .accessibilityLabel("\(label)额度" + (old ? "，旧值，本次查询未成功" : ""))
+    }
+
+    /// 旧值卡说明: 有记录就报上次成功时间, 没有就如实说不知道
+    private var oldValueNote: String {
+        if let t = model.lastSuccess[row.id] {
+            return "上次成功查询于 " + formatCacheTime(t.timeIntervalSince1970 * 1000)
+        }
+        return "上次成功查询时间未知（本次查询未成功）"
     }
 
     private func resetLine(_ bucket: Bucket?) -> String {

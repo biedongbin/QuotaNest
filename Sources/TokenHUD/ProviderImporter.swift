@@ -12,6 +12,13 @@ struct ImportCandidate: Identifiable {
     let proto: String         // openai / anthropic (通用型触发协议)
     let note: String          // 副标题: 原始 provider/类型
     var exists = false        // 同名实例已存在
+    /// 非 nil = 源里有这一行但无法转换成 TokenHUD 账号; 值即原因 (预览里显示"不支持")
+    var unsupportedReason: String? = nil
+    /// 源侧启用状态 (9router isActive); 停用的仍列出, 只是默认不勾选
+    var enabled = true
+
+    /// 预览表"授权方式"列
+    var authLabel: String { note.lowercased().contains("oauth") ? "OAuth" : "API Key" }
 }
 
 enum ProviderImporter {
@@ -22,32 +29,56 @@ enum ProviderImporter {
     static func from9Router(home: String) -> [ImportCandidate] {
         let db = home + "/.9router/db/data.sqlite"
         guard FileManager.default.fileExists(atPath: db) else { return [] }
-        let rows = query(db, "select provider, authType, name, data from providerConnections where isActive=1")
+        // 全量扫描: isActive 只是 9router 面板的启用开关 (默认 1),
+        // 按它过滤会静默丢掉用户停用的账号; 停用与否交给预览列展示, 由用户决定导不导
+        let rows = query(db, "select provider, authType, name, isActive, data from providerConnections")
         return rows.compactMap { r in
             guard let provider = r["provider"] as? String,
                   let raw = r["data"] as? String,
                   let data = json(raw) else { return nil }
             let label = (r["name"] as? String) ?? provider
+            let active = (r["isActive"] as? Int).map { $0 != 0 } ?? true
             let key = (data["apiKey"] as? String) ?? ""
+            func cand(_ name: String, template: String?, base: String, proto: String, note: String) -> ImportCandidate {
+                ImportCandidate(source: "9router", name: name, template: template, apiKey: key,
+                                baseURL: base, proto: proto, note: note, enabled: active)
+            }
+            /// 无法导入的行也要出现, 让用户看见"这条没导"的原因
+            func skip(_ reason: String) -> ImportCandidate {
+                ImportCandidate(source: "9router", name: "\(label) · \(provider)", template: nil,
+                                apiKey: "", baseURL: "", proto: "openai",
+                                note: "\(provider) / \(r["authType"] as? String ?? "apikey")",
+                                unsupportedReason: reason, enabled: active)
+            }
             switch provider {
-            case "glm": return ImportCandidate(source: "9router", name: "GLM · \(label)", template: "glm",
-                                               apiKey: key, baseURL: "", proto: "anthropic", note: "glm / apikey")
-            case "ollama": return ImportCandidate(source: "9router", name: "Ollama · \(label)", template: "ollama",
-                                                  apiKey: key, baseURL: "", proto: "anthropic", note: "ollama / apikey")
-            case "opencode-go": return ImportCandidate(source: "9router", name: "OC-Go · \(label)", template: "opencode-go",
-                                                       apiKey: key, baseURL: "", proto: "openai", note: "opencode-go / apikey")
-            case "clinepass": return ImportCandidate(source: "9router", name: "Cline · \(label)", template: "cline",
-                                                     apiKey: key, baseURL: "", proto: "anthropic", note: "clinepass / apikey")
+            case "glm":
+                guard !key.isEmpty else { return skip("源里这条没有 API Key") }
+                return cand("GLM · \(label)", template: "glm", base: "", proto: "anthropic", note: "glm / apikey")
+            case "ollama":
+                guard !key.isEmpty else { return skip("源里这条没有 API Key") }
+                return cand("Ollama · \(label)", template: "ollama", base: "", proto: "anthropic", note: "ollama / apikey")
+            case "opencode-go":
+                guard !key.isEmpty else { return skip("源里这条没有 API Key") }
+                return cand("OC-Go · \(label)", template: "opencode-go", base: "", proto: "openai", note: "opencode-go / apikey")
+            case "clinepass":
+                guard !key.isEmpty else { return skip("源里这条没有 API Key") }
+                return cand("Cline · \(label)", template: "cline", base: "", proto: "anthropic", note: "clinepass / apikey")
             default:
                 // 通用兼容型: anthropic-compatible-<uuid> / openai-compatible-chat-<uuid>
-                guard provider.hasPrefix("anthropic-compatible") || provider.hasPrefix("openai-compatible"),
-                      !key.isEmpty, key.hasPrefix("http") == false else { return nil }
+                guard provider.hasPrefix("anthropic-compatible") || provider.hasPrefix("openai-compatible") else {
+                    let oauth = (r["authType"] as? String) == "oauth"
+                    return skip(oauth ? "OAuth 凭证由本机 CLI 管理，请在 TokenHUD 里登录该账号"
+                                      : "该供应商类型还没有对应模板")
+                }
+                guard !key.isEmpty, key.hasPrefix("http") == false else {
+                    return skip("源里这条没有可用的 API Key")
+                }
                 let psd = data["providerSpecificData"] as? [String: Any] ?? [:]
                 let base = (psd["baseUrl"] as? String) ?? ""
-                guard !base.isEmpty else { return nil }
+                guard !base.isEmpty else { return skip("源里这条没有填写接口地址") }
                 let proto = provider.hasPrefix("anthropic") ? "anthropic" : "openai"
-                return ImportCandidate(source: "9router", name: "\(label)", template: nil, apiKey: key,
-                                       baseURL: base, proto: proto, note: "\(proto)-compatible / apikey")
+                return cand("\(label)", template: nil, base: base, proto: proto,
+                            note: "\(proto)-compatible / apikey")
             }
         }
     }

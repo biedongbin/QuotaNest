@@ -36,12 +36,35 @@ struct ImportTests {
         insert into providerConnections values ('4','glm','apikey','off','0','{"apiKey":"k4"}');
         """)
         let out = ProviderImporter.from9Router(home: home.path)
-        #expect(out.count == 3)                       // 停用的不导
-        #expect(out.contains { $0.template == "glm" })
+        // 全量列出: 停用的照样出现, 只是标记 enabled=false (源侧开关, 不等于不可导)
+        #expect(out.count == 4)
+        #expect(out.contains { $0.template == "glm" && $0.enabled })
+        #expect(out.contains { $0.name == "GLM · off" && !$0.enabled })
         let relay = out.first { $0.name == "relay" }
         #expect(relay?.proto == "anthropic")
         #expect(relay?.baseURL == "https://r.example")
         #expect(out.first { $0.name == "oai" }?.proto == "openai")
+    }
+
+    @Test func nineRouterKeepsUnmappableRowsVisible() {
+        let home = tmpHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let dbDir = home.appendingPathComponent(".9router/db")
+        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
+        let db = dbDir.appendingPathComponent("data.sqlite")
+        sqlite(db, """
+        create table providerConnections (id text, provider text, authType text, name text, isActive int, data text);
+        insert into providerConnections values ('1','codex','oauth','a@b','0','{"accessToken":"t"}');
+        insert into providerConnections values ('2','openai-compatible-chat-z','apikey','no-url','0','{"apiKey":"k"}');
+        insert into providerConnections values ('3','glm','apikey','nokey','1','{}');
+        """)
+        let out = ProviderImporter.from9Router(home: home.path)
+        #expect(out.count == 3)                        // 不可映射的也列出, 不静默丢弃
+        let oauth = out.first { $0.note.contains("codex") }
+        #expect(oauth?.unsupportedReason != nil)
+        #expect(oauth?.enabled == false)
+        #expect(out.contains { $0.name.contains("no-url") && $0.unsupportedReason?.contains("接口地址") == true })
+        #expect(out.contains { $0.note.hasPrefix("glm /") && $0.unsupportedReason != nil })
     }
 
     @Test func ccSwitchClaudeEnv() {

@@ -44,7 +44,7 @@ struct ConfigTabView: View {
                         KeyValueRow("调用协议") {
                             Text(row.canCall
                                  ? (cfg.refreshProtocol == "anthropic" ? "Anthropic 兼容 · messages" : "OpenAI 兼容 · chat/completions")
-                                 : "未适配（仅监控）")
+                                 : "未配置调用协议")
                         }
                         KeyValueRow("凭证来源", mono: true) {
                             Text(row.authStyle == "apikey"
@@ -106,7 +106,7 @@ struct TriggerTabView: View {
                             Text(row.autoQuery ? "已开启" : "已关闭")
                         }
                         KeyValueRow("查询能力") {
-                            Text(row.canQuery ? "支持（manifest 声明 queryUrl）" : "额度查询尚未适配")
+                            Text(row.canQuery ? "支持" : "该供应商未提供额度查询接口")
                         }
                     }
 
@@ -140,7 +140,7 @@ struct TriggerTabView: View {
                     } else {
                         UnsupportedBox(
                             title: "不支持模型定时调用",
-                            detail: "该供应商的 manifest 未声明 refreshUrl，TokenHUD 尚未适配调用协议，因此只能监控额度。")
+                            detail: "该供应商未提供模型调用接口，TokenHUD 尚未适配调用协议，因此只提供额度查询。")
                     }
                 }
             }
