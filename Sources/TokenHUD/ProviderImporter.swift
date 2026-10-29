@@ -16,6 +16,10 @@ struct ImportCandidate: Identifiable {
     var unsupportedReason: String? = nil
     /// 源侧启用状态 (9router isActive); 停用的仍列出, 只是默认不勾选
     var enabled = true
+    /// 落盘用的 slug 基名; nil = 由 name 推导。源端标识(邮箱等)不得进入文件名
+    var slugHint: String? = nil
+    /// 源端账号标识 (已脱敏); 空 = 源里没给
+    var sourceAccount: String = ""
 
     /// 预览表"授权方式"列
     var authLabel: String { note.lowercased().contains("oauth") ? "OAuth" : "API Key" }
@@ -32,6 +36,13 @@ enum ProviderImporter {
         // 全量扫描: isActive 只是 9router 面板的启用开关 (默认 1),
         // 按它过滤会静默丢掉用户停用的账号; 停用与否交给预览列展示, 由用户决定导不导
         let rows = query(db, "select provider, authType, name, isActive, data from providerConnections")
+        // 源端账号标识 (邮箱/UUID) 按家族编号命名, 原值脱敏后只进说明行
+        var seq: [String: Int] = [:]
+        func next(_ family: String) -> Int {
+            let n = (seq[family] ?? 0) + 1
+            seq[family] = n
+            return n
+        }
         return rows.compactMap { r in
             guard let provider = r["provider"] as? String,
                   let raw = r["data"] as? String,
@@ -39,36 +50,52 @@ enum ProviderImporter {
             let label = (r["name"] as? String) ?? provider
             let active = (r["isActive"] as? Int).map { $0 != 0 } ?? true
             let key = (data["apiKey"] as? String) ?? ""
-            func cand(_ name: String, template: String?, base: String, proto: String, note: String) -> ImportCandidate {
-                ImportCandidate(source: "9router", name: name, template: template, apiKey: key,
-                                baseURL: base, proto: proto, note: note, enabled: active)
+            let authType = (r["authType"] as? String) ?? "apikey"
+            /// 显示名 + 落盘 slug: 账号标识型名称一律换成 "家族 账号 N";
+            /// 其余用 "家族-slug(label)", 不让中文家族名进文件名
+            func naming(_ family: String, _ familySlug: String) -> (name: String, slug: String, account: String) {
+                if isAccountId(label) {
+                    let n = next(family)
+                    return ("\(family) 账号 \(n)", "\(familySlug)-\(n)", maskAccount(label))
+                }
+                return ("\(family) · \(label)", "\(familySlug)-\(PluginGenerator.slugify(label))", "")
+            }
+            func cand(_ family: String, _ familySlug: String, template: String?, base: String,
+                      proto: String, note: String) -> ImportCandidate {
+                let n = naming(family, familySlug)
+                return ImportCandidate(source: "9router", name: n.name, template: template, apiKey: key,
+                                       baseURL: base, proto: proto, note: note, enabled: active,
+                                       slugHint: n.slug, sourceAccount: n.account)
             }
             /// 无法导入的行也要出现, 让用户看见"这条没导"的原因
             func skip(_ reason: String) -> ImportCandidate {
-                ImportCandidate(source: "9router", name: "\(label) · \(provider)", template: nil,
-                                apiKey: "", baseURL: "", proto: "openai",
-                                note: "\(provider) / \(r["authType"] as? String ?? "apikey")",
-                                unsupportedReason: reason, enabled: active)
+                let n = naming(familyName(provider), PluginGenerator.slugify(provider))
+                return ImportCandidate(source: "9router", name: n.name, template: nil,
+                                       apiKey: "", baseURL: "", proto: "openai",
+                                       note: "\(provider) / \(authType)",
+                                       unsupportedReason: reason, enabled: active,
+                                       slugHint: n.slug, sourceAccount: n.account)
             }
             switch provider {
             case "glm":
                 guard !key.isEmpty else { return skip("源里这条没有 API Key") }
-                return cand("GLM · \(label)", template: "glm", base: "", proto: "anthropic", note: "glm / apikey")
+                return cand("GLM", "glm", template: "glm", base: "", proto: "anthropic", note: "glm / apikey")
             case "ollama":
                 guard !key.isEmpty else { return skip("源里这条没有 API Key") }
-                return cand("Ollama · \(label)", template: "ollama", base: "", proto: "anthropic", note: "ollama / apikey")
+                return cand("Ollama", "ollama", template: "ollama", base: "", proto: "anthropic", note: "ollama / apikey")
             case "opencode-go":
                 guard !key.isEmpty else { return skip("源里这条没有 API Key") }
-                return cand("OC-Go · \(label)", template: "opencode-go", base: "", proto: "openai", note: "opencode-go / apikey")
+                return cand("OC-Go", "opencode-go", template: "opencode-go", base: "", proto: "openai",
+                            note: "opencode-go / apikey")
             case "clinepass":
                 guard !key.isEmpty else { return skip("源里这条没有 API Key") }
-                return cand("Cline · \(label)", template: "cline", base: "", proto: "anthropic", note: "clinepass / apikey")
+                return cand("Cline", "cline", template: "cline", base: "", proto: "anthropic", note: "clinepass / apikey")
             default:
                 // 通用兼容型: anthropic-compatible-<uuid> / openai-compatible-chat-<uuid>
                 guard provider.hasPrefix("anthropic-compatible") || provider.hasPrefix("openai-compatible") else {
-                    let oauth = (r["authType"] as? String) == "oauth"
-                    return skip(oauth ? "OAuth 凭证由本机 CLI 管理，请在 TokenHUD 里登录该账号"
-                                      : "该供应商类型还没有对应模板")
+                    return skip(authType == "oauth"
+                                ? "OAuth 凭证由本机 CLI 管理，请在 TokenHUD 里登录该账号"
+                                : "该供应商类型还没有对应模板")
                 }
                 guard !key.isEmpty, key.hasPrefix("http") == false else {
                     return skip("源里这条没有可用的 API Key")
@@ -76,11 +103,51 @@ enum ProviderImporter {
                 let psd = data["providerSpecificData"] as? [String: Any] ?? [:]
                 let base = (psd["baseUrl"] as? String) ?? ""
                 guard !base.isEmpty else { return skip("源里这条没有填写接口地址") }
-                let proto = provider.hasPrefix("anthropic") ? "anthropic" : "openai"
-                return cand("\(label)", template: nil, base: base, proto: proto,
-                            note: "\(proto)-compatible / apikey")
+                let anthropic = provider.hasPrefix("anthropic")
+                return cand(anthropic ? "Anthropic 兼容" : "OpenAI 兼容",
+                            anthropic ? "anthropic-compatible" : "openai-compatible",
+                            template: nil, base: base, proto: anthropic ? "anthropic" : "openai",
+                            note: "\(anthropic ? "anthropic" : "openai")-compatible / apikey")
             }
         }
+    }
+
+    /// provider 标识 (codex / zed / ollama-local …) → 给人看的家族名
+    private static func familyName(_ provider: String) -> String {
+        switch provider {
+        case "ollama-local": return "Ollama 本地"
+        case "openai-compatible-chat": return "OpenAI 兼容"
+        default:
+            if provider.hasPrefix("anthropic-compatible") { return "Anthropic 兼容" }
+            if provider.hasPrefix("openai-compatible") { return "OpenAI 兼容" }
+            return provider.prefix(1).uppercased() + provider.dropFirst()
+        }
+    }
+
+    /// 源端账号标识 = 邮箱 / UUID 一类的个人标识, 不得原样进预览或落盘。
+    /// 只看"像账号"的形态: 含 @、含 UUID、或有一段 ≥16 位的连续字母数字;
+    /// 描述性名称 (localhost-cliproxy 之类) 不算, 否则会误脱敏掉有意义的名字
+    static func isAccountId(_ s: String) -> Bool {
+        if s.contains("@") { return true }
+        let uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        if s.range(of: uuid, options: .regularExpression) != nil { return true }
+        let longestRun = s.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(\.count).max() ?? 0
+        return longestRun >= 16
+    }
+
+    /// ja***@g***.com / qo*** 形式: 保留可辨识前缀, 去掉完整标识
+    static func maskAccount(_ raw: String) -> String {
+        let s = raw.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty else { return "" }
+        if s.filter({ $0 == "@" }).count == 1, let at = s.firstIndex(of: "@") {
+            let local = s[s.startIndex..<at]
+            let parts = s[s.index(after: at)...].split(separator: ".")
+            let head = parts.first.map { String($0.prefix(1)) } ?? "*"
+            let tld = parts.count > 1 ? String(parts.last!) : "com"
+            return "\(local.prefix(2))***@\(head)***.\(tld)"
+        }
+        return String(s.prefix(2)) + "***"
     }
 
     // MARK: - cc-switch
@@ -104,8 +171,14 @@ enum ProviderImporter {
                 // 占位值 ("\"\"" 之类) 与过短串视为无效凭证
                 let bare = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                 guard bare.count >= 8 else { return nil }
-                return ImportCandidate(source: "cc-switch", name: name, template: nil, apiKey: bare,
-                                       baseURL: base, proto: "anthropic", note: "claude / \(host(base))")
+                // 名字本身是邮箱/UUID 时脱敏, 且不让它进 slug
+                let ident = isAccountId(name)
+                return ImportCandidate(source: "cc-switch",
+                                       name: ident ? "Claude · \(maskAccount(name))" : name,
+                                       template: nil, apiKey: bare,
+                                       baseURL: base, proto: "anthropic", note: "claude / \(host(base))",
+                                       slugHint: ident ? "claude" : nil,
+                                       sourceAccount: ident ? maskAccount(name) : "")
             }
             // codex: OAuth 型, 凭证在 cc-switch 自己的库里, 不导 (TokenHUD 读 ~/.codex)
             return nil
@@ -127,8 +200,14 @@ enum ProviderImporter {
             case "cline-pass", "clinepass":
                 let key = (obj["api_key"] as? String) ?? ""
                 guard !key.isEmpty else { return nil }
-                return ImportCandidate(source: "cpamp", name: "Cline · \(label)", template: "cline",
-                                       apiKey: key, baseURL: "", proto: "anthropic", note: "clinepass")
+                // label 常回落到 email 字段 → 同样脱敏, 不把账号标识写进预览/文件名
+                let ident = isAccountId(label)
+                return ImportCandidate(source: "cpamp",
+                                       name: ident ? "Cline · \(maskAccount(label))" : "Cline · \(label)",
+                                       template: "cline",
+                                       apiKey: key, baseURL: "", proto: "anthropic", note: "clinepass",
+                                       slugHint: ident ? "cline" : nil,
+                                       sourceAccount: ident ? maskAccount(label) : "")
             default:
                 return nil // codex / antigravity: 本机 CLI 已登录, 由模板直读, 无需导入凭证
             }
@@ -141,7 +220,7 @@ enum ProviderImporter {
     @discardableResult
     static func apply(_ c: ImportCandidate, templates: [PluginProvider],
                       userDir: URL, hudDir: URL) throws -> String {
-        let slug = uniqueSlug(PluginGenerator.slugify(c.name), userDir: userDir)
+        let slug = uniqueSlug(PluginGenerator.slugify(c.slugHint ?? c.name), userDir: userDir)
         if let tslug = c.template, let tmpl = templates.first(where: { $0.slug == tslug }) {
             let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
                                                            into: userDir, hudDir: hudDir)

@@ -158,14 +158,31 @@ final class ImportCenterModel: ObservableObject {
 
     private func apply(_ list: [ImportCandidate]) {
         let existing = engine.allPlugins
-        rows = list.map { c in
-            let state = stateOf(c, existing: existing)
-            return Row(candidate: c, state: state, note: noteOf(c, state: state))
-        }
+        rows = list
+            .map { c in
+                let state = stateOf(c, existing: existing)
+                return Row(candidate: c, state: state, note: noteOf(c, state: state))
+            }
+            // 能导的排前面, 免得滑一屏找不到; 同档内保持源顺序
+            .enumerated()
+            .sorted { a, b in
+                let ra = rank(a.element), rb = rank(b.element)
+                return ra == rb ? a.offset < b.offset : ra < rb
+            }
+            .map(\.element)
         // 源里停用的账号仍可导入, 只是默认不勾, 免得不看预览就整批带进来
         picked = Set(rows.filter { $0.state.pickable && $0.candidate.enabled }.map(\.id))
         scanState = rows.isEmpty ? .empty : .scanned
         lastMessage = rows.isEmpty ? "该源没有可导入的账号（未安装、未登录，或凭证格式不支持）。" : ""
+    }
+
+    /// 排序档: 可导入且启用 → 可导入但源端停用 → 已存在 → 不支持
+    private func rank(_ row: Row) -> Int {
+        switch row.state {
+        case .unsupported: return 3
+        case .exists: return 2
+        case .addable, .unadapted: return row.candidate.enabled ? 0 : 1
+        }
     }
 
     private func stateOf(_ c: ImportCandidate, existing: [PluginProvider]) -> RowState {
@@ -186,15 +203,18 @@ final class ImportCenterModel: ObservableObject {
         return .addable
     }
 
-    private func noteOf(_ c: ImportCandidate, state: RowState) -> String {
+    private func noteOf(_ a: ImportCandidate, state: RowState) -> String {
         var note: String
         switch state {
         case .exists: note = "已存在（同名账号），默认跳过，不覆盖 Key"
-        case .unsupported: note = c.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
-        case .unadapted: note = "导入后可手动调用，额度查询需自行适配"
-        case .addable: note = c.note
+        case .unsupported: note = a.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
+        case .unadapted:
+            note = a.enabled ? "导入后可手动调用，额度查询需自行适配"
+                             : "在源工具中已停用，可手动勾选导入；导入后可手动调用，额度查询需自行适配"
+        case .addable:
+            note = a.enabled ? a.note : "在源工具中已停用，可手动勾选导入 · \(a.note)"
         }
-        if !c.enabled { note += "（在源工具中已停用）" }
+        if !a.sourceAccount.isEmpty { note += " · 源账号 \(a.sourceAccount)" }
         return note
     }
 
@@ -454,7 +474,9 @@ struct ImportCenterSheet: View {
         switch im.scanState {
         case .idle: return "尚未扫描"
         case .scanning: return "扫描中…"
-        case .scanned: return "\(im.rows.count) 项 · \(im.selectedCount) 项已勾选"
+        case .scanned:
+            let ready = im.rows.filter { $0.state.pickable && $0.candidate.enabled && !$0.imported }.count
+            return "\(im.rows.count) 项 · \(ready) 项可直接导入 · \(im.selectedCount) 项已勾选"
         case .empty: return "无结果"
         case .timedOut: return "扫描超时"
         case .failed: return "扫描失败"

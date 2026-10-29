@@ -40,10 +40,33 @@ struct ImportTests {
         #expect(out.count == 4)
         #expect(out.contains { $0.template == "glm" && $0.enabled })
         #expect(out.contains { $0.name == "GLM · off" && !$0.enabled })
-        let relay = out.first { $0.name == "relay" }
+        let relay = out.first { $0.name == "Anthropic 兼容 · relay" }
         #expect(relay?.proto == "anthropic")
         #expect(relay?.baseURL == "https://r.example")
-        #expect(out.first { $0.name == "oai" }?.proto == "openai")
+        #expect(out.first { $0.name == "OpenAI 兼容 · oai" }?.proto == "openai")
+    }
+
+    @Test func nineRouterMasksSourceAccountIds() {
+        let home = tmpHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let dbDir = home.appendingPathComponent(".9router/db")
+        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
+        let db = dbDir.appendingPathComponent("data.sqlite")
+        sqlite(db, """
+        create table providerConnections (id text, provider text, authType text, name text, isActive int, data text);
+        insert into providerConnections values ('1','cline','oauth','jackli0098255@gmail.com','1','{"accessToken":"t"}');
+        insert into providerConnections values ('2','codex','oauth','biedongbin@gmail.com','1','{"accessToken":"t"}');
+        insert into providerConnections values ('3','codex','oauth','jkokkjh578532467889@gmail.com','0','{"accessToken":"t"}');
+        """)
+        let out = ProviderImporter.from9Router(home: home.path)
+        #expect(out.count == 3)
+        // 预览名不含完整邮箱, 落盘 slug 也不含
+        for c in out {
+            #expect(!c.name.contains("@"))
+            #expect(!(c.slugHint ?? c.name).contains("@"))
+        }
+        #expect(out.map(\.name) == ["Cline 账号 1", "Codex 账号 1", "Codex 账号 2"])
+        #expect(out[0].sourceAccount == "ja***@g***.com")   // 原邮箱脱敏后仅出现在说明行
     }
 
     @Test func nineRouterKeepsUnmappableRowsVisible() {
