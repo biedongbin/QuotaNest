@@ -131,6 +131,18 @@ struct ConfigStoreTests {
         #expect(ProviderConfigStore.read(authFile: f, manifest: m).queryKey == "clp_new")
     }
 
+    @Test func readKeyedFieldAlsoFeedsRefresh() throws {
+        // 同一把 Key 兼作查询与调用 (cline): 无 refreshApiKey 时 refresh 回退 queryKey
+        let f = try writeAuth(#"{"apiKey":"clp_same"}"#)
+        var m = ProviderManifest(name: "Cline", label: "Cline")
+        m.queryAuth = "bearer"
+        m.queryKeyField = "apiKey"
+        m.refreshAuth = "bearer"
+        let c = ProviderConfigStore.read(authFile: f, manifest: m)
+        #expect(c.queryKey == "clp_same")
+        #expect(c.refreshKey == "clp_same")
+    }
+
     @Test func instantiateThenWriteKeyedField() throws {
         // 模板实例化 (auth-template 只有空 apiKey) -> 写新 key -> 文件 auth.apiKey == 新值
         let tmp = FileManager.default.temporaryDirectory

@@ -68,6 +68,8 @@ enum ProviderConfigStore {
             // refreshApiKey 优先, 缺省回退 headers.Authorization (如 ollama)
             c.refreshKey = (obj["refreshApiKey"] as? String) ?? bearer(headers["Authorization"] as? String)
         }
+        // 同一把 Key 兼作查询与调用凭证的供应商 (如 cline 的 apiKey) 无 refreshApiKey 字段
+        if c.refreshKey.isEmpty { c.refreshKey = c.queryKey }
 
         c.testModel = obj["testModel"] as? String ?? ""
         c.testPrompt = obj["testPrompt"] as? String ?? "test，收到回复1"

@@ -63,6 +63,9 @@ struct SettingsCenterView: View {
         case .edit:
             model.tab = .config
             model.startEdit()
+        case .editTrigger:
+            model.tab = .trigger
+            model.startEdit()
         case .templates:
             model.showingTemplates = true
         case .create:
@@ -342,17 +345,42 @@ struct DetailPanel: View {
     @ObservedObject var engine: DataEngine
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if !model.topError.isEmpty {
-                    errorBanner
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if !model.topError.isEmpty {
+                        errorBanner
+                    }
+                    content
                 }
-                content
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
             }
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            // 草稿底栏固定在滚动区外: 配置/自动触发两个 tab 都可见可用 (草稿整体保存)
+            if model.draft != nil && !model.showingTemplates {
+                draftActionBar
+            }
         }
+    }
+
+    private var draftActionBar: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Palette.border).frame(height: 1)
+            HStack(spacing: 8) {
+                Text(model.draft?.isNew == true ? "新账号保存后加入左侧列表"
+                                                : "修改仅在保存后生效，保存不发起请求")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+                Spacer()
+                Button("取消") { model.cancelEdit() }.barButton()
+                Button("保存") { model.save() }
+                    .barButton(.primary)
+                    .keyboardShortcut("s", modifiers: .command)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .background(Palette.surface)
     }
 
     private var errorBanner: some View {
@@ -374,11 +402,14 @@ struct DetailPanel: View {
         if model.showingTemplates {
             TemplateCatalogView(model: model)
         } else if let row = model.current {
-            // 草稿态: 额度 tab 仍看数据, 配置/自动触发 tab 显示同一编辑区 (切 tab 不丢草稿)
-            if let d = model.draft, model.tab != .quota {
-                DraftFormView(model: model, draft: d)
-            } else if let d = model.draft, d.isNew {
-                DraftFormView(model: model, draft: d)
+            // 草稿态: 配置/自动触发 tab 各渲染对应段落; 额度 tab 仍看数据 (草稿不丢)
+            if let d = model.draft {
+                if d.isNew || model.tab != .quota {
+                    DraftFormView(model: model, draft: d,
+                                  section: model.tab == .trigger ? .trigger : .config)
+                } else {
+                    QuotaTabView(model: model, row: row)
+                }
             } else {
                 switch model.tab {
                 case .quota: QuotaTabView(model: model, row: row)
@@ -398,7 +429,7 @@ struct DetailPanel: View {
 // MARK: - 渲染钩子
 
 struct RenderScript {
-    enum Mode { case quota, config, trigger, edit, templates, create, importer, full }
+    enum Mode { case quota, config, trigger, edit, editTrigger, templates, create, importer, full }
     var mode: Mode
     var slug: String?
     var templateID: String?

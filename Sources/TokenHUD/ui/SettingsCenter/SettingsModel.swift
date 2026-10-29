@@ -617,7 +617,7 @@ final class SettingsModel: ObservableObject {
 
     func testCall(_ slug: String) {
         guard let row = row(slug), row.canCall else {
-            flash("该账号的调用协议未适配，无法发送测试调用", error: true)
+            flash("该账号尚未配置调用端点，无法发送测试调用", error: true)
             return
         }
         let alert = NSAlert()

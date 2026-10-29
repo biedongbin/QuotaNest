@@ -3,8 +3,12 @@ import SwiftUI
 // MARK: - 草稿表单 (配置 / 自动触发 共用, 单页三个分区)
 
 struct DraftFormView: View {
+    /// 按 tab 分段: .config = 基本信息 + 查询与凭证, .trigger = 自动触发, .all = 全部
+    enum Section { case config, trigger, all }
+
     @ObservedObject var model: SettingsModel
     let draft: Draft
+    var section: Section = .all
 
     @State private var showKey = false
 
@@ -22,10 +26,13 @@ struct DraftFormView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             notice
-            basicGroup
-            credentialGroup
-            if canCall { triggerGroup } else { unsupportedTrigger }
-            actionBar
+            if section != .trigger {
+                basicGroup
+                credentialGroup
+            }
+            if section != .config {
+                if canCall { triggerGroup } else { unsupportedTrigger }
+            }
         }
         .onChange(of: draft.values) { _, _ in
             // 用户改动后清掉旧的保存错误汇总, 只保留字段级提示
@@ -247,26 +254,13 @@ struct DraftFormView: View {
                     }
                 }
                 .toggleStyle(.switch)
-                UnsupportedBox(title: "不支持模型定时调用",
-                               detail: "该供应商未提供模型调用接口，TokenHUD 未适配调用协议，因此不提供定时调用。")
+                UnsupportedBox(title: "尚未配置调用端点",
+                               detail: "该供应商支持模型调用，在配置中填入调用地址与模型即可启用定时调用。")
             }
         }
     }
 
-    // MARK: 底栏
-
-    private var actionBar: some View {
-        HStack(spacing: 8) {
-            Text(isNew ? "新账号保存后加入左侧列表" : "修改仅在保存后生效，保存不发起请求")
-                .font(Typo.small).foregroundStyle(Palette.muted)
-            Spacer()
-            Button("取消") { model.cancelEdit() }.barButton()
-            Button("保存") { model.save() }
-                .barButton(.primary)
-                .keyboardShortcut("s", modifiers: .command)
-        }
-        .padding(.top, 4)
-    }
+    // MARK: 底栏 (由 DetailPanel 固定在滚动区外, 两个 tab 都可见)
 
     // MARK: 绑定
 

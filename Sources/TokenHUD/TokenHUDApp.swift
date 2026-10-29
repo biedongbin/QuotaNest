@@ -94,6 +94,7 @@ struct TokenHUDApp: App {
             ("04-templates", RenderScript(mode: .templates, slug: nil, templateID: nil)),
             ("05-import", RenderScript(mode: .importer, slug: nil, templateID: nil, importModel: importModel)),
             ("06-edit", RenderScript(mode: .edit, slug: nil, templateID: nil)),
+            ("06b-edit-trigger", RenderScript(mode: .editTrigger, slug: nil, templateID: nil)),
             ("07-create", RenderScript(mode: .create, slug: nil, templateID: "glm")),
         ]
         var hosts: [NSWindow] = []   // 存活到截图完成 (否则视图被释放)

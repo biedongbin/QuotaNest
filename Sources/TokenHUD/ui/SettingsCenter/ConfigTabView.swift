@@ -55,7 +55,7 @@ struct ConfigTabView: View {
                         KeyValueRow("调用协议") {
                             Text(row.canCall
                                  ? (cfg.refreshProtocol == "anthropic" ? "Anthropic 兼容 · messages" : "OpenAI 兼容 · chat/completions")
-                                 : "未配置调用协议")
+                                 : "尚未配置调用端点")
                         }
                         KeyValueRow("凭证来源", mono: true) {
                             Text(row.authStyle == "apikey"
@@ -150,8 +150,8 @@ struct TriggerTabView: View {
                             .padding(.top, 4)
                     } else {
                         UnsupportedBox(
-                            title: "不支持模型定时调用",
-                            detail: "该供应商未提供模型调用接口，TokenHUD 尚未适配调用协议，因此只提供额度查询。")
+                            title: "尚未配置调用端点",
+                            detail: "该供应商支持模型调用，在配置中填入调用地址与模型即可启用定时调用。")
                     }
                 }
             }

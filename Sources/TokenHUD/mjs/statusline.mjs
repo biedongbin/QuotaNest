@@ -122,7 +122,7 @@ const ENV_REGISTRY = {
   'GPT':        { label: 'GPT', source: 'cache', cache: GPT_CACHE, auth: GPT_AUTH, provider: GPT_PROVIDER, buckets: { five_hour: '5h', seven_day: '周' } },
   'Ollama':     { label: 'Ollama', source: 'cache', cache: OLLAMA_CACHE, auth: OLLAMA_AUTH, provider: OLLAMA_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
   'OC-Go':      { label: 'OC-Go', source: 'cache', cache: OCG_CACHE, auth: OCG_AUTH, provider: OCG_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
-  'Cline':      { label: 'Cline', source: 'cache', cache: join(HUD_DIR, '.cline-usage-cache.json'), auth: join(HUD_DIR, '.cline-usage-auth.json'), provider: CLINE_PROVIDER, buckets: { five_hour: '5h', seven_day: '周' } },
+  'Cline':      { label: 'Cline', source: 'cache', cache: join(HUD_DIR, '.cline-usage-cache.json'), auth: join(HUD_DIR, '.cline-usage-auth.json'), provider: CLINE_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
 };
 
 // 动态 env 注册: ~/.claude/hud/envs.json (TokenHUD 写出), 条目与内置 registry 同构

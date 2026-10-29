@@ -3,7 +3,8 @@
   "authFile": "~/.claude/hud/.cline-usage-auth.json",
   "buckets": {
     "five_hour": "5h",
-    "seven_day": "周"
+    "seven_day": "周",
+    "monthly": "月"
   },
   "cacheFile": "~/.claude/hud/.cline-usage-cache.json",
   "enabled": true,
@@ -15,5 +16,10 @@
   "needsCredential": true,
   "queryAuth": "bearer",
   "queryKeyField": "apiKey",
-  "queryUrl": "https://api.cline.bot/api/v1/users/me/plan"
+  "queryUrl": "https://api.cline.bot/api/v1/users/me/plan/usage-limits",
+  "refreshUrl": "https://api.cline.bot/api/v1/chat/completions",
+  "refreshProtocol": "openai",
+  "refreshAuth": "bearer",
+  "testModel": "@preset/cline-new27-20261022-sonnet55-vertex-global-r1",
+  "testPrompt": "OK"
 }

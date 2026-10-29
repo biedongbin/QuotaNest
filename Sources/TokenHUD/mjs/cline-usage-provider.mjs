@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// ClinePass 用量 provider: 官方 api.cline.bot (凭证: app.cline.bot/settings/api-keys)
-// 模型: 滚动窗口用量 vs 套餐上限 (plan.entitlements.cline_pass.inferenceCapThreshold,
-// micro-USD): primary 5h / secondary 7d → five_hour / seven_day 桶
-// 用量 = 汇总 usages 流水 costUsd (micro-USD), nextToken 翻页
-// 预算: 全程 ≤12s (ProviderRunner 20s 上限内), 超预算即用已汇总部分 (重试由下轮轮询天然完成)
-// 凭证只读不写回; 失败保旧同账号额度; 无有效窗口不伪造 0%
+// ClinePass 用量 provider: 官方 usage-limits 接口 (凭证: app.cline.bot/settings/api-keys)
+// GET https://api.cline.bot/api/v1/users/me/plan/usage-limits
+//   → { data: { limits: [{ type: "five_hour"|"weekly"|"monthly", percentUsed, resetsAt }] } }
+// percentUsed 已是百分数, resetsAt 是 ISO8601 → 转 epoch 秒
+// 单次请求, 10s 上限; 凭证只读不写回; 失败保旧桶; 未知 type 忽略不猜
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -15,12 +14,13 @@ const HUD_DIR = join(CLAUDE_DIR, 'hud');
 const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.cline-usage-auth.json');
 const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.cline-usage-cache.json');
 const API_BASE = 'https://api.cline.bot';
-const TIMEOUT_S = 10;   // 单请求上限
-const BUDGET_MS = 12_000; // 全程预算 (provider 内), 余量留给 fetch.sh cat 与 runner
-const MAX_PAGES = 10;   // 翻页上限: 防上游游标异常死循环
+const TIMEOUT_S = 8;   // 单次请求上限; 最多两次 = 16s, 留余量给 ProviderRunner 20s 上限
 const TTL_MS = 60_000;
 const verbose = !!process.env.USAGE_VERBOSE;
 const CURL = process.env.TOKENHUD_CURL || '/usr/bin/curl';
+
+// 接口 type → 缓存桶名; 不在表内的 type 忽略
+const TYPE_MAP = { five_hour: 'five_hour', weekly: 'seven_day', monthly: 'monthly' };
 
 const readJson = (p) => {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
@@ -39,14 +39,10 @@ const writeFailure = (kind, detail) => {
   if (verbose) console.error(`[cline-provider] ${kind}: ${detail}`);
 };
 
-const startedAt = Date.now();
-const budgetLeft = () => BUDGET_MS - (Date.now() - startedAt);
-
 // GET 一次; 返回 {status, json} 或 {err}
-function getJson(url, key) {
-  const left = Math.max(2, Math.ceil(budgetLeft() / 1000));
+function getOnce(url, key) {
   const r = spawnSync(CURL, [
-    '-sS', '--connect-timeout', '6', '--max-time', String(Math.min(TIMEOUT_S, left)),
+    '-sS', '--connect-timeout', '6', '--max-time', String(TIMEOUT_S),
     '-H', `Authorization: Bearer ${key}`,
     '-H', 'Accept: application/json',
     '-w', '\n%{http_code}',
@@ -63,6 +59,22 @@ function getJson(url, key) {
   return { status, json };
 }
 
+// 连接层失败 (无 HTTP 应答, 如 TLS exit 35) 重试一次; 有应答不重试
+function getJson(url, key) {
+  const first = getOnce(url, key);
+  if (!first.err || first.status) return first;
+  return getOnce(url, key);
+}
+
+// ISO8601 (可带 9 位纳秒小数) → epoch 秒; 非法返回 null
+function toEpochSec(iso) {
+  if (typeof iso !== 'string' || !iso) return null;
+  // 小数位裁到 3 位: 部分解析器不接受纳秒
+  const trimmed = iso.replace(/(\.\d{3})\d+/, '$1');
+  const ms = Date.parse(trimmed);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
 function main() {
   const auth = readJson(AUTH_FILE) || {};
   const key = String(auth.apiKey || '').trim();
@@ -71,62 +83,34 @@ function main() {
     return;
   }
 
-  // 1) plan: 上限 + 周期 + userId
-  const plan = getJson(`${API_BASE}/api/v1/users/me/plan`, key);
-  if (plan.err) { writeFailure(plan.err === 'non-JSON' ? 'parse' : 'network', plan.err); return; }
-  if (plan.status === 401 || plan.status === 403) { writeFailure('auth', `HTTP ${plan.status}: 凭证过期, 请到 app.cline.bot 重新生成`); return; }
-  if (plan.status !== 200) { writeFailure('network', `plan HTTP ${plan.status}`); return; }
-  const pdata = plan.json.data || plan.json || {};
-  const caps = pdata.plan?.entitlements?.cline_pass?.inferenceCapThreshold || {};
-  const periodEnd = pdata.currentPeriodEnd ? Math.floor(Date.parse(pdata.currentPeriodEnd) / 1000) : null;
-  const userId = pdata.userId;
-  if (!userId) { writeFailure('parse', 'plan 响应无 userId'); return; }
-
-  // 2) 一次翻页序列, 同时累计 5h 与 7d (5h 窗 ⊂ 7d 窗)
-  const now = Date.now();
-  const since5 = now - 5 * 3600 * 1000;
-  const since7 = now - 7 * 86400 * 1000;
-  let sum5 = 0, sum7 = 0, cursor = '', pages = 0, pagesErr = null;
-  while (pages < MAX_PAGES) {
-    if (budgetLeft() <= 2000) break;
-    const q = `/api/v1/users/${userId}/usages?limit=200${cursor ? `&nextToken=${encodeURIComponent(cursor)}` : ''}`;
-    const { status, json, err } = getJson(API_BASE + q, key);
-    if (err || status !== 200) { pagesErr = err || `HTTP ${status}`; break; }
-    const items = (json.data?.items || json.items || []);
-    const data = json.data || json;
-    for (const it of items) {
-      const t = Date.parse(it.createdAt || '');
-      if (!Number.isFinite(t)) continue;
-      const c = typeof it.costUsd === 'number' ? it.costUsd : 0;
-      if (t >= since7) sum7 += c;
-      if (t >= since5) sum5 += c;
-    }
-    pages++;
-    cursor = data.nextToken || '';
-    if (!cursor || !items.length) break;
-    const oldest = Date.parse(items[items.length - 1].createdAt || '');
-    if (Number.isFinite(oldest) && oldest < since7) break;
-  }
-  // 翻页中断: 已有部分数据则降级使用 (best-effort), 完全无数据才报错
-  if (pagesErr && pages === 1) { writeFailure(pagesErr.startsWith('HTTP 40') ? 'auth' : 'network', pagesErr); return; }
-
-  // 3) 百分比 = 窗口用量 / 套餐上限 (同单位 micro-USD); cap 缺失不伪造
-  const pct = (used, cap) => {
-    if (typeof cap !== 'number' || cap <= 0) return null;
-    return Math.round(Math.min(100, (used / cap) * 100) * 10) / 10;
-  };
-  const fiveHour = pct(sum5, caps.last5HoursUsageCostUSDPerUser);
-  const sevenDay = pct(sum7, caps.last7daysUsageCostUSDPerUser);
-  if (fiveHour == null && sevenDay == null) {
-    writeFailure('parse', '套餐无 inferenceCapThreshold 上限');
+  const res = getJson(`${API_BASE}/api/v1/users/me/plan/usage-limits`, key);
+  if (res.err) { writeFailure(res.err === 'non-JSON' ? 'parse' : 'network', res.err); return; }
+  if (res.status === 401 || res.status === 403) {
+    writeFailure('auth', `HTTP ${res.status}: 凭证过期, 请到 app.cline.bot 重新生成`);
     return;
   }
-  writeCache({
-    five_hour: fiveHour == null ? null : { used_percentage: fiveHour, resets_at: periodEnd },
-    seven_day: sevenDay == null ? null : { used_percentage: sevenDay, resets_at: periodEnd },
-    monthly: null,
-    generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
-  });
+  if (res.status !== 200) { writeFailure('network', `HTTP ${res.status}`); return; }
+
+  const limits = res.json?.data?.limits;
+  if (!Array.isArray(limits)) { writeFailure('parse', '响应无 data.limits'); return; }
+
+  const buckets = { five_hour: null, seven_day: null, monthly: null };
+  for (const item of limits) {
+    const slot = TYPE_MAP[item?.type];
+    if (!slot) continue;
+    const pct = item.percentUsed;
+    if (typeof pct !== 'number' || !Number.isFinite(pct)) continue;
+    buckets[slot] = {
+      used_percentage: Math.round(Math.min(100, Math.max(0, pct)) * 10) / 10,
+      resets_at: toEpochSec(item.resetsAt),
+    };
+  }
+  if (!buckets.five_hour && !buckets.seven_day && !buckets.monthly) {
+    writeFailure('parse', 'usage-limits 无已知额度桶');
+    return;
+  }
+
+  writeCache({ ...buckets, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
   if (verbose) console.error('[cline-provider] ok');
 }
 
