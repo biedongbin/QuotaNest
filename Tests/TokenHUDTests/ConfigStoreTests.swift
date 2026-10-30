@@ -305,6 +305,32 @@ struct RefreshTriggerTests {
                                                  triggerEnabled: true, canCall: false).isEmpty)
     }
 
+    // MARK: P1-8 错误四态: 判定集中 CapabilityStatus, 纯函数
+
+    @Test func capabilityFourStates() {
+        // 额度查询: 有 queryUrl/cacheFile = 已支持; 通用自定义无 = 未接入 (App 侧)
+        let withUrl = ProviderManifest(name: "A", label: "a", queryUrl: "https://q.example")
+        #expect(CapabilityStatus.quota(manifest: withUrl) == .configured)
+        let withCache = ProviderManifest(name: "B", label: "b", cacheFile: "~/.claude/hud/.b-cache.json")
+        #expect(CapabilityStatus.quota(manifest: withCache) == .configured)
+        let generic = ProviderManifest(name: "C", label: "c")   // 通用: 无 queryUrl/cacheFile
+        #expect(CapabilityStatus.quota(manifest: generic) == .notIntegrated)
+        // 模型调用: refreshUrl 有 = 已支持; 模板实例无 = 不支持 (供应商层面无端点);
+        // 通用未填地址 = 未配置 (可补), 填了 = 已支持
+        let callable = ProviderManifest(name: "D", label: "d", refreshUrl: "https://r.example/v1/messages")
+        #expect(CapabilityStatus.call(manifest: callable, configUrl: "") == .configured)
+        let tmplNoCall = ProviderManifest(name: "E", label: "e", template: "gpt")
+        #expect(CapabilityStatus.call(manifest: tmplNoCall, configUrl: "") == .notSupported)
+        #expect(CapabilityStatus.call(manifest: generic, configUrl: "") == .notConfigured)
+        #expect(CapabilityStatus.call(manifest: generic, configUrl: "https://api.example.com") == .configured)
+        // 标签齐备 (文案统一来源)
+        #expect(CapabilityStatus.notConfigured.label == "未配置")
+        #expect(CapabilityStatus.notIntegrated.label == "未接入")
+        #expect(CapabilityStatus.notSupported.label == "不支持")
+        #expect(CapabilityStatus.unverified.label == "待核实")
+        #expect(CapabilityStatus.configured.label == "已支持")
+    }
+
     // MARK: P1-10 合法不完整可保存: 仅结构错误拒绝; 执行性缺失 → 未配置 + 依赖开关强制 off
 
     @Test func incompletePredicate() {

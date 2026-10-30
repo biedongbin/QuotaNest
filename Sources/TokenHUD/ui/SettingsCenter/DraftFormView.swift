@@ -294,8 +294,8 @@ struct DraftFormView: View {
                     }
                 }
                 .toggleStyle(.switch)
-                UnsupportedBox(title: "尚未配置调用端点",
-                               detail: "该供应商支持模型调用，在配置中填入调用地址与模型即可启用定时调用。")
+                UnsupportedBox(title: "未配置调用端点",
+                               detail: "填入服务地址与模型后即可启用定时调用；当前草稿尚未填写服务地址。")
             }
         }
     }

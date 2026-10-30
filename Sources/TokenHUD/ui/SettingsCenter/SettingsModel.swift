@@ -89,6 +89,45 @@ enum SettingsValidation {
     }
 }
 
+// MARK: - P1-8 错误四态 (判定集中一处, UI 只读文案)
+
+/// 能力四态: 判定函数集中于此, 各 tab 文案统一引用
+/// 未配置 = 缺必需配置 (App 侧可补) / 未接入 = App 无该适配 /
+/// 不支持 = 有证据服务不支持 / 待核实 = 证据不足
+enum CapabilityStatus: Equatable {
+    case configured            // 能力可用
+    case notConfigured         // 未配置: 缺必需配置 (如调用端点未填、key 空)
+    case notIntegrated         // 未接入: App 无该适配 (如通用模板的额度解析)
+    case notSupported          // 不支持: 有证据服务端不提供该能力
+    case unverified            // 待核实: 证据不足, 不能断言不支持
+
+    var label: String {
+        switch self {
+        case .configured: return "已支持"
+        case .notConfigured: return "未配置"
+        case .notIntegrated: return "未接入"
+        case .notSupported: return "不支持"
+        case .unverified: return "待核实"
+        }
+    }
+
+    /// 额度查询能力: 有 queryUrl/cacheFile = 可查 (configured);
+    /// 通用自定义模板无解析适配 = notIntegrated (App 未接, 非服务不支持)
+    static func quota(manifest: ProviderManifest) -> CapabilityStatus {
+        if manifest.queryUrl != nil || manifest.cacheFile != nil { return .configured }
+        return .notIntegrated
+    }
+
+    /// 模型调用能力: manifest 有 refreshUrl (模板锁定) = configured;
+    /// 模板实例无 refreshUrl = notSupported (供应商声明层面就没有该端点);
+    /// 通用自定义 = notConfigured (服务地址未填时可补)
+    static func call(manifest: ProviderManifest, configUrl: String) -> CapabilityStatus {
+        if let r = manifest.refreshUrl, !r.isEmpty { return .configured }
+        if manifest.template != nil { return .notSupported }
+        return configUrl.trimmingCharacters(in: .whitespaces).isEmpty ? .notConfigured : .configured
+    }
+}
+
 // MARK: - 草稿
 
 /// 草稿值 (可比较 → dirty 判定)
@@ -707,7 +746,7 @@ final class SettingsModel: ObservableObject {
 
     func testCall(_ slug: String) {
         guard let row = row(slug), row.canCall else {
-            flash("该账号尚未配置调用端点，无法发送测试调用", error: true)
+            flash("未配置调用端点，无法发送测试调用", error: true)
             return
         }
         let alert = NSAlert()

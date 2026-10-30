@@ -8,6 +8,8 @@ struct ConfigTabView: View {
 
     private var m: ProviderManifest { row.plugin.manifest }
     private var cfg: ProviderConfig { model.readConfig(row.plugin) }
+    /// P1-8 四态: 模型调用能力 (模板无 refreshUrl = 不支持; 通用未填地址 = 未配置)
+    private var callStatus: CapabilityStatus { .call(manifest: m, configUrl: cfg.queryUrl) }
 
     private var addressRows: [AddressRow] {
         // 脚本型模板把查询地址放在 auth-template 的 apiUrl, 读盘后由 cfg.queryUrl 兜底
@@ -61,9 +63,19 @@ struct ConfigTabView: View {
                             }
                         }
                         KeyValueRow("调用协议") {
-                            Text(row.canCall
-                                 ? (cfg.refreshProtocol == "anthropic" ? "Anthropic 兼容 · messages" : "OpenAI 兼容 · chat/completions")
-                                 : "尚未配置调用端点")
+                            // P1-8: 端点缺失按四态给文案 — 通用未填 = 「未配置调用端点」(可补), 不写「未提供」
+                            switch callStatus {
+                            case .configured:
+                                Text(cfg.refreshProtocol == "anthropic" ? "Anthropic 兼容 · messages" : "OpenAI 兼容 · chat/completions")
+                            case .notConfigured:
+                                Text("未配置调用端点（填入服务地址后可调用）")
+                            case .notSupported:
+                                Text("该供应商不支持模型调用")
+                            case .notIntegrated:
+                                Text("未接入")
+                            case .unverified:
+                                Text("待核实")
+                            }
                         }
                         KeyValueRow("凭证来源", mono: true) {
                             Text(row.authStyle == "apikey"
@@ -102,6 +114,9 @@ struct TriggerTabView: View {
     let row: AccountRow
 
     private var cfg: ProviderConfig { model.readConfig(row.plugin) }
+    /// P1-8 四态: 查询/调用能力判定集中引用
+    private var quotaStatus: CapabilityStatus { .quota(manifest: row.plugin.manifest) }
+    private var callStatus: CapabilityStatus { .call(manifest: row.plugin.manifest, configUrl: cfg.queryUrl) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -125,7 +140,14 @@ struct TriggerTabView: View {
                             Text(row.autoQuery ? "已开启" : "已关闭")
                         }
                         KeyValueRow("查询能力") {
-                            Text(row.canQuery ? "支持" : "该供应商未提供额度查询接口")
+                            // P1-8 四态: 通用模板无解析 = 未接入 (App 侧), 不写「供应商未提供」
+                            switch quotaStatus {
+                            case .configured: Text("支持")
+                            case .notIntegrated: Text("未接入（App 暂无该额度解析）")
+                            case .notSupported: Text("不支持（服务端无额度查询）")
+                            case .notConfigured: Text("未配置")
+                            case .unverified: Text("待核实")
+                            }
                         }
                     }
 
@@ -157,9 +179,17 @@ struct TriggerTabView: View {
                             .disabled(model.running.contains(row.id))
                             .padding(.top, 4)
                     } else {
-                        UnsupportedBox(
-                            title: "尚未配置调用端点",
-                            detail: "该供应商支持模型调用，在配置中填入调用地址与模型即可启用定时调用。")
+                        // P1-8 四态区分: 通用未填地址 = 未配置 (可补); 模板无端点 = 不支持 (不可补)
+                        switch callStatus {
+                        case .notConfigured:
+                            UnsupportedBox(
+                                title: "未配置调用端点",
+                                detail: "在配置中填入服务地址与模型即可启用定时调用。")
+                        default:
+                            UnsupportedBox(
+                                title: "该供应商不支持模型调用",
+                                detail: "此账号的供应商端没有模型调用接口，无法定时调用。")
+                        }
                     }
                 }
             }

@@ -6,6 +6,24 @@ struct QuotaTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
 
+    /// P1-8 四态: 额度查询能力判定 (集中 CapabilityStatus.quota)
+    private var quotaStatus: CapabilityStatus { .quota(manifest: row.plugin.manifest) }
+
+    /// 四态对应说明文案 (未接入 ≠ 服务不支持, 不冒充断言)
+    private var quotaStatusText: String {
+        switch quotaStatus {
+        case .configured: return ""
+        case .notIntegrated:
+            return "\(row.plugin.manifest.fullName) 的额度解析 App 尚未接入，因此不显示 5 小时 / 本周 / 本月数值。"
+        case .notSupported:
+            return "\(row.plugin.manifest.fullName) 的服务端不提供额度查询，因此不显示数值。"
+        case .notConfigured:
+            return "额度查询端点未配置，补齐后可查询。"
+        case .unverified:
+            return "该账号额度查询能力待核实。"
+        }
+    }
+
     var body: some View {
         CardBox {
             VStack(alignment: .leading, spacing: 0) {
@@ -25,8 +43,8 @@ struct QuotaTabView: View {
                     ResultBox(kind: resultKind, title: resultTitle, detail: resultDetail)
                 }
 
-                if !row.canQuery {
-                    Text("\(row.plugin.manifest.fullName) 未提供额度查询接口，因此不显示 5 小时 / 本周 / 本月数值。")
+                if quotaStatus != .configured {
+                    Text(quotaStatusText)
                         .font(Typo.small).foregroundStyle(Palette.muted)
                         .padding(.top, 12)
                 } else {
@@ -61,7 +79,7 @@ struct QuotaTabView: View {
     private var resultDetail: String {
         guard let c = row.state?.cache else {
             return row.canQuery ? "点击「查询额度」后在这里显示该账号的额度与重置时间。"
-                                : "该账号没有额度查询能力。"
+                                : "该账号额度查询\(quotaStatus == .notIntegrated ? "未接入" : "不可用")。"
         }
         var parts: [String] = [formatCacheTime(c.generatedAt)]
         if let run = model.lastRun[row.id] {
@@ -137,7 +155,7 @@ struct QuotaTabView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 6)
-                Text(old || row.state?.cache == nil ? "尚未查询到有效额度" : "此供应商未提供该窗口额度")
+                Text(old || row.state?.cache == nil ? "尚未查询到有效额度" : "此窗口额度待核实（服务端未返回该窗口数据）")
                     .font(Typo.small).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
@@ -172,7 +190,8 @@ struct QuotaTabView: View {
         DisclosureGroup {
             VStack(spacing: 0) {
                 KeyValueRow("查询端点", mono: true) {
-                    Text(row.plugin.manifest.queryUrl ?? "未适配")
+                    // P1-8 四态: 端点缺失按判定给态名, 不混用「未适配」
+                    Text(row.plugin.manifest.queryUrl ?? quotaStatus.label)
                 }
                 KeyValueRow("授权方式") { Text(row.authLabel) }
                 KeyValueRow("最近错误码") {
@@ -182,7 +201,7 @@ struct QuotaTabView: View {
                     Text(formatCacheTime(row.state?.cache?.generatedAt))
                 }
                 KeyValueRow("数据来源") {
-                    Text(row.canQuery ? "\(row.plugin.manifest.fullName) 官方额度接口" : "未适配")
+                    Text(row.canQuery ? "\(row.plugin.manifest.fullName) 官方额度接口" : quotaStatus.label)
                 }
             }
             .padding(.top, 4)
