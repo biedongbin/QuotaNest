@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TokenHUD · 供应商运行台（交互原型 B）</title>
+<style>
+/* ===== tokens: 石墨蓝，dark 为默认 ===== */
+:root{
+  --bg:#191F28; --surface:#242D39; --surface-2:#2B3542; --ink:#EEF2F8; --muted:#B2BDCC;
+  --line:#465466; --line-strong:#5A6A80; --accent:#91BFF8; --accent-ink:#101A26; --accent-soft:#28374A;
+  --bar:#4E90E4; --track:#323D4B; --danger:#F2A79C; --danger-soft:#3A2A2C; --warn:#E5C983; --warn-soft:#383322;
+  --shadow:0 0 0 1px var(--line),0 12px 32px rgba(0,0,0,.55);
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg:#F4F6FA; --surface:#FFFFFF; --surface-2:#EDF1F7; --ink:#1B2430; --muted:#55637A;
+  --line:#CCD5E2; --line-strong:#B4C0D0; --accent:#2F6FD0; --accent-ink:#FFFFFF; --accent-soft:#E6EEFA;
+  --bar:#2F6FD0; --track:#E1E7F0; --danger:#9E3226; --danger-soft:#FAEDEB; --warn:#7A5A16; --warn-soft:#F7F1E2;
+  --shadow:0 0 0 1px var(--line),0 12px 32px rgba(27,36,48,.14);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+
+/* ===== 骨架 ===== */
+.win{display:flex;flex-direction:column;height:100vh;min-height:0}
+.topbar{flex:0 0 auto;display:flex;align-items:center;gap:14px;height:48px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--surface)}
+.brand{font-size:13px;font-weight:600;white-space:nowrap;letter-spacing:.01em}
+.tnav{display:flex;gap:2px}
+.tnav button{height:30px;padding:0 11px;border:1px solid transparent;border-radius:5px;background:transparent;font-size:13px;color:var(--muted)}
+.tnav button:hover{background:var(--surface-2);color:var(--ink)}
+.tnav button[aria-current="page"]{background:var(--accent-soft);border-color:var(--line);color:var(--ink);font-weight:600}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.proto{font-size:11px;color:var(--muted);white-space:nowrap}
+.work{flex:1 1 auto;display:flex;min-height:0;position:relative}
+
+/* 左：常驻主表 */
+.main-col{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;min-height:0}
+.section-head{display:flex;align-items:center;gap:10px;padding:14px 20px 10px;flex-wrap:wrap}
+.h1{font-size:22px;line-height:1.2;font-weight:600;margin:0;letter-spacing:-.01em}
+.sub{font-size:12px;color:var(--muted);margin:2px 0 0}
+.head-tools{margin-left:auto;display:flex;gap:8px;align-items:center}
+.scroll{flex:1 1 auto;overflow:auto;min-height:0;padding:0 20px 18px}
+.footbar{flex:0 0 auto;display:flex;gap:8px;align-items:center;padding:9px 20px;border-top:1px solid var(--line)}
+
+/* ===== 控件 ===== */
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;background:var(--surface);border:1px solid var(--line-strong);border-radius:5px;font-size:13px;white-space:nowrap}
+.btn:hover{background:var(--surface-2);border-color:var(--muted)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--ink)}
+.btn.danger{color:var(--danger)}
+.btn.danger:hover{background:var(--danger-soft);border-color:var(--danger)}
+.btn.sm{height:26px;padding:0 9px;font-size:12px}
+.input,.select{height:30px;padding:0 9px;background:var(--bg);border:1px solid var(--line-strong);border-radius:5px;width:100%}
+.input:focus,.select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.input[aria-invalid="true"]{border-color:var(--danger);box-shadow:inset 0 0 0 1px var(--danger)}
+.chk{display:inline-flex;align-items:center;gap:7px}
+.chk input{width:15px;height:15px;accent-color:var(--bar);margin:0}
+.switch{position:relative;width:34px;height:20px;flex:0 0 auto;display:inline-block}
+.switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
+.switch .knob{position:absolute;inset:0;background:var(--track);border:1px solid var(--line-strong);border-radius:10px;pointer-events:none;transition:background .14s}
+.switch .knob::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.35);transition:transform .14s}
+.switch input:checked + .knob{background:var(--bar);border-color:var(--bar)}
+.switch input:checked + .knob::after{transform:translateX(14px)}
+.switch input:disabled + .knob{opacity:.4}
+.tag{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:4px;font-size:11px;line-height:1;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.tag.ok{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 42%,var(--line));background:var(--accent-soft)}
+.tag.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--warn-soft)}
+.tag.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line));background:var(--danger-soft)}
+.callout{display:flex;gap:8px;padding:9px 12px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
+.callout.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 32%,var(--line));color:var(--warn)}
+
+/* ===== 主表 ===== */
+.dtable{width:100%;min-width:660px;border-collapse:collapse;font-size:12px}
+.dtable thead th{position:sticky;top:0;z-index:2;background:var(--bg);text-align:left;font-weight:600;font-size:11px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+.dtable tbody td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.dtable tbody tr{cursor:pointer}
+.dtable tbody tr:hover td{background:var(--surface-2)}
+.dtable tbody tr[aria-current="true"] td{background:var(--accent-soft)}
+.dtable tbody tr[aria-current="true"] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.dtable .nm{font-size:13px;font-weight:600;white-space:nowrap}
+.pp{font-size:11px;color:var(--muted)}
+.wcell{display:flex;flex-direction:column;gap:3px;min-width:96px}
+.wcell .tag{margin-top:1px}
+.wrow{display:flex;align-items:center;gap:6px}
+.wl{font-size:11px;color:var(--muted);width:22px;flex:0 0 22px}
+.wt{flex:1 1 auto;height:5px;background:var(--track);border-radius:3px;overflow:hidden;min-width:44px}
+.wf{height:100%;background:var(--bar);border-radius:3px}
+.wf.full{background:var(--ink)}
+.wv{font-size:11px;font-variant-numeric:tabular-nums;width:30px;text-align:right;flex:0 0 30px;font-weight:600}
+.resets{font-size:11px;color:var(--muted);white-space:nowrap}
+.rowacts{display:flex;gap:4px;justify-content:flex-end}
+.empty2{display:flex;flex-direction:column;align-items:center;gap:7px;padding:40px 16px;color:var(--muted);text-align:center}
+.empty2 strong{color:var(--ink);font-size:15px}
+
+/* ===== 右栏：检查器 / 原地编辑（>=550px） ===== */
+.pane{flex:0 0 300px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:var(--surface)}
+.pane.editing{flex-basis:560px;min-width:550px}
+.pane-head{padding:13px 16px 10px;border-bottom:1px solid var(--line)}
+.pane-title{font-size:16px;font-weight:600;line-height:1.3;margin:0}
+.pane-sub{font-size:12px;color:var(--muted);margin:3px 0 0}
+.pane-body{flex:1 1 auto;overflow:auto;padding:13px 16px}
+.pane-foot{flex:0 0 auto;padding:9px 16px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.kv{display:grid;grid-template-columns:74px 1fr;gap:5px 8px;font-size:12px;margin:0 0 14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.psec{margin-top:15px}
+.psec h3{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 7px}
+.ibar{display:grid;grid-template-columns:22px 1fr 32px;gap:6px;align-items:center;margin-bottom:5px}
+.ibar .l{font-size:11px;color:var(--muted)}
+.ibar .v{font-size:11px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.pane .empty{color:var(--muted);font-size:12px;padding:22px 0;text-align:center}
+
+/* 编辑态字段 */
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;min-width:0}
+.field:last-child{margin-bottom:0}
+.field .lbl{font-size:13px;font-weight:600}
+.field .hint{font-size:12px;color:var(--muted);line-height:1.45}
+.field .err{font-size:12px;color:var(--danger);display:none}
+.field.invalid .err{display:block}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:0 14px}
+.keyrow{display:flex;gap:8px}
+.ro{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px dashed var(--line-strong);border-radius:5px;background:var(--bg);font-size:12px;color:var(--muted);flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{display:inline-flex;align-items:center;gap:4px;height:23px;padding:0 4px 0 8px;border:1px solid var(--line-strong);border-radius:4px;background:var(--bg);font-size:12px;font-variant-numeric:tabular-nums}
+.chip button{border:0;background:transparent;color:var(--muted);width:17px;height:17px;border-radius:4px;display:grid;place-items:center}
+.chip button:hover{background:var(--danger-soft);color:var(--danger)}
+.tbox{margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);font-size:12px;display:none}
+.tbox.on{display:block}
+.tbox .tr{display:flex;gap:8px}
+.tbox .tr+.tr{margin-top:4px}
+.tbox .k{color:var(--muted);flex:0 0 62px}
+.capi{display:flex;gap:10px;align-items:flex-start;padding:10px 11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);margin-bottom:8px}
+.capi .ct{font-size:13px;font-weight:600}
+.capi .cd{font-size:12px;color:var(--muted);margin-top:2px}
+.capi .cs{margin-left:auto}
+.capi.off{background:var(--surface-2)}
+.capi.off .ct{color:var(--muted)}
+.dirty{font-size:12px;color:var(--warn);display:none;margin-left:auto;white-space:nowrap}
+.dirty.on{display:inline}
+
+/* ===== 导入抽屉（任务队列） ===== */
+.drawer{
+  position:absolute;inset:0 0 0 auto;width:min(520px,100%);display:flex;flex-direction:column;
+  background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:20;
+}
+.drawer-head{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.drawer-body{flex:1 1 auto;overflow:auto;padding:13px 16px}
+.drawer-foot{flex:0 0 auto;padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.srcs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.srcb{display:flex;flex-direction:column;gap:1px;align-items:flex-start;min-width:132px;padding:7px 10px;border:1px solid var(--line);border-radius:5px;background:var(--bg)}
+.srcb:hover{background:var(--surface-2)}
+.srcb[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}
+.srcb .n{font-size:13px;font-weight:600}
+.srcb .p{font-size:11px;color:var(--muted)}
+.jobs{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.job{display:grid;grid-template-columns:20px 1fr auto;gap:9px;align-items:start;padding:9px 11px;border:1px solid var(--line);border-radius:5px;background:var(--bg)}
+.job.skip{opacity:.7}
+.job .jt{font-size:13px;font-weight:600}
+.job .jd{font-size:11px;color:var(--muted);margin-top:1px}
+.job .jstate{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.qbar{height:4px;background:var(--track);border-radius:2px;overflow:hidden;margin-top:6px}
+.qbar span{display:block;height:100%;background:var(--bar)}
+.srcline{font-size:11px;color:var(--muted);margin:0 0 10px}
+
+/* ===== 弹层 ===== */
+.back{position:fixed;inset:0;background:rgba(10,15,22,.62);display:grid;place-items:center;z-index:60;padding:20px}
+.dlg{width:min(430px,100%);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:18px 18px 14px}
+.dlg h2{font-size:16px;margin:0 0 6px;font-weight:600}
+.dlg p{font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.55}
+.dlgacts{display:flex;justify-content:flex-end;gap:8px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:5px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .18s;z-index:70}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+/* 900 宽：编辑态折叠主表，右栏占满 */
+@media (max-width:1100px){ .pane.editing{flex-basis:520px;min-width:520px} }
+@media (max-width:900px){
+  .work.editing .main-col{display:none}
+  .pane.editing{flex:1 1 auto;min-width:0;border-left:0}
+  .proto{display:none}
+}
+@media (max-width:760px){
+  .topbar{flex-wrap:wrap;height:auto;padding:8px 14px;gap:8px}
+  .work{flex-direction:column}
+  .pane{flex:0 0 auto;max-height:46vh;border-left:0;border-top:1px solid var(--line)}
+  .pane.editing{max-height:none}
+}
+</style>
+</head>
+<body>
+<div class="win">
+  <header class="topbar">
+    <span class="brand">TokenHUD</span>
+    <nav class="tnav" aria-label="主导航" id="tnav">
+      <button data-nav="overview">运行台</button>
+      <button data-nav="accounts">供应商账号</button>
+      <button data-nav="schedule">自动触发</button>
+      <button data-act="open-import">本地导入</button>
+    </nav>
+    <div class="top-right">
+      <span class="proto">交互原型 · 全部为演示数据，不读取本机配置</span>
+      <button class="btn sm ghost" id="themeBtn" aria-label="切换浅色外观">外观：深色</button>
+    </div>
+  </header>
+  <div class="work" id="work"></div>
+</div>
+<div id="dialogRoot"></div>
+<div class="sr-only" aria-live="polite" id="live"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+"use strict";
+/* ================= 固定演示 fixture（仅内存） ================= */
+const FIXTURE=[
+  {id:"glm",name:"GLM 日常",provider:"glm",providerLabel:"GLM",auth:"apikey",key:"sk-demo-glm-0000-1111",
+   monitor:true,schedule:true,times:["09:00","14:00"],
+   query:{state:"ok",at:"今天 09:12",note:"每周一自动刷新 JWT"},
+   windows:[{label:"5h",used:32,reset:"2h 10m 后"},{label:"周",used:58,reset:"3 天后"}],
+   models:["glm-4.6"],testModel:"glm-4.6",testPrompt:"ping"},
+  {id:"ollama",name:"Ollama 本地额度",provider:"ollama",providerLabel:"Ollama",auth:"apikey",key:"oa-demo-2222-3333",
+   monitor:true,schedule:true,times:["08:30"],
+   query:{state:"ok",at:"今天 08:31",note:"页面解析 data-time"},
+   windows:[{label:"5h",used:67,reset:"46m 后"},{label:"周",used:18,reset:"5 天后"},{label:"月",used:42,reset:"18 天后"}],
+   models:["qwen3-coder:30b"],testModel:"qwen3-coder:30b",testPrompt:"ping"},
+  {id:"ocgo",name:"OC-Go 团队池",provider:"opencode-go",providerLabel:"OC-Go",auth:"apikey",key:"oc-demo-4444-5555",
+   monitor:true,schedule:false,times:["09:00"],
+   query:{state:"paused",at:"暂停于 3 天前",note:"自动查询已关闭，手动查询仍可用"},
+   windows:[{label:"5h",used:83,reset:"35m 后"},{label:"周",used:42,reset:"4 天后"},{label:"月",used:14,reset:"21 天后"}],
+   models:["oc-go-large"],testModel:"oc-go-large",testPrompt:"ping",plan:{state:"paused",note:"每日计划已暂停"}},
+  {id:"cline",name:"Cline 备用",provider:"cline",providerLabel:"Cline",auth:"apikey",key:"cl-demo-6666-7777",
+   monitor:false,schedule:false,times:[],
+   query:{state:"stale",at:"5 天前",note:"凭证已过期，需重新填写"},
+   windows:[{label:"5h",used:25,reset:"未知"},{label:"周",used:10,reset:"未知"}],
+   models:[],testModel:"",testPrompt:"",plan:{state:"unavailable",note:"仅监控，无调用能力"}},
+  {id:"gpt",name:"GPT 授权登录",provider:"gpt",providerLabel:"GPT",auth:"oauth",key:"",
+   monitor:false,schedule:false,times:[],
+   query:{state:"fresh",at:"今天 09:40",note:"读取 ~/.codex/auth.json"},
+   windows:[{label:"5h",used:100,reset:"1h 05m 后"},{label:"周",used:16,reset:"6 天后"}],
+   models:[],testModel:"",testPrompt:"",plan:{state:"unavailable",note:"仅监控，无调用能力"}},
+];
+const TEMPLATES=[
+  {id:"glm",label:"GLM",slug:"glm",auth:"apikey",caps:{query:true,call:true},desc:"API Key + 额度接口；支持调用。"},
+  {id:"ollama",label:"Ollama",slug:"ollama",auth:"apikey",caps:{query:true,call:true},desc:"API Key + 页面额度解析；支持调用。"},
+  {id:"opencode-go",label:"OC-Go",slug:"opencode-go",auth:"apikey",caps:{query:true,call:true},desc:"API Key + cookie 解析；支持调用与每日计划。"},
+  {id:"cline",label:"Cline",slug:"cline",auth:"apikey",caps:{query:true,call:false},desc:"仅监控：拉取额度，不发送模型请求。"},
+  {id:"gpt",label:"GPT（Codex 本机）",slug:"gpt",auth:"oauth",caps:{query:true,call:false},desc:"仅监控：读取本机授权文件，不发起 OAuth 流程。"},
+  {id:"compat",label:"通用兼容（OpenAI 兼容）",slug:"compat",auth:"apikey",caps:{query:false,call:true},desc:"先只支持调用；额度适配未配置。"},
+];
+const SOURCES=[
+  {id:"9router",label:"9router",path:"~/.9router/providers.json"},
+  {id:"ccswitch",label:"cc-switch",path:"~/.cc-switch/config.json"},
+  {id:"cpamp",label:"cpamp",path:"~/.cpamp/accounts.json"},
+];
+const CANDIDATES={
+  "9router":[
+    {name:"GLM 日常",provider:"glm",auth:"apikey",action:"ok",reason:"凭证完整，可直接导入"},
+    {name:"OC-Go 团队池",provider:"opencode-go",auth:"apikey",action:"exists",reason:"同名账号已存在，默认跳过"},
+    {name:"Cline 备用",provider:"cline",auth:"apikey",action:"monitor",reason:"只有额度端点，导入后仅监控"},
+    {name:"某第三方中转",provider:"custom",auth:"apikey",action:"unsupported",reason:"非 OpenAI 兼容协议，当前不支持"},
+  ],
+  "ccswitch":[
+    {name:"GPT 授权登录",provider:"gpt",auth:"oauth",action:"monitor",reason:"OAuth 凭证，当前仅支持只读监控"},
+    {name:"Ollama 本地额度",provider:"ollama",auth:"apikey",action:"ok",reason:"凭证完整，可直接导入"},
+    {name:"Claude 中转",provider:"custom",auth:"apikey",action:"unsupported",reason:"需要浏览器登录（非 API Key），不在支持范围"},
+  ],
+  "cpamp":[
+    {name:"GLM 日常",provider:"glm",auth:"apikey",action:"ok",reason:"凭证完整，可直接导入"},
+    {name:"Cline 备用",provider:"cline",auth:"apikey",action:"ok",reason:"凭证完整，可直接导入"},
+    {name:"OC-Go 团队池",provider:"opencode-go",auth:"apikey",action:"exists",reason:"同名账号已存在，默认跳过"},
+  ],
+};
+const LABEL={none:"未查询",querying:"查询中",ok:"最新",fresh:"最新",stale:"数据过期",authfail:"认证失败",fail:"查询失败",paused:"已暂停"};
+const TONE ={ok:"ok",fresh:"ok",querying:"",none:"",paused:"warn",stale:"warn",authfail:"bad",fail:"bad"};
+
+const clone=v=>JSON.parse(JSON.stringify(v));
+let state={
+  accounts:clone(FIXTURE),
+  screen:"overview",        // overview | accounts | schedule
+  mode:"inspect",           // inspect | edit
+  selected:"gpt",
+  editId:null,editDraft:null,editBase:"",editIsNew:false,
+  filter:"",
+  importOpen:false, importSource:"9router", importPicked:{}, importJobs:[], importScanned:false,
+  theme:"dark",
+};
+const $=(s,r)=>(r||document).querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const byId=id=>state.accounts.find(a=>a.id===id);
+const live=m=>{const el=$("#live");el.textContent="";setTimeout(()=>{el.textContent=m;},30);};
+const mask=k=>!k?"（未填写）":(k.length<=10?"••••":k.slice(0,4)+"••••••"+k.slice(-4));
+function toast(m){const t=$("#toast");if(!t)return;t.textContent=m;t.style.opacity="1";clearTimeout(toast._t);toast._t=setTimeout(()=>{t.style.opacity="0";},2400);}
+const isDirty=()=>!!state.editDraft&&JSON.stringify(state.editDraft)!==state.editBase;
+const authLabel=a=>a.auth==="oauth"?"授权登录":"API Key";
+const canCall=a=>!!(a.models&&a.models.length)&&!(a.plan&&a.plan.state==="unavailable");
+const editing=()=>state.mode==="edit";
+function statusTag(a){const s=a.query.state,t=TONE[s]||"";const i=t==="ok"?"●":t==="bad"?"▲":t==="warn"?"◐":"○";
+  return `<span class="tag ${t}"><span aria-hidden="true">${i}</span>${esc(LABEL[s]||s)}</span>`;}
+
+/* ================= 主题 / 深链 ================= */
+function applyTheme(t){
+  state.theme=t;
+  document.documentElement.setAttribute("data-theme",t);
+  const b=$("#themeBtn");
+  b.textContent = t==="dark"?"外观：深色":"外观：浅色";
+  b.setAttribute("aria-label", t==="dark"?"切换浅色外观":"切换深色外观");
+}
+function readDeepLink(){
+  const p=new URLSearchParams(location.search);
+  const t=(p.get("theme")||"").toLowerCase();
+  applyTheme(t==="light"?"light":"dark");   // 默认深色；?theme=light 生效
+  const screen=(p.get("screen")||"overview").toLowerCase();
+  const provider=p.get("provider");
+  const base=provider?state.accounts.find(a=>a.provider===provider):null;
+  if(base) state.selected=base.id;
+  if(screen==="edit"){
+    state.screen="overview";
+    if(base) openEdit(base.id,true);
+    else state.mode="inspect";
+  } else if(screen==="add"){
+    state.screen="overview";
+    openAdd(true);
+    if(provider){ const tp=TEMPLATES.find(x=>x.slug===provider); if(tp) pickTemplate(tp.id,true); }
+  } else if(screen==="import"){
+    state.screen="overview";
+    state.importOpen=true;
+    state.importScanned=true; impInit();
+  } else {
+    state.screen=["overview","accounts","schedule"].includes(screen)?screen:"overview";
+  }
+}
+
+/* ================= 片段 ================= */
+function barRow(a,w){
+  const pct=Math.max(0,Math.min(100,w.used)),full=pct>=100;
+  const lbl=`${a.name} ${w.label} 已用 ${pct}%，重置 ${w.reset}`;
+  return `<div class="wrow" title="${esc(lbl)}" aria-label="${esc(lbl)}">
+    <span class="wl" aria-hidden="true">${esc(w.label)}</span>
+    <span class="wt" aria-hidden="true"><span class="wf${full?" full":""}" style="width:${pct}%"></span></span>
+    <span class="wv">${pct}%</span></div>`;
+}
+function wcell(a){
+  if(!a.windows.length) return `<span class="pp">无额度数据</span>`;
+  return `<div class="wcell">${a.windows.map(w=>barRow(a,w)).join("")}
+    ${a.windows.some(w=>w.used>=100)?`<span class="tag">已用完</span>`:""}</div>`;
+}
+const resets=a=>a.windows.length?a.windows.map(w=>`${w.label} ${w.reset}`).join(" · "):"—";
+const noexcept = a => a.windows.length;
+
+/* ================= 主表 ================= */
+function tableRows(list){
+  return list.map(a=>`
+    <tr data-act="select" data-id="${esc(a.id)}" aria-current="${a.id===state.selected}" tabindex="0" aria-label="选择 ${esc(a.name)} 查看详情">
+      <td><div class="nm">${esc(a.name)}</div><div class="pp">${esc(a.providerLabel)}</div></td>
+      <td>${esc(authLabel(a))}</td>
+      <td>${wcell(a)}</td>
+      <td><span class="resets">${esc(resets(a))}</span></td>
+      <td>${statusTag(a)}</td>
+      <td>${canCall(a)?`<span class="tag ok">支持调用</span>`:`<span class="tag warn">仅监控</span>`}</td>
+      <td style="text-align:right"><button class="btn sm" data-act="edit" data-id="${esc(a.id)}" aria-label="编辑 ${esc(a.name)}">编辑</button></td>
+    </tr>`).join("");
+}
+function tableShell(list,emptyMsg){
+  return `<table class="dtable">
+    <thead><tr>
+      <th scope="col">账号</th><th scope="col">凭证</th><th scope="col" style="width:150px">窗口用量</th>
+      <th scope="col">重置</th><th scope="col">查询状态</th><th scope="col">能力</th><th scope="col"></th>
+    </tr></thead>
+    <tbody>${list.length?tableRows(list):`<tr><td colspan="7"><div class="empty2">
+      <strong>${esc(emptyMsg)}</strong><span>换一个关键词，或添加新账号。</span>
+      <button class="btn" data-act="clear-filter">清除搜索</button></div></td></tr>`}</tbody>
+  </table>`;
+}
+
+/* ================= 左栏页面 ================= */
+function renderMain(){
+  const q=state.filter.trim().toLowerCase();
+  const list=state.accounts.filter(a=>!q||(a.name+" "+a.providerLabel+" "+authLabel(a)+" "+LABEL[a.query.state]).toLowerCase().includes(q));
+  const gpt=byId("gpt"),cline=byId("cline");
+  const bits=[];
+  if(gpt&&gpt.windows.some(w=>w.used>=100)) bits.push("GPT 5h 已用完");
+  if(cline&&cline.query.state==="stale") bits.push("Cline 需要更新凭证");
+
+  if(state.screen==="schedule") return renderScheduleMain();
+
+  const isAcc=state.screen==="accounts";
+  return `<div class="main-col">
+    <div class="section-head">
+      <div><h1 class="h1">${isAcc?"供应商账号":"运行台"}</h1>
+        <p class="sub">${isAcc?"凭证、查询方式与调用能力":"窗口额度与账号状态"} · ${state.accounts.length} 个账号 · 演示数据，不读取本机配置</p></div>
+      <div class="head-tools">
+        <div style="width:180px"><input class="input" id="searchInput" type="search" placeholder="搜索账号（⌘F）" aria-label="搜索账号" value="${esc(state.filter)}"></div>
+        <button class="btn" data-act="open-import">导入…</button>
+        <button class="btn primary" data-act="add">添加账号</button>
+      </div>
+    </div>
+    ${!isAcc&&bits.length?`<div style="padding:0 20px 8px">
+      <button class="callout" data-act="brief" style="width:100%;text-align:left;align-items:center">
+        <span aria-hidden="true" style="color:var(--accent)">◆</span>
+        <span style="color:var(--ink)">${esc(bits.join("；"))}。</span>
+        <span style="margin-left:auto;white-space:nowrap">定位 →</span></button></div>`:""}
+    <div class="scroll">${tableShell(list,q?"没有匹配的账号":"暂无账号")}</div>
+    <div class="footbar"><span style="font-size:12px;color:var(--muted)">${isAcc?"是否支持调用由模板决定，不能在账号里临时改变。":"查询与调用均需 App 运行；演示环境不发起任何网络请求。"}</span></div>
+  </div>`;
+}
+function renderScheduleMain(){
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||"本机时区";
+  const callable=state.accounts.filter(canCall);
+  return `<div class="main-col">
+    <div class="section-head"><div><h1 class="h1">自动触发</h1>
+      <p class="sub">每日模型请求计划 · 本机时区 ${esc(tz)} · 演示数据</p></div>
+      <div class="head-tools"><button class="btn" data-act="go-accounts">管理账号…</button></div></div>
+    <div class="scroll">
+      <div class="callout" style="margin-bottom:12px"><span aria-hidden="true">i</span><span>保存计划不会立即发送请求；App 未运行而错过的时刻不补发。此开关只控制每日模型请求，与「自动查询额度」互相独立。</span></div>
+      ${callable.length?`<table class="dtable">
+        <thead><tr><th scope="col">账号</th><th scope="col">模型</th><th scope="col">时刻</th><th scope="col">自动查询</th><th scope="col">每日触发</th><th scope="col"></th></tr></thead>
+        <tbody>${callable.map(a=>`<tr data-act="select" data-id="${esc(a.id)}" aria-current="${a.id===state.selected}" tabindex="0" aria-label="选择 ${esc(a.name)}">
+          <td><div class="nm">${esc(a.name)}</div><div class="pp">${esc(a.providerLabel)}</div></td>
+          <td class="mono">${esc(a.testModel||"—")}</td>
+          <td>${a.times.length?a.times.map(t=>`<span class="chip" style="margin-right:4px">${esc(t)}</span>`).join(""):`<span class="pp">未设置</span>`}</td>
+          <td>${a.monitor?"开启":"关闭"}</td>
+          <td><div style="display:flex;align-items:center;gap:7px">
+            <label class="switch"><input type="checkbox" ${a.schedule?"checked":""} data-act="toggle-sched" data-id="${esc(a.id)}" aria-label="${a.schedule?"暂停":"启用"} ${esc(a.name)} 的每日触发"><span class="knob"></span></label>
+            <span class="tag ${a.schedule?"ok":"warn"}">${a.schedule?"已启用":"已暂停"}</span></div></td>
+          <td style="text-align:right"><button class="btn sm" data-act="edit" data-id="${esc(a.id)}" aria-label="编辑 ${esc(a.name)} 计划">编辑</button></td>
+        </tr>`).join("")}</tbody></table>`
+      :`<div class="empty2"><strong>没有支持调用的账号</strong><span>当前账号均为仅监控。添加 GLM / Ollama / OC-Go 后即可设置每日触发。</span>
+        <button class="btn primary" data-act="add">添加账号</button></div>`}
+    </div>
+    <div class="footbar"><span style="font-size:12px;color:var(--muted)">仅监控账号不呈现定时开关，避免误解。</span></div>
+  </div>`;
+}
+
+/* ================= 右栏：检查器 ================= */
+function renderInspector(){
+  const a=byId(state.selected);
+  if(!a) return `<aside class="pane" aria-label="账号检查器">
+    <div class="pane-head"><p class="pane-title">未选择账号</p><p class="pane-sub">从左侧表格选一行查看详情。</p></div>
+    <div class="pane-body"><div class="empty">选择任意账号即可查看窗口用量与可用操作。</div></div></aside>`;
+  const call=canCall(a);
+  return `<aside class="pane" aria-label="账号检查器">
+    <div class="pane-head">
+      <p class="pane-title">${esc(a.name)}</p>
+      <p class="pane-sub">${esc(a.providerLabel)} · ${esc(authLabel(a))}</p>
+      <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">${statusTag(a)}
+        <span class="tag ${call?"ok":"warn"}">${call?"支持调用":"仅监控"}</span>
+        ${a.query.state==="paused"?`<span class="tag">手动查询可用</span>`:""}</div>
+    </div>
+    <div class="pane-body">
+      <dl class="kv">
+        <dt>数据时间</dt><dd>${esc(a.query.at)}</dd>
+        <dt>说明</dt><dd>${esc(a.query.note)}</dd>
+        <dt>凭证</dt><dd class="mono">${a.auth==="oauth"?"~/.codex/auth.json":esc(mask(a.key))}</dd>
+        <dt>自动查询</dt><dd>${a.monitor?"开启":"关闭（手动查询仍可用）"}</dd>
+        <dt>自动触发</dt><dd>${call?(a.schedule?"开启 · "+esc(a.times.join(" / ")||"未设时刻"):"关闭"):"不适用（仅监控）"}</dd>
+      </dl>
+      <div class="psec">
+        <h3>窗口用量</h3>
+        ${a.windows.length?a.windows.map(w=>barRow(a,w)).join("")+
+          `<p style="font-size:11px;color:var(--muted);margin:7px 0 0">${a.windows.some(w=>w.used>=100)?"额度已用完：这是额度状态，不是查询错误。":"重置："+esc(resets(a))}</p>`
+          :`<p style="font-size:12px;color:var(--muted);margin:0">尚未获取额度数据。</p>`}
+      </div>
+      ${(a.query.state==="stale"||a.query.state==="authfail")?`
+      <div class="callout warn" style="margin-top:13px"><span aria-hidden="true">▲</span><span>${a.query.state==="stale"?"凭证可能已过期，请更新后重新查询。":"认证失败：请检查凭证或本机授权文件。"}</span></div>`:""}
+    </div>
+    <div class="pane-foot">
+      <button class="btn sm" data-act="query-one" data-id="${esc(a.id)}" aria-label="查询 ${esc(a.name)} 额度（演示）">查询额度（演示）</button>
+      <button class="btn sm" data-act="edit" data-id="${esc(a.id)}">编辑</button>
+      <button class="btn sm ghost" data-act="delete" data-id="${esc(a.id)}" aria-label="删除 ${esc(a.name)}">删除</button>
+    </div>
+  </aside>`;
+}
+
+/* ================= 右栏：原地编辑 ================= */
+function newDraft(tpl){
+  return {id:"new-"+Date.now(),name:"",provider:tpl.slug,providerLabel:tpl.label,auth:tpl.auth,
+    key:"",monitor:true,schedule:false,times:[],
+    query:{state:"none",at:"尚未查询",note:"保存后可手动查询"},
+    windows:[],models:[],testModel:"",testPrompt:"ping",
+    plan:tpl.caps.call?{state:"enabled",note:"需在「自动触发」启用"}:{state:"unavailable",note:"模板不支持调用，仅监控"},
+    __caps:tpl.caps,__tpl:tpl.id};
+}
+function openEdit(id,silent){
+  const a=byId(id);if(!a)return;
+  state.editIsNew=false;state.editId=id;
+  state.editDraft=clone(a);state.editDraft.__tpl=a.__tpl||a.provider;
+  state.editBase=JSON.stringify(state.editDraft);
+  state.mode="edit";state.selected=id;
+  if(!silent){render();const f=$("#edName");if(f)f.focus();}
+}
+function openAdd(silent){
+  const d=newDraft(TEMPLATES[0]);
+  state.editIsNew=true;state.editId=null;state.editDraft=d;state.editBase=JSON.stringify(d);state.mode="edit";
+  if(!silent){render();const f=$("#edName");if(f)f.focus();}
+}
+function pickTemplate(id,silent){
+  const tpl=TEMPLATES.find(t=>t.id===id);if(!tpl)return;
+  const d=newDraft(tpl);d.name=state.editDraft?state.editDraft.name:"";
+  state.editDraft=d;state.editBase=JSON.stringify(d);
+  if(!silent)refreshPane();
+}
+function renderEditor(){
+  const d=state.editDraft,isNew=state.editIsNew,caps=d.__caps||{query:true,call:canCall(d)};
+  const dup=isNew&&state.accounts.some(a=>a.provider===d.provider);
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||"本机时区";
+  return `<aside class="pane editing" aria-label="账号编辑器">
+    <div class="pane-head">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn sm" data-act="back" aria-label="返回检查器（有未保存更改先确认）">← 返回</button>
+        <span class="dirty ${isDirty()?"on":""}" id="dirtyFlag"><span aria-hidden="true">●</span> 未保存</span>
+      </div>
+      <p class="pane-title" style="margin-top:8px">${isNew?"添加账号":esc(d.name||"未命名账号")}</p>
+      <p class="pane-sub">${isNew?"模板："+esc(d.providerLabel):esc(d.providerLabel)+" · 保存不会立即发起网络请求"}</p>
+    </div>
+    <div class="pane-body">
+      <h2 style="font-size:13px;margin:0 0 8px;font-weight:600">账号与凭证</h2>
+      <div class="field" id="fName">
+        <label class="lbl" for="edName">显示名称</label>
+        <input class="input" id="edName" value="${esc(d.name)}" placeholder="例如：GLM 日常" autocomplete="off" aria-describedby="hName">
+        <span class="hint" id="hName">建议带上用途，区分同一供应商下的多个账号。</span>
+        <span class="err">请填写名称（至少 1 个字符）。</span>
+      </div>
+      <div class="field">
+        <label class="lbl" for="edProvider">供应商模板</label>
+        <select class="select" id="edProvider" ${isNew?"":"disabled"} aria-describedby="hProvider">
+          ${TEMPLATES.map(t=>`<option value="${t.id}" ${t.id===(d.__tpl||"")?"selected":""}>${esc(t.label)}</option>`).join("")}
+        </select>
+        <span class="hint" id="hProvider">${isNew?"切换模板会重置凭证与能力设置。":"已保存账号不能更换模板，可新建账号。"}</span>
+      </div>
+      ${isNew?`<p style="font-size:12px;color:var(--muted);margin:0 0 12px">将创建为 <span class="mono">${esc(d.provider)}</span>${dup?` · <span style="color:var(--danger)">标识已存在，保存后追加序号</span>`:""}</p>`:""}
+      <div class="field">
+        <span class="lbl">凭证</span>
+        ${d.auth==="oauth"?`
+          <div class="ro"><span aria-hidden="true">▤</span>
+            <span>本机授权文件 <span class="mono">~/.codex/auth.json</span>（只读）</span>
+            <button class="btn sm" data-act="check-login" style="margin-left:auto">检查登录状态（演示）</button></div>
+          <span class="hint">不模拟 OAuth 登录流程；文件缺失时状态显示「认证失败」。</span>
+          <div id="loginBox" style="font-size:12px;color:var(--muted);margin-top:5px"></div>`
+        :`<div class="keyrow">
+            <input class="input" id="edKey" type="password" value="${esc(d.key)}" placeholder="粘贴 API Key（演示：任意值均可）" autocomplete="off" aria-describedby="hKey">
+            <button class="btn" data-act="toggle-key" aria-pressed="false" id="keyToggle" aria-label="显示 API Key">显示</button></div>
+          <span class="hint" id="hKey">仅存在内存；原型不写入 <span class="mono">~/.claude/hud</span>。</span>`}
+      </div>
+
+      <h2 style="font-size:13px;margin:18px 0 8px;font-weight:600;border-top:1px solid var(--line);padding-top:14px">额度查询</h2>
+      <p class="hint" style="margin:0 0 9px">查询额度只读余额端点，不发送模型请求，不消耗额度。</p>
+      <div style="display:flex;gap:9px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn" data-act="query" ${caps.query?"":"disabled"} aria-label="查询额度，演示">查询额度（演示）</button>
+        <span id="queryState" style="font-size:12px;color:var(--muted)">当前：<strong style="color:var(--ink)">${esc(LABEL[d.query.state]||d.query.state)}</strong> · ${esc(d.query.at)}</span>
+      </div>
+      ${caps.query?"":`<div class="callout warn" style="margin-bottom:10px"><span aria-hidden="true">▲</span><span>该模板的额度适配尚未配置，无法查询额度；调用能力不受影响。</span></div>`}
+      <div class="field">
+        <span class="lbl">自动查询（仅轮询额度）</span>
+        <div class="chk" style="gap:9px">
+          <label class="switch"><input type="checkbox" id="edMonitor" ${d.monitor?"checked":""} aria-label="自动查询额度"><span class="knob"></span></label>
+          <span id="monitorText">${d.monitor?"开启：按时刻自动查询":"关闭：仅手动查询"}</span>
+        </div>
+        <span class="hint">关闭自动查询不禁用手动查询，它只影响定时轮询。</span>
+      </div>
+      <div class="callout" style="margin-bottom:10px"><span aria-hidden="true">i</span><span>数据状态与额度状态分开：余额 100% 表示「已用完」，不是网络错误。</span></div>
+      ${d.windows.length?d.windows.map(w=>barRow(d,w)).join(""):`<p style="font-size:12px;color:var(--muted);margin:0">尚未获取额度数据。</p>`}
+
+      <h2 style="font-size:13px;margin:18px 0 8px;font-weight:600;border-top:1px solid var(--line);padding-top:14px">模型调用与自动触发</h2>
+      <p class="hint" style="margin:0 0 9px">调用会真实消耗额度；自动触发按每日时刻发送一次测试请求。</p>
+      <div class="field"><label class="lbl" for="edModel">默认测试模型</label>
+        <input class="input" id="edModel" value="${esc(d.testModel)}" placeholder="例如：glm-4.6" ${caps.call?"":"disabled"} aria-describedby="hModel">
+        <span class="hint" id="hModel">${caps.call?"用于「发送测试请求」与自动触发。":"该账号不支持调用，仅监控额度。"}</span></div>
+      <div class="field"><label class="lbl" for="edPrompt">测试提示词</label>
+        <input class="input" id="edPrompt" value="${esc(d.testPrompt)}" ${caps.call?"":"disabled"} aria-describedby="hPrompt">
+        <span class="hint" id="hPrompt">内容固定且简短，避免额外消耗。</span></div>
+      <div style="display:flex;gap:9px;align-items:center;margin:0 0 10px;flex-wrap:wrap">
+        <button class="btn" data-act="test-call" ${caps.call?"":"disabled"} aria-label="发送测试请求，演示">${caps.call?"发送测试请求（演示）":"发送测试请求"}</button>
+        ${caps.call?`<span style="font-size:12px;color:var(--muted)">会消耗少量额度，且不保证重置 5h 窗口。</span>`
+          :`<span class="tag warn">仅监控</span><span style="font-size:12px;color:var(--muted)">无调用能力，不提供测试或自动触发。</span>`}
+      </div>
+      <div id="callBox" class="tbox"></div>
+      <div class="capi ${caps.call?"":"off"}" style="margin-top:8px">
+        <div><div class="ct">自动触发（每日模型请求）</div>
+          <div class="cd">${caps.call?"每天在指定时刻各发送一次测试请求；保存计划不会立即发送，错过时刻不补发。":"此账号不支持调用，无法开启自动触发。"}</div></div>
+        <div class="cs">${caps.call?`<label class="switch"><input type="checkbox" id="edSchedule" ${d.schedule?"checked":""} aria-label="开启每日自动触发"><span class="knob"></span></label>`:`<span class="tag warn">不可用</span>`}</div>
+      </div>
+      <div class="capi ${d.schedule&&caps.call?"":"off"}">
+        <div style="width:100%">
+          <div class="ct">触发时刻</div>
+          <div class="cd">24 小时制 HH:MM，本机时区（${esc(tz)}）。App 需在运行中才会触发。</div>
+          <div class="chips" id="timeChips">${d.times.map((t,i)=>`<span class="chip">${esc(t)}<button data-act="rm-time" data-i="${i}" aria-label="删除时刻 ${esc(t)}">×</button></span>`).join("")||`<span style="font-size:12px;color:var(--muted)">尚未添加时刻</span>`}</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <input class="input" id="timeInput" placeholder="09:00" style="width:96px" ${d.schedule&&caps.call?"":"disabled"} aria-label="新增触发时刻，格式 HH:MM">
+            <button class="btn sm" data-act="add-time" ${d.schedule&&caps.call?"":"disabled"}>添加时刻</button>
+            <span id="timeErr" style="font-size:12px;color:var(--danger)"></span>
+          </div>
+        </div>
+      </div>
+      ${isNew?"":`<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <p class="hint" style="margin:0 0 8px">删除只移除本机配置，不影响供应商侧账号。</p>
+        <button class="btn danger sm" data-act="delete" data-id="${esc(d.id)}">删除此账号…</button></div>`}
+    </div>
+    <div class="pane-foot">
+      <button class="btn primary" data-act="save">保存<span class="mono" style="opacity:.75;margin-left:4px">⌘S</span></button>
+      <button class="btn" data-act="cancel">取消</button>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">演示：保存只改内存。</span>
+    </div>
+  </aside>`;
+}
+
+/* ================= 导入抽屉（任务队列） ================= */
+function impInit(){
+  const p={};(CANDIDATES[state.importSource]||[]).forEach((c,i)=>{p[i]=c.action==="ok"||c.action==="monitor";});
+  state.importPicked=p;
+}
+function jobState(j){
+  if(!j) return `<span class="tag">排队中</span>`;
+  if(j.status==="running") return `<span class="tag">导入中…</span>`;
+  if(j.status==="ok") return `<span class="tag ok">成功</span>`;
+  return `<span class="tag bad">失败</span>`;
+}
+function renderDrawer(){
+  const src=SOURCES.find(s=>s.id===state.importSource);
+  const cands=CANDIDATES[state.importSource]||[];
+  const picked=state.importPicked;
+  const actionable=cands.map((c,i)=>({c,i})).filter(({c})=>c.action==="ok"||c.action==="monitor");
+  const chosen=actionable.filter(({i})=>picked[i]);
+  const done=state.importJobs.filter(j=>j.status==="ok"||j.status==="failed"||j.status==="fail");
+  const failed=done.filter(j=>j.status!=="ok");
+  const running=state.importJobs.some(j=>j.status==="running");
+  return `<section class="drawer" role="region" aria-label="本地导入任务队列" aria-describedby="drawerDesc">
+    <div class="drawer-head">
+      <div style="min-width:0">
+        <p class="pane-title">本地导入</p>
+        <p class="pane-sub" id="drawerDesc">任务队列 · 演示扫描，不读取本机文件；Esc 或「关闭」返回主表</p>
+      </div>
+      <button class="btn sm ghost" style="margin-left:auto" data-act="close-import" aria-label="关闭导入面板">关闭 ✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="srcs" role="group" aria-label="选择导入来源">
+        ${SOURCES.map(s=>`<button class="srcb" data-act="pick-src" data-src="${s.id}" aria-pressed="${s.id===state.importSource}">
+          <span class="n">${esc(s.label)}</span><span class="p">${esc(s.path)}</span></button>`).join("")}
+      </div>
+      <p class="srcline">只读源：导入不修改 ${esc(src.label)} 的配置；当前不支持全量 OAuth 迁移。</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+        <button class="btn" data-act="scan">${state.importScanned?"重新扫描（演示）":"扫描（演示）"}</button>
+        <span style="font-size:12px;color:var(--muted)">${state.importScanned?`已扫描 ${cands.length} 项（演示）`:"尚未扫描"}</span>
+      </div>
+      ${state.importScanned?`
+        <div class="jobs" role="list">
+        ${cands.map((c,i)=>{
+          const dis=c.action==="unsupported"||c.action==="exists";
+          const job=state.importJobs.find(j=>j.i===i);
+          const tag=c.action==="ok"?`<span class="tag ok">可导入</span>`
+            :c.action==="exists"?`<span class="tag">已存在 · 跳过</span>`
+            :c.action==="monitor"?`<span class="tag warn">可导入 · 仅监控</span>`
+            :`<span class="tag bad">不支持</span>`;
+          return `<div class="job ${dis?"skip":""}" role="listitem">
+            <input type="checkbox" data-act="pick-one" data-i="${i}" ${picked[i]&&!dis?"checked":""} ${dis?"disabled":""} aria-label="选择 ${esc(c.name)}" style="margin-top:2px">
+            <div style="min-width:0">
+              <div class="jt">${esc(c.name)}</div>
+              <div class="jd">${esc(c.provider)} · ${c.auth==="oauth"?"授权登录":"API Key"} · ${esc(c.reason)}</div>
+              ${job&&job.status==="running"?`<div class="qbar"><span style="width:60%"></span></div>`:""}
+              ${job&&job.msg?`<div class="jd" style="margin-top:4px;color:${job.status==="ok"?"var(--accent)":"var(--danger)"}">${esc(job.msg)}</div>`:""}
+            </div>
+            <div class="jstate">${tag}${jobState(job)}</div>
+          </div>`;
+        }).join("")}
+        </div>`
+      :`<div class="empty2" style="padding:26px 0"><strong>先扫描来源</strong><span>演示扫描只列出候选，不访问磁盘。</span></div>`}
+      ${done.length?`<div class="callout" style="margin-top:12px"><span aria-hidden="true">i</span><span>结果：成功 ${done.filter(j=>j.status==="ok").length} 项，失败 ${failed.length} 项（演示）。</span></div>`:""}
+    </div>
+    <div class="drawer-foot">
+      <button class="btn primary" data-act="run-import" ${running||!chosen.length?"disabled":""}>导入所选 ${chosen.length} 项（演示）</button>
+      ${failed.length?`<button class="btn" data-act="retry-failed">重试失败项（演示）</button>`:""}
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">仅写入内存</span>
+    </div>
+  </section>`;
+}
+
+/* ================= 渲染 ================= */
+function render(){
+  const work=$("#work");
+  const pane = editing()? renderEditor() : renderInspector();
+  work.className = "work"+(editing()?" editing":"");
+  work.innerHTML = renderMain() + pane + (state.importOpen? renderDrawer() : "");
+  document.querySelectorAll("[data-nav]").forEach(b=>{
+    const k=b.dataset.nav;
+    b.setAttribute("aria-current", (!state.importOpen && k===state.screen)?"page":"false");
+  });
+  const navImport=document.querySelector('[data-act="open-import"]');
+  if(navImport) navImport.setAttribute("aria-current", state.importOpen?"page":"false");
+}
+function refreshPane(){
+  const work=$("#work");
+  const old=work.querySelector(".pane");
+  const top=old&&old.querySelector(".pane-body")?old.querySelector(".pane-body").scrollTop:0;
+  const tmp=document.createElement("div");
+  tmp.innerHTML=renderEditor();
+  old.replaceWith(tmp.firstElementChild);
+  const nb=work.querySelector(".pane-body"); if(nb) nb.scrollTop=top;
+}
+
+/* ================= 弹层 ================= */
+let dlgResolve=null;
+function confirmDialog(title,body,okText,danger){
+  return new Promise(resolve=>{
+    dlgResolve=resolve;
+    const root=$("#dialogRoot");
+    root.innerHTML=`<div class="back" data-back>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dT" aria-describedby="dB" tabindex="-1">
+        <h2 id="dT">${esc(title)}</h2><p id="dB">${esc(body)}</p>
+        <div class="dlgacts"><button class="btn" data-dlg="cancel">取消</button>
+          <button class="btn ${danger?"danger":"primary"}" data-dlg="ok">${esc(okText)}</button></div>
+      </div></div>`;
+    root.querySelector('[data-dlg="ok"]').focus();
+  });
+}
+function closeDialog(v){$("#dialogRoot").innerHTML="";if(dlgResolve){const r=dlgResolve;dlgResolve=null;r(v);}}
+const dlgOpen=()=>!!$("#dialogRoot .dlg");
+
+/* ================= 行为 ================= */
+async function guardDirty(){
+  if(!isDirty())return true;
+  return await confirmDialog("放弃未保存的更改？","当前账号有尚未保存的修改，离开后将丢失。","放弃更改",true);
+}
+async function saveEditor(){
+  const d=state.editDraft;if(!d)return;
+  const nameEl=$("#edName"),fName=$("#fName");
+  const name=(nameEl?nameEl.value:d.name).trim();d.name=name;
+  let bad=false;
+  if(!name){fName.classList.add("invalid");nameEl.setAttribute("aria-invalid","true");bad=true;}
+  else{fName.classList.remove("invalid");nameEl.removeAttribute("aria-invalid");}
+  const keyEl=$("#edKey");if(keyEl)d.key=keyEl.value;
+  if(d.auth!=="oauth"&&!(d.key||"").trim()){
+    if(keyEl){keyEl.setAttribute("aria-invalid","true");keyEl.focus();}
+    bad=true;
+  } else if(keyEl) keyEl.removeAttribute("aria-invalid");
+  if(bad){toast("还有必填项未完成");return;}
+  if(d.schedule&&!d.times.length){toast("已开启自动触发，请至少添加一个时刻");return;}
+  const caps=d.__caps||{call:canCall(d)};
+  d.models = caps.call ? [(d.testModel||"").trim()||"demo-model"] : [];
+  d.__caps = caps;
+  if(state.editIsNew){
+    const dup=state.accounts.some(a=>a.provider===d.provider);
+    const acc=clone(d);acc.id=dup?d.id:d.provider;
+    state.accounts.push(acc);state.selected=acc.id;
+    toast("已添加「"+acc.name+"」（演示，未写本机）");
+  }else{
+    const i=state.accounts.findIndex(a=>a.id===state.editId);
+    if(i>=0)state.accounts[i]=clone(d);
+    state.selected=d.id;
+    toast("已保存「"+d.name+"」（演示，未写本机）");
+  }
+  state.mode="inspect";state.editDraft=null;state.editBase="";state.editId=null;
+  render();
+}
+async function leaveEditor(){
+  if(!(await guardDirty()))return;
+  state.mode="inspect";state.editDraft=null;state.editBase="";state.editId=null;
+  render();
+}
+async function doDelete(id){
+  const a=byId(id);if(!a)return;
+  const ok=await confirmDialog("删除「"+a.name+"」？","仅移除本机配置，不影响供应商侧账号。演示中不可撤销。","删除",true);
+  if(!ok)return;
+  state.accounts=state.accounts.filter(x=>x.id!==id);
+  if(state.selected===id) state.selected=state.accounts[0]?state.accounts[0].id:null;
+  if(editing()){state.mode="inspect";state.editDraft=null;state.editBase="";}
+  render();toast("已删除「"+a.name+"」（演示）");
+}
+function simulateQueryOne(id){
+  const a=byId(id);if(!a)return;
+  a.query={state:"querying",at:"刚刚",note:"演示查询中"};
+  render();
+  setTimeout(()=>{
+    const acc=byId(id);if(!acc)return;
+    const ok=Math.random()>0.28;
+    acc.query = ok
+      ? {state:"ok",at:"刚刚（演示）",note:"查询成功，数据为最新"}
+      : {state:"fail",at:"刚刚（演示）",note:"请求超时；额度数值保持不变，可据旧数据判断"};
+    render();toast(ok?"查询成功（演示）":"查询失败（演示），可重试");
+    live(ok?"额度查询成功（演示）":"额度查询失败（演示）");
+  },650);
+}
+function simulateQueryEditor(){
+  const d=state.editDraft;if(!d)return;
+  const btn=$('[data-act="query"]');if(btn)btn.disabled=true;
+  d.query={state:"querying",at:"刚刚",note:"演示查询中"};
+  const qs=$("#queryState"); if(qs) qs.innerHTML=`当前：<strong style="color:var(--ink)">查询中…</strong> · 演示`;
+  setTimeout(()=>{
+    if(!state.editDraft||state.editDraft.id!==d.id)return;
+    const ok=Math.random()>0.28;
+    if(ok){
+      state.editDraft.query={state:"ok",at:"刚刚（演示）",note:"查询成功，数据为最新"};
+      state.editDraft.windows=state.editDraft.windows.length
+        ?state.editDraft.windows.map(w=>({...w,used:Math.max(0,Math.min(100,w.used+Math.round(Math.random()*8-4)))}))
+        :[{label:"5h",used:12,reset:"4h 后"},{label:"周",used:7,reset:"6 天后"}];
+    }else{
+      state.editDraft.query={state:"fail",at:"刚刚（演示）",note:"请求超时，未获取数据；额度状态保持不变"};
+    }
+    refreshPane();toast(ok?"查询成功（演示）":"查询失败（演示），可重试");
+    live(ok?"额度查询成功（演示）":"额度查询失败（演示）");
+  },700);
+}
+async function simulateCall(){
+  const d=state.editDraft;if(!d)return;
+  const ok=await confirmDialog("发送测试请求？",
+    "这会向 "+d.providerLabel+" 发送一次真实模型请求（演示不发出网络请求），消耗少量额度，且不保证重置 5 小时窗口。","发送请求");
+  if(!ok)return;
+  const box=$("#callBox");if(!box)return;
+  box.classList.add("on");box.innerHTML=`<div class="tr"><span class="k">状态</span><span>请求中…（演示）</span></div>`;
+  setTimeout(()=>{
+    if(!state.editDraft||state.editDraft.id!==d.id)return;
+    const ok2=Math.random()>0.3;
+    box.innerHTML=ok2
+      ?`<div class="tr"><span class="k">状态</span><span class="tag ok">成功</span></div>
+        <div class="tr"><span class="k">模型</span><span class="mono">${esc(d.testModel||"（未指定）")}</span></div>
+        <div class="tr"><span class="k">耗时</span><span>482 ms</span></div>
+        <div class="tr"><span class="k">说明</span><span style="color:var(--muted)">演示结果，未发出真实请求。</span></div>`
+      :`<div class="tr"><span class="k">状态</span><span class="tag bad">失败</span></div>
+        <div class="tr"><span class="k">错误</span><span class="mono">HTTP 429（演示）</span></div>
+        <div class="tr"><span class="k">说明</span><span style="color:var(--muted)">额度窗口可能已用尽；演示结果。</span></div>`;
+    live(ok2?"测试请求成功（演示）":"测试请求失败（演示）");
+  },900);
+}
+function checkLogin(){
+  const b=$("#loginBox");if(!b)return;
+  b.textContent="检查中…（演示）";
+  setTimeout(()=>{
+    const el=$("#loginBox");if(!el)return;
+    el.innerHTML=`<span class="tag ok">已登录</span> <span style="margin-left:6px">读取到 <span class="mono">~/.codex/auth.json</span>（演示：未真实读取）</span>`;
+    live("登录状态检查完成（演示）");
+  },600);
+}
+function addTime(){
+  const d=state.editDraft;if(!d)return;
+  const el=$("#timeInput"),err=$("#timeErr");if(!el||!err)return;
+  const v=(el.value||"").trim();err.textContent="";
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)){err.textContent="格式应为 HH:MM（00:00–23:59）";el.focus();return;}
+  if(d.times.includes(v)){err.textContent="该时刻已存在";el.focus();return;}
+  d.times.push(v);d.times.sort();refreshPane();
+  const ni=$("#timeInput");if(ni)ni.focus();
+  toast("已添加时刻 "+v+"（保存后生效）");
+}
+function removeTime(i){
+  const d=state.editDraft;if(!d)return;
+  const t=d.times[i];d.times.splice(i,1);refreshPane();toast("已移除时刻 "+t);
+}
+function toggleKey(){
+  const el=$("#edKey"),btn=$("#keyToggle");if(!el||!btn)return;
+  const show=el.type==="password";el.type=show?"text":"password";
+  btn.textContent=show?"隐藏":"显示";
+  btn.setAttribute("aria-pressed",show?"true":"false");
+  btn.setAttribute("aria-label",show?"隐藏 API Key":"显示 API Key");
+}
+function scanImport(){
+  state.importScanned=false;render();
+  setTimeout(()=>{state.importScanned=true;impInit();render();live("扫描完成（演示）");},600);
+}
+async function runImport(){
+  const cands=CANDIDATES[state.importSource]||[];
+  const chosen=cands.map((c,i)=>({c,i})).filter(({c,i})=>state.importPicked[i]&&(c.action==="ok"||c.action==="monitor"));
+  if(!chosen.length)return;
+  const ok=await confirmDialog("导入 "+chosen.length+" 个账号？",
+    "演示导入只写入原型内存，不读取也不修改 "+state.importSource+" 的源文件。","开始导入");
+  if(!ok)return;
+  state.importJobs=chosen.map(({c,i})=>({i,name:c.name,status:"queued",msg:""}));
+  render();
+  let n=0;
+  const step=()=>{
+    const j=state.importJobs.find(x=>x.status==="queued");
+    if(!j){ render(); toast("导入完成（演示）"); live("导入完成（演示）"); return; }
+    j.status="running";render();
+    setTimeout(()=>{
+      const cur=state.importJobs.find(x=>x.i===j.i);
+      if(!cur)return;
+      const fail = (j.i===2 && state.importSource==="cpamp");
+      if(fail){ cur.status="failed"; cur.msg="凭证写入失败：令牌字段缺失（演示）"; }
+      else{
+        cur.status="ok";
+        const c=cands[j.i];
+        cur.msg = c.action==="monitor" ? "已导入（仅监控，演示）" : "已导入（演示）";
+        if(!state.accounts.some(a=>a.name===c.name)){
+          const tpl=TEMPLATES.find(t=>t.slug===c.provider)||{label:c.provider,caps:{call:false}};
+          const call=!!(tpl.caps&&tpl.caps.call);
+          state.accounts.push({id:"imp-"+j.i+"-"+Date.now(),name:c.name,provider:c.provider,providerLabel:tpl.label,
+            auth:c.auth,key:"demo-imported",monitor:true,schedule:false,times:[],
+            query:{state:"none",at:"尚未查询",note:"由本地导入创建（演示）"},
+            windows:[],models:call?["demo-model"]:[],testModel:call?"demo-model":"",testPrompt:"ping",
+            plan:call?{state:"enabled",note:"需在自动触发启用"}:{state:"unavailable",note:"仅监控"}});
+        }
+      }
+      n++; render(); step();
+    },420);
+  };
+  step();
+}
+function retryFailed(){
+  const failed=state.importJobs.filter(j=>j.status==="failed");
+  if(!failed.length)return;
+  failed.forEach(j=>{j.status="ok";j.msg="重试成功（演示）";});
+  render();toast("失败项已重试成功（演示）");live("重试完成（演示）");
+}
+
+/* ================= 事件 ================= */
+document.addEventListener("click",async e=>{
+  const nav=e.target.closest("[data-nav]");
+  if(nav){
+    if(editing()&&!(await guardDirty()))return;
+    state.mode="inspect";state.editDraft=null;state.editBase="";state.editId=null;
+    state.importOpen=false;
+    state.screen=nav.dataset.nav;render();return;
+  }
+  if(e.target.closest("#themeBtn")){applyTheme(state.theme==="dark"?"light":"dark");return;}
+  if(e.target.closest('[data-dlg="ok"]')){closeDialog(true);return;}
+  if(e.target.closest('[data-dlg="cancel"]')){closeDialog(false);return;}
+  if(e.target.classList.contains("back")){closeDialog(false);return;}
+
+  const el=e.target.closest("[data-act]");
+  if(!el)return;
+  const act=el.dataset.act;
+
+  if(act==="select"){
+    if(editing())return;
+    state.selected=el.dataset.id;render();return;
+  }
+  if(act==="add"){if(editing()&&!(await guardDirty()))return;openAdd();return;}
+  if(act==="edit"){if(editing()&&!(await guardDirty()))return;openEdit(el.dataset.id);return;}
+  if(act==="delete"){doDelete(el.dataset.id);return;}
+  if(act==="query-one"){simulateQueryOne(el.dataset.id);return;}
+  if(act==="back"||act==="cancel"){leaveEditor();return;}
+  if(act==="save"){saveEditor();return;}
+  if(act==="go-accounts"){state.screen="accounts";render();return;}
+  if(act==="brief"){
+    const id=(byId("gpt")&&byId("gpt").windows.some(w=>w.used>=100))?"gpt":"cline";
+    state.selected=id;state.screen="overview";render();
+    const tr=document.querySelector('tr[data-id="'+id+'"]');
+    if(tr){tr.scrollIntoView({block:"center",behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});tr.focus();}
+    live("已定位到 "+id);return;
+  }
+  if(act==="clear-filter"){state.filter="";render();const s=$("#searchInput");if(s)s.focus();return;}
+  if(act==="toggle-key"){toggleKey();return;}
+  if(act==="check-login"){checkLogin();return;}
+  if(act==="query"){simulateQueryEditor();return;}
+  if(act==="test-call"){simulateCall();return;}
+  if(act==="add-time"){addTime();return;}
+  if(act==="rm-time"){removeTime(Number(el.dataset.i));return;}
+  if(act==="open-import"){state.importOpen=true;if(!state.importScanned) impInit();render();return;}
+  if(act==="close-import"){state.importOpen=false;render();return;}
+  if(act==="pick-src"){
+    if(state.importSource===el.dataset.src)return;
+    state.importSource=el.dataset.src;state.importJobs=[];state.importScanned=true;impInit();render();return;
+  }
+  if(act==="scan"){scanImport();return;}
+  if(act==="run-import"){runImport();return;}
+  if(act==="retry-failed"){retryFailed();return;}
+});
+
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.id==="edProvider"&&state.editIsNew){pickTemplate(t.value);return;}
+  if(t.id==="edMonitor"){
+    state.editDraft.monitor=t.checked;
+    const s=$("#monitorText");if(s)s.textContent=t.checked?"开启：按时刻自动查询":"关闭：仅手动查询";
+    updateDirty();return;
+  }
+  if(t.id==="edSchedule"){
+    state.editDraft.schedule=t.checked;refreshPane();
+    toast(t.checked?"已开启自动触发（保存后生效）":"已关闭自动触发");return;
+  }
+  if(t.dataset.act==="toggle-sched"){
+    const a=byId(t.dataset.id);if(!a)return;
+    a.schedule=t.checked;
+    if(a.plan)a.plan={state:t.checked?"enabled":"paused",note:t.checked?"每日计划已启用":"每日计划已暂停"};
+    render();toast(t.checked?"已启用「"+a.name+"」每日触发":"已暂停「"+a.name+"」每日触发");return;
+  }
+  if(t.dataset.act==="pick-one"){state.importPicked[Number(t.dataset.i)]=t.checked;render();return;}
+});
+
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.id==="searchInput"){
+    state.filter=t.value;
+    const work=$("#work"),sc=work.querySelector(".scroll"),top=sc?sc.scrollTop:0;
+    const main=work.querySelector(".main-col");
+    if(main){
+      const tmp=document.createElement("div");tmp.innerHTML=renderMain();
+      main.replaceWith(tmp.firstElementChild);
+    }
+    const s=$("#searchInput");if(s){s.focus();s.setSelectionRange(s.value.length,s.value.length);}
+    const sc2=work.querySelector(".scroll");if(sc2)sc2.scrollTop=top;
+    return;
+  }
+  if(t.id==="edName"){state.editDraft.name=t.value;updateDirty();return;}
+  if(t.id==="edKey"){state.editDraft.key=t.value;updateDirty();return;}
+  if(t.id==="edModel"){state.editDraft.testModel=t.value;updateDirty();return;}
+  if(t.id==="edPrompt"){state.editDraft.testPrompt=t.value;updateDirty();return;}
+});
+function updateDirty(){const f=$("#dirtyFlag");if(f)f.classList.toggle("on",isDirty());}
+
+document.addEventListener("keydown",async e=>{
+  const mod=e.metaKey||e.ctrlKey;
+  if(mod&&e.key.toLowerCase()==="s"){e.preventDefault();if(editing())saveEditor();return;}
+  if(mod&&e.key.toLowerCase()==="n"){e.preventDefault();if(!dlgOpen())openAdd();return;}
+  if(mod&&e.key.toLowerCase()==="f"){e.preventDefault();const s=$("#searchInput");if(s){s.focus();s.select();}return;}
+  if(e.key==="Escape"){
+    if(dlgOpen()){e.preventDefault();closeDialog(false);return;}
+    if(editing()){e.preventDefault();leaveEditor();return;}
+    if(state.importOpen){e.preventDefault();state.importOpen=false;render();return;}
+    if(state.filter){state.filter="";render();return;}
+    return;
+  }
+  if(e.key==="Enter"&&e.target.id==="timeInput"){e.preventDefault();addTime();return;}
+  if(e.key==="Enter"&&e.target.matches('tr[data-act="select"]')){
+    e.preventDefault();state.selected=e.target.dataset.id;render();return;
+  }
+});
+
+/* ================= 启动 ================= */
+readDeepLink();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>B · 运行台 — TokenHUD 供应商管理 v2 原型（模拟数据）</title>
+<style>
+:root{
+  --canvas:#F2F5F9; --surface:#FFFFFF; --text:#1A2230; --muted:#5A6779; --border:#CFD8E4;
+  --accent:#2F6FD0; --accent-weak:rgba(47,111,208,.10); --danger:#B23A2E; --warn:#8A6A14; --ok:#2C7A5B;
+  --row:#FFFFFF; --row-hover:#EDF2F8; --inspector:#FAFCFE;
+}
+html[data-theme="dark"]{
+  --canvas:#191F28; --surface:#242D39; --text:#EEF2F8; --muted:#B2BDCC; --border:#465466;
+  --accent:#91BFF8; --accent-weak:rgba(145,191,248,.12); --danger:#F0907E; --warn:#E0C070; --ok:#8FD3B4;
+  --row:#242D39; --row-hover:#2B3544; --inspector:#1F2733;
+}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--canvas);color:var(--text)}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{display:flex;flex-direction:column;height:100vh;min-height:620px;min-width:900px}
+/* 顶层导航 */
+.top{display:flex;align-items:center;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+.top .brand{font-weight:700;margin-right:14px;letter-spacing:.02em}
+.top nav{display:flex;gap:2px}
+.top nav button{border:none;background:none;padding:6px 12px;border-radius:6px;color:var(--muted);font-size:12px}
+.top nav button[aria-current="true"]{background:var(--accent-weak);color:var(--text);font-weight:600}
+.top .grow{flex:1}
+.search{border:1px solid var(--border);border-radius:6px;padding:5px 9px;width:190px;background:var(--canvas);color:var(--text)}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:5px 11px;font-size:12px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#0C1420}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.workspace{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+.tablewrap{overflow:auto;padding:12px 14px}
+table{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:12px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:11px;padding:0 8px 4px;text-transform:uppercase;letter-spacing:.06em}
+td{background:var(--row);padding:8px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+td:first-child{border-left:1px solid var(--border);border-radius:6px 0 0 6px}
+td:last-child{border-right:1px solid var(--border);border-radius:0 6px 6px 0}
+tr[aria-selected="true"] td{border-color:var(--accent);background:var(--row-hover)}
+tr{cursor:default}
+.nm{display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--danger)}
+.bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--ok)}
+.bar i.warn{background:var(--warn)} .bar i.bad{background:var(--danger)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.mut{color:var(--muted)}
+/* 右侧检查器 */
+.inspector{background:var(--inspector);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.inspector.wide{position:fixed;inset:24px 24px 24px auto;width:min(560px,72vw);border:1px solid var(--border);border-radius:10px;box-shadow:-12px 0 40px rgba(0,0,0,.22);z-index:40}
+.inspector .head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.inspector .head h2{margin:0;font-size:13px}
+.inspector .scroll{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+.inspector .foot{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.inspector .foot .right{margin-left:auto;display:flex;gap:8px}
+.sec{border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.sec h3{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.field{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:center;margin-bottom:8px}
+.field:last-child{margin-bottom:0}
+.field label{font-size:11px;color:var(--muted)}
+.field input,.field select{border:1px solid var(--border);border-radius:5px;padding:5px 8px;background:var(--canvas);color:var(--text);width:100%;font-size:12px}
+.field .hint{grid-column:2;font-size:11px;color:var(--muted)}
+.ro{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)}
+.empty{padding:24px 14px;color:var(--muted);font-size:12px}
+/* 导入队列 */
+.queue{display:flex;flex-direction:column;height:100%}
+.queue .head{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.qwrap{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.qrow{display:grid;grid-template-columns:24px 1fr 120px 90px;gap:10px;align-items:center;
+  background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12px}
+.tag{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--border);color:var(--muted);justify-self:start}
+.tag.new{color:var(--ok);border-color:var(--ok)} .tag.dup{color:var(--warn);border-color:var(--warn)}
+.tag.no{color:var(--danger);border-color:var(--danger)}
+.srcpick{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border)}
+.srcpick button{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:5px 10px;font-size:12px}
+.srcpick button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-weak);font-weight:600}
+.simnote{font-size:11px;color:var(--muted);padding:5px 14px;border-bottom:1px solid var(--border);background:var(--accent-weak)}
+.overlay{position:fixed;inset:0;background:rgba(9,14,20,.55);z-index:45}
+.modal{position:fixed;inset:0;display:grid;place-items:center;z-index:55}
+.modal .box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;max-width:400px;width:90%}
+.modal h3{margin:0 0 8px;font-size:13px}
+.modal p{margin:0 0 14px;color:var(--muted);font-size:12px}
+.modal .acts{display:flex;gap:8px;justify-content:flex-end}
+.toast{position:fixed;right:16px;bottom:16px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:7px;padding:9px 13px;font-size:12px;z-index:60;max-width:330px}
+.toast .sim{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="brand">TokenHUD · 运行台</span>
+    <nav id="nav">
+      <button aria-current="true">额度</button>
+      <button>触发计划</button>
+      <button>账号</button>
+    </nav>
+    <span class="grow"></span>
+    <input class="search" id="search" placeholder="搜索  ⌘F" aria-label="搜索">
+    <button class="btn" id="editBtn" disabled>编辑</button>
+    <button class="btn primary" id="addBtn">＋ 添加</button>
+    <button class="btn" id="importBtn">导入</button>
+    <button class="btn ghost" id="themeBtn">亮色</button>
+  </header>
+  <div class="simnote">原型演示：数据为内联模拟值，不读取本地配置；所有结果标注「模拟」。</div>
+  <div class="workspace">
+    <div class="tablewrap" id="tablewrap"></div>
+    <aside class="inspector" id="inspector"></aside>
+  </div>
+</div>
+<script>
+const ACCOUNTS=[
+ {id:"glm",name:"GLM",kind:"API Key",state:"ok",data:"latest",b:{h5:82,w:64},reset:"3h12m",sched:"08:00 · 20:00",call:true,key:"sk-••••1234"},
+ {id:"ollama",name:"Ollama",kind:"API Key",state:"warn",data:"stale",b:{h5:24,w:71,m:58},reset:"1h40m",sched:"09:00",call:true,key:"ol-••••7788"},
+ {id:"ocgo",name:"OC-Go",kind:"API Key",state:"ok",data:"unqueried",b:{h5:91,w:47,m:33},reset:"0h55m",sched:"",call:true,key:"oc-••••4410"},
+ {id:"gpt",name:"GPT (Codex)",kind:"授权登录 · 本机 CLI",state:"ok",data:"latest",b:{h5:68,w:12},reset:"2h05m",sched:"",call:false,path:"~/.codex/auth.json"},
+ {id:"cline",name:"Cline Pass",kind:"API Key",state:"bad",data:"authfail",b:{h5:0,w:0},reset:"—",sched:"",call:false,key:"cl-••••0099",err:"401 Unauthorized（模拟）"}
+];
+const DATA_LABEL={unqueried:"未查询",loading:"查询中",latest:"最新",stale:"过期",authfail:"认证失败",fail:"查询失败"};
+const SOURCES=[["9router","providers 连接，无历史用量"],["cc-switch","providers 配置"],["CPAMP","auth-files + provider"],
+  ["本机 CLI","只读扫描"],["粘贴 JSON","单条"]];
+const CAND={
+ "9router":[["GLM · work","sk-••••1234","new","可导入"],["Ollama · local","ol-••••7788","dup","已存在"],
+   ["Custom · one-api","sk-••••8899","call","仅调用"],["Cline Pass","cl-••••0099","no","不支持"]],
+ "cc-switch":[["OC-Go","oc-••••4410","new","可导入"],["GLM · personal","sk-••••5566","dup","已存在"]],
+ "CPAMP":[["GPT · codex","—","call","仅监控"],["Cline Pass","cl-••••0099","no","不支持"]],
+ "本机 CLI":[["GPT (Codex)","—","new","可导入"]],
+ "粘贴 JSON":[["粘贴项","sk-••••0000","new","可导入"]]
+};
+const S={sel:null,q:"",view:"list",dirty:false,dark:true,src:"9router",results:[],step:1};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fc=p=>p>=70?"":p>=30?"warn":"bad";
+function toast(m,k){const t=document.createElement("div");t.className="toast";
+ if(k==="error")t.style.borderLeftColor="var(--danger)";if(k==="warn")t.style.borderLeftColor="var(--warn)";
+ t.innerHTML=esc(m)+'<span class="sim">模拟结果 · 未执行真实请求</span>';document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
+
+function renderTable(){
+ const rows=ACCOUNTS.filter(a=>!S.q||a.name.toLowerCase().includes(S.q));
+ $("#editBtn").disabled=!S.sel;
+ $("#tablewrap").innerHTML=`<table role="grid" aria-label="账号额度">
+  <thead><tr><th>账号</th><th>凭证</th><th>5h</th><th>周</th><th>月</th><th>重置</th><th>触发</th><th>状态 / 数据</th></tr></thead>
+  <tbody>${rows.map(a=>`<tr tabindex="0" data-id="${a.id}" aria-selected="${S.sel===a.id}">
+    <td><span class="nm"><span class="dot ${a.state}"></span>${esc(a.name)}</span></td>
+    <td class="mut">${esc(a.kind)}</td>
+    ${["h5","w","m"].map(k=>a.b[k]===undefined?`<td class="mut">—</td>`:
+      `<td><div style="display:flex;align-items:center;gap:6px"><span class="bar" style="flex:1"><i class="${fc(a.b[k])}" style="width:${a.b[k]}%"></i></span><span class="num" style="width:34px">${a.b[k]}%</span></div></td>`).join("")}
+    <td class="mut">${esc(a.reset)}</td>
+    <td class="mut">${a.sched?esc(a.sched):"仅监控"}</td>
+    <td class="mut">${a.state==="bad"?"额度异常":a.state==="warn"?"额度偏低":"额度正常"} · ${DATA_LABEL[a.data]}</td>
+  </tr>`).join("")}</tbody></table>`;
+ document.querySelectorAll("tbody tr").forEach(tr=>{
+   tr.onclick=e=>{S.sel=tr.dataset.id;renderTable();renderInspector();};
+   tr.ondblclick=()=>{S.sel=tr.dataset.id;openEdit(tr.dataset.id);};
+ });
+ if(!rows.length)$("#tablewrap").innerHTML=`<div class="empty">无匹配账号。<button class="btn" onclick="openImport()">导入</button></div>`;
+}
+
+function renderInspector(){
+ const a=ACCOUNTS.find(x=>x.id===S.sel);
+ const ins=$("#inspector");
+ ins.className="inspector";
+ if(!a){ins.innerHTML=`<div class="empty">选择一个账号查看检查器。</div>`;return;}
+ ins.innerHTML=`<div class="head"><span class="dot ${a.state}"></span><h2>${esc(a.name)}</h2></div>
+  <div class="scroll">
+    <div class="sec"><h3>额度</h3>
+      ${Object.entries(a.b).map(([k,v])=>`<div class="field"><label>${k==="h5"?"5h":k==="w"?"周":"月"}</label>
+        <div style="display:flex;align-items:center;gap:8px"><span class="bar" style="flex:1"><i class="${fc(v)}" style="width:${v}%"></i></span><span class="num">${v}%</span></div></div>`).join("")}
+      <div class="field"><label>数据状态</label><span>${DATA_LABEL[a.data]}${a.data==="unqueried"?"（尚未查询，不等于未启用）":""}</span></div>
+      <div class="field"><label>重置</label><span>${esc(a.reset)}</span></div></div>
+    <div class="sec"><h3>凭证</h3>
+      <div class="field"><label>类型</label><span>${esc(a.kind)}</span></div>
+      <div class="field"><label>值</label><span class="ro">${esc(a.key||a.path||"—")}</span></div>
+      ${a.err?`<div class="field"><label>错误</label><span style="color:var(--danger)">${esc(a.err)}</span></div>`:""}</div>
+    <div class="sec"><h3>自动查询 / 自动触发</h3>
+      <div class="field"><label>自动查询</label><span>${a.data==="unqueried"?"关（尚未查询过）":"开"} · 只轮询额度</span></div>
+      ${a.sched?`<div class="field"><label>自动触发</label><span>开 · ${esc(a.sched)}</span></div>`
+        :`<div class="field"><label>自动触发</label><span class="mut">无 refreshUrl —— 仅监控，不提供开关</span></div>`}</div>
+  </div>
+  <div class="foot"><button class="btn" onclick="toast('额度查询完成（0 次模型调用）')">查询</button>
+    <button class="btn" onclick="confirmTest()">测试调用</button>
+    <span class="right"><button class="btn primary" onclick="openEdit('${a.id}')">编辑</button></span></div>`;
+}
+function confirmTest(){
+ const m=document.createElement("div");m.className="overlay";
+ const b=document.createElement("div");b.className="modal";
+ b.innerHTML=`<div class="box"><h3>确认测试调用？</h3>
+  <p>会真实发送一次请求：<b>消耗少量额度，不保证重置 5h 窗口</b>。</p>
+  <div class="acts"><button class="btn ghost" data-x>取消</button><button class="btn primary" data-y>确认</button></div></div>`;
+ m.onclick=()=>{m.remove();b.remove();};
+ b.querySelector("[data-x]").onclick=e=>{e.stopPropagation();m.remove();b.remove();};
+ b.querySelector("[data-y]").onclick=e=>{e.stopPropagation();m.remove();b.remove();toast("测试调用成功（模拟）");};
+ document.body.appendChild(m);document.body.appendChild(b);
+}
+
+/* 编辑：宽检查器 */
+function openEdit(id){
+ const a=ACCOUNTS.find(x=>x.id===id);
+ const ins=$("#inspector");
+ ins.className="inspector wide";
+ ins.innerHTML=`<div class="head"><h2>${id?"编辑":"添加"}供应商</h2>
+   <span class="mut" style="font-size:11px">${a?esc(a.name):"草稿"}</span></div>
+  <div class="scroll">
+    <div class="sec"><h3>身份与凭证</h3>
+      <div class="field"><label>名称</label><input id="e-name" value="${a?esc(a.name):""}"></div>
+      <div class="field"><label>凭证类型</label><select id="e-kind">
+        <option ${a&&a.kind.startsWith("API Key")?"selected":""}>API Key</option>
+        <option ${a&&a.kind.startsWith("授权登录")?"selected":""}>授权登录 · 本机 CLI</option></select>
+        <div class="hint">授权登录仅读本机 CLI 凭证；不提供 App 内 OAuth。</div></div>
+      <div class="field"><label>API Key</label><input id="e-key" type="password" value="${a&&a.key?esc(a.key):""}">
+        <div class="hint">默认掩码；不写日志。</div></div>
+      <div class="field"><label>来源路径</label><span class="ro">${a&&a.path?esc(a.path):"—"}</span>
+        <div class="hint">只读，不导出 refresh_token。</div></div></div>
+    <div class="sec"><h3>额度查询</h3>
+      <div class="field"><label>端点</label><input value="https://…/quota（模拟）"></div>
+      <div class="field"><label></label><button class="btn" onclick="toast('额度查询完成（0 次模型调用）')">查询一次</button>
+        <div class="hint">只读额度，不调用模型。</div></div></div>
+    <div class="sec"><h3>模型调用</h3>
+      <div class="field"><label>测试模型</label><input value="${a&&a.call?"glm-4.6":"—"}"></div>
+      <div class="field"><label></label><button class="btn" onclick="confirmTest()">测试调用</button>
+        <div class="hint">会消耗少量额度，且不保证重置 5h 窗口。</div></div></div>
+    <div class="sec"><h3>每日自动触发</h3>
+      ${a&&!a.sched?`<p class="mut" style="margin:0;font-size:12px">未声明 refreshUrl，<b>不显示</b>触发开关；当前仅监控。</p>`
+      :`<div class="field"><label>时间点</label><input value="${a?esc(a.sched):"08:00"}"></div>
+        <div class="field"><label></label><span class="hint" style="grid-column:2">成功以 provider 脚本执行路径为准，不承诺重置额度。</span></div>`}</div>
+  </div>
+  <div class="foot"><span class="mut" id="errsum" style="font-size:11px"></span>
+    <span class="right"><button class="btn ghost" onclick="cancelEdit()">取消</button>
+    <button class="btn primary" onclick="saveEdit()">保存 ⌘S</button></span></div>`;
+ ins.querySelectorAll("input,select").forEach(i=>i.oninput=i.onchange=()=>{S.dirty=true;});
+ S.dirty=false;S.view="edit";
+}
+function saveEdit(){
+ const n=$("#e-name");
+ if(n&&!n.value.trim()){toast("名称不能为空","error");return;}
+ S.dirty=false;toast("已保存草稿（模拟，未写入磁盘）");closeEdit();
+}
+function cancelEdit(){ if(S.dirty) return askDiscard(closeEdit); closeEdit(); }
+function closeEdit(){S.view="list";S.dirty=false;renderTable();renderInspector();}
+function askDiscard(next){
+ const m=document.createElement("div");m.className="overlay";
+ const b=document.createElement("div");b.className="modal";
+ b.innerHTML=`<div class="box"><h3>放弃未保存的更改？</h3><p>草稿尚未提交。</p>
+  <div class="acts"><button class="btn ghost" data-c>继续编辑</button>
+   <button class="btn" data-d>放弃</button><button class="btn primary" data-s>保存</button></div></div>`;
+ b.querySelector("[data-c]").onclick=()=>{m.remove();b.remove();};
+ b.querySelector("[data-d]").onclick=()=>{m.remove();b.remove();S.dirty=false;next();};
+ b.querySelector("[data-s]").onclick=()=>{m.remove();b.remove();saveEdit();};
+ document.body.appendChild(m);document.body.appendChild(b);
+}
+
+/* 导入：任务队列 */
+function openImport(){
+ if(S.dirty)return askDiscard(openImport);
+ S.view="import";S.step=1;S.results=[];
+ $("#tablewrap").innerHTML=`<div class="queue">
+   <div class="head"><b style="font-size:13px">导入</b>
+     <span class="mut" style="font-size:11px">源只读 · 重复默认跳过 · 不静默覆盖</span>
+     <span style="margin-left:auto"><button class="btn ghost" onclick="closeImport()">关闭</button></span></div>
+   <div class="srcpick">${SOURCES.map(([n,d])=>`<button aria-pressed="${S.src===n}" data-src="${n}"
+     title="${esc(d)}">${esc(n)}</button>`).join("")}</div>
+   <div class="qwrap" id="qwrap"><div class="empty">选择来源后点「扫描」。</div></div>
+   <div class="head" style="border-top:1px solid var(--border);border-bottom:none">
+     <span class="mut" id="qmsg" style="font-size:11px"></span>
+     <span style="margin-left:auto;display:flex;gap:8px">
+       <button class="btn" id="scanBtn" onclick="scan()">扫描（异步 · 8s 超时）</button>
+       <button class="btn primary" id="applyBtn" onclick="applyImport()" disabled>执行导入</button></span></div>
+ </div>`;
+ document.querySelectorAll("[data-src]").forEach(b=>b.onclick=()=>{S.src=b.dataset.src;S.step=1;
+   document.querySelectorAll("[data-src]").forEach(x=>x.setAttribute("aria-pressed","false"));
+   b.setAttribute("aria-pressed","true");$("#qwrap").innerHTML='<div class="empty">已选来源，点「扫描」。</div>';
+   $("#applyBtn").disabled=true;});
+ $("#inspector").className="inspector";
+ $("#inspector").innerHTML=`<div class="empty">导入过程中检查器暂不可用。</div>`;
+}
+function scan(){
+ $("#qmsg").textContent="扫描中…（模拟）";$("#scanBtn").disabled=true;
+ setTimeout(()=>{
+   const rows=CAND[S.src]||[];
+   $("#qwrap").innerHTML=rows.map(([n,k,t,l])=>`<div class="qrow">
+     <span class="mut">•</span><div><div>${esc(n)}</div><div class="ro">${esc(k)}</div></div>
+     <span class="tag ${t==="call"?"":t}">${esc(l)}</span><span class="mut">${t==="dup"?"默认跳过":"可处理"}</span></div>`).join("");
+   S.step=2;$("#applyBtn").disabled=false;$("#scanBtn").disabled=false;
+   $("#qmsg").textContent="候选 "+rows.length+" 项（模拟）。";
+ },650);
+}
+function applyImport(){
+ const rows=CAND[S.src]||[];
+ S.results=rows.map(([n,k,t,l])=>{
+   if(t==="dup")return[n,"已跳过","dup","重复，未覆盖",false];
+   if(t==="no")return[n,"不支持","no","需手动创建",false];
+   if(t==="call")return[n,"已导入（仅调用）","new","不承诺额度查询",false];
+   return[n,"已导入","new","凭证已写入插件目录（模拟）",false];
+ });
+ if(S.src==="CPAMP"&&S.results[0])S.results[0]=["GPT · codex","部分失败","no","401（模拟）",true];
+ S.step=3;
+ $("#qwrap").innerHTML=S.results.map(([n,l,t,w,retry],i)=>`<div class="qrow">
+   <span class="mut">${i+1}</span><div><div>${esc(n)}</div><div class="mut" style="font-size:11px">${esc(w)}</div></div>
+   <span class="tag ${t}">${esc(l)}</span>
+   <span>${retry?`<button class="btn" style="font-size:11px;padding:2px 8px" onclick="retry(${i})">重试</button>`:"—"}</span></div>`).join("");
+ $("#applyBtn").disabled=true;$("#scanBtn").disabled=true;
+ $("#qmsg").textContent="结果：成功/仅调用 "+S.results.filter(r=>r[2]==="new").length+"，跳过 "+S.results.filter(r=>r[2]==="dup").length+"，失败 "+S.results.filter(r=>r[1]==="部分失败").length+"（模拟）";
+}
+function retry(i){S.results[i]=[S.results[i][0],"已导入","new","重试成功（模拟）",false];applyImport();}
+function closeImport(){S.view="list";renderTable();renderInspector();}
+
+$("#themeBtn").onclick=()=>{S.dark=!S.dark;document.documentElement.dataset.theme=S.dark?"dark":"light";
+ $("#themeBtn").textContent=S.dark?"亮色":"暗色";};
+$("#editBtn").onclick=()=>{if(S.sel)openEdit(S.sel);};
+$("#addBtn").onclick=()=>{ if(S.dirty)return askDiscard(()=>openEdit(null)); S.sel=null;openEdit(null); };
+$("#importBtn").onclick=openImport;
+$("#search").oninput=e=>{S.q=e.target.value.trim().toLowerCase();if(S.view==="list")renderTable();};
+document.getElementById("nav").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+ if(S.dirty)return askDiscard(()=>toast("已切换："+b.textContent));
+ document.querySelectorAll("#nav button").forEach(x=>x.setAttribute("aria-current","false"));
+ b.setAttribute("aria-current","true");
+ if(b.textContent!=="额度"){ $("#tablewrap").innerHTML='<div class="empty">'+esc(b.textContent)+'：本原型仅演示额度视图。</div>';
+   $("#inspector").innerHTML='<div class="empty">选择「额度」返回。</div>'; } else renderTable();};
+document.addEventListener("keydown",e=>{
+ const meta=e.metaKey||e.ctrlKey;
+ if(e.key==="Escape"){ const m=document.querySelector(".modal"); if(m){m.remove();document.querySelector(".overlay")?.remove();return;}
+   if(S.view==="edit")return cancelEdit(); if(S.view==="import")return closeImport(); }
+ if(meta&&e.key.toLowerCase()==="s"){e.preventDefault();if(S.view==="edit")saveEdit();}
+ if(meta&&e.key.toLowerCase()==="n"){e.preventDefault();$("#addBtn").click();}
+ if(meta&&e.key.toLowerCase()==="f"){e.preventDefault();$("#search").focus();$("#search").select();}
+});
+renderTable();renderInspector();
+</script>
+</body>
+</html>

@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokenHUD 供应商管理 · 工作台（交互原型）</title>
+<style>
+:root{
+  --canvas:#F5F6F2; --side:#E9EEE7; --surface:#FFFFFF;
+  --ink:#202C25; --muted:#536159; --accent:#296348; --border:#D8DFD7;
+  --ok:#2F6B4F; --warn:#8A6A1E; --bad:#A5432F;
+  --s1:8px; --s2:16px; --s3:24px;
+  --r-container:10px; --r-btn:6px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--canvas);color:var(--ink);
+  font:13px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+.app{display:flex;height:100%;min-height:100%}
+/* ---------- 180px 任务导航 ---------- */
+.side{
+  width:180px;flex:none;background:var(--side);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:var(--s2) var(--s1);
+}
+.side .brand{font-size:14px;font-weight:600;letter-spacing:.01em;padding:0 var(--s1) var(--s3)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{
+  text-align:left;background:none;border:1px solid transparent;border-radius:var(--r-btn);
+  padding:8px 10px;color:var(--muted);display:flex;align-items:center;gap:8px;
+}
+.nav button:hover{background:rgba(255,255,255,.5)}
+.nav button[aria-current="page"]{
+  background:var(--surface);border-color:var(--border);color:var(--ink);font-weight:600;
+}
+.nav .grow{flex:1}
+.side .import-btn{
+  background:none;border:1px solid var(--border);border-radius:var(--r-btn);
+  padding:8px 10px;color:var(--muted);text-align:left;
+}
+.side .import-btn:hover{background:var(--surface);color:var(--ink)}
+/* ---------- 主区 ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.strip{
+  flex:none;padding:6px 20px;border-bottom:1px solid var(--border);
+  background:#EEF1EA;color:var(--muted);font-size:12px;
+}
+.viewport{flex:1;overflow:auto;min-height:0}
+.page{max-width:940px;margin:0 auto;padding:var(--s3) 20px 40px}
+h1{font-size:24px;line-height:1.3;margin:0 0 8px;font-weight:600}
+h2{font-size:16px;margin:0 0 12px;font-weight:600}
+h3{font-size:14px;margin:0 0 8px;font-weight:600}
+p{margin:0 0 8px}
+.note{font-size:12px;color:var(--muted)}
+.lede{font-size:14px;color:var(--muted);margin:0 0 var(--s3)}
+.rowhead{display:flex;align-items:flex-start;gap:var(--s2);justify-content:space-between;margin-bottom:var(--s3)}
+.rowhead .acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.group{display:flex;align-items:center;gap:6px}
+.group .glabel{font-size:12px;color:var(--muted);margin-right:2px}
+.btn{
+  border:1px solid var(--border);background:var(--surface);border-radius:var(--r-btn);
+  padding:6px 12px;min-height:30px;cursor:pointer;
+}
+.btn:hover{border-color:#B9C4B7;background:#FBFCFA}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#215038;border-color:#215038}
+.btn.quiet{background:none;border-color:transparent;color:var(--muted)}
+.btn.quiet:hover{background:rgba(0,0,0,.04);color:var(--ink);border-color:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover{background:var(--surface);border-color:var(--border)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* ---------- 总览网格 ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:var(--s1)}
+.acct{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-container);
+  padding:12px 14px;min-width:0;
+}
+.acct-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}
+.acct-hd .nm{font-size:14px;font-weight:600}
+.meta{font-size:12px;color:var(--muted)}
+.bk{display:grid;grid-template-columns:34px 1fr 44px 1fr;gap:8px;align-items:center;margin-bottom:6px}
+.bk-l{font-size:12px;color:var(--muted)}
+.bk-v{font-variant-numeric:tabular-nums;text-align:right;font-size:12px}
+.bk-r{font-size:12px;color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;border-radius:3px;background:#E4E9E2;overflow:hidden;min-width:40px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar i.full{background:var(--bad)}
+.bar i.empty{background:#C9D2C7}
+.acct-ft{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.qstate{font-size:12px;color:var(--muted)}
+.qstate.bad{color:var(--bad)}
+.qstate.ok{color:var(--ok)}
+.badge{
+  display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink);
+  border:1px solid var(--border);border-radius:20px;padding:1px 8px;white-space:nowrap;background:var(--canvas);
+}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.badge.ok .dot{background:var(--ok)}
+.badge.warn .dot{background:var(--warn)}
+.badge.bad .dot{background:var(--bad)}
+/* ---------- 列表 ---------- */
+.list{border:1px solid var(--border);border-radius:var(--r-container);background:var(--surface);overflow:auto}
+.lrow{display:grid;grid-template-columns:minmax(150px,1.4fr) 110px minmax(150px,1.2fr) auto;gap:var(--s2);
+  align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);min-width:0}
+.lrow:last-child{border-bottom:none}
+.lrow .nm{font-weight:600}
+.lrow .cap{font-size:12px;color:var(--muted)}
+/* ---------- 编辑 ---------- */
+.editshell{display:grid;grid-template-columns:150px 1fr;gap:var(--s3);align-items:start}
+.toc{position:sticky;top:0;display:flex;flex-direction:column;gap:2px}
+.toc button{
+  text-align:left;background:none;border:1px solid transparent;border-radius:var(--r-btn);
+  padding:6px 8px;color:var(--muted);font-size:12px;
+}
+.toc button:hover{background:rgba(0,0,0,.03);color:var(--ink)}
+.toc button[aria-current="true"]{background:var(--surface);border-color:var(--border);color:var(--ink);font-weight:600}
+.formcol{min-width:0}
+.sect{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-container);
+  padding:var(--s2);margin-bottom:var(--s2);
+}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.field input,.field select{
+  width:100%;border:1px solid var(--border);border-radius:var(--r-btn);
+  padding:6px 9px;background:#FCFDFB;min-height:32px;
+}
+.field input:focus,.field select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(41,99,72,.12)}
+.field .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.field .err{font-size:12px;color:var(--bad);margin-top:4px}
+.field input[aria-invalid="true"]{border-color:var(--bad)}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.readout{background:#FCFDFB;border:1px dashed var(--border);border-radius:var(--r-btn);padding:6px 9px;font-size:12px;color:var(--muted)}
+.errsum{
+  border:1px solid #E6C9C2;background:#FBF1EE;border-radius:var(--r-container);
+  padding:10px 12px;margin-bottom:var(--s2);font-size:12px;color:var(--bad);
+}
+.errsum ul{margin:6px 0 0 18px;padding:0}
+.footbar{
+  position:sticky;bottom:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-container);
+  box-shadow:0 4px 14px rgba(32,44,37,.08);
+  padding:10px 14px;margin-top:var(--s2);
+  display:flex;align-items:center;gap:12px;
+}
+.footbar .state{font-size:12px;color:var(--muted)}
+.footbar .right{margin-left:auto;display:flex;gap:8px}
+/* ---------- 导入 ---------- */
+.steps{display:flex;gap:8px;margin-bottom:var(--s2);flex-wrap:wrap}
+.steps span{
+  font-size:12px;border:1px solid var(--border);border-radius:20px;padding:2px 10px;color:var(--muted);background:var(--surface);
+}
+.steps span[aria-current="step"]{border-color:var(--accent);color:var(--ink);font-weight:600}
+.itable{width:100%;border-collapse:collapse;font-size:12px}
+.itable th{text-align:left;font-weight:600;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.itable td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+.itable tr:last-child td{border-bottom:none}
+.itable td.nm{font-weight:600}
+.ist{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ist .d{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+.ist.new .d{background:var(--ok)} .ist.dup .d{background:var(--warn)} .ist.no .d{background:var(--bad)}
+.srcs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--s1)}
+.src{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-container);
+  padding:12px 14px;text-align:left;cursor:pointer;
+}
+.src:hover{border-color:#B9C4B7}
+.src[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px rgba(41,99,72,.12)}
+.src b{display:block;margin-bottom:2px}
+.banner{
+  border:1px solid var(--border);background:#FBFCFA;border-radius:var(--r-container);
+  padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:var(--s2);
+}
+.banner b{color:var(--ink)}
+/* ---------- 弹层 ---------- */
+.scrim{position:fixed;inset:0;background:rgba(32,44,37,.34);display:grid;place-items:center;z-index:50;padding:24px}
+.dialog{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-container);
+  padding:18px 20px;width:min(440px,100%);
+}
+.dialog h2{margin-bottom:8px}
+.dialog p{color:var(--muted);margin-bottom:16px}
+.dialog .acts{display:flex;gap:8px;justify-content:flex-end}
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:60;
+  background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:var(--r-btn);padding:10px 14px;font-size:12px;max-width:420px;
+}
+.toast small{display:block;color:var(--muted);margin-top:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important;animation:none !important;scroll-behavior:auto !important}
+}
+@media (max-width:1000px){
+  .grid{grid-template-columns:1fr}
+  .lrow{grid-template-columns:minmax(120px,1fr) auto;row-gap:6px}
+  .lrow .cap{grid-column:1/-1}
+  .editshell{grid-template-columns:1fr}
+  .toc{position:static;flex-direction:row;flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">TokenHUD</div>
+    <nav class="nav" id="nav" aria-label="任务导航">
+      <button data-route="overview">额度总览</button>
+      <button data-route="accounts">供应商账号</button>
+      <button data-route="trigger">自动触发</button>
+    </nav>
+    <div class="grow"></div>
+    <button class="import-btn" data-route="import">从本机导入</button>
+  </aside>
+  <main class="main">
+    <div class="strip" role="note">交互原型 · 演示数据 · 不连接真实服务 · 保存仅写入本页内存，刷新即恢复演示数据</div>
+    <div id="live" class="sr" role="status" aria-live="polite"></div>
+    <div class="viewport" id="viewport">
+      <div class="page" id="page"></div>
+    </div>
+  </main>
+</div>
+<script>
+"use strict";
+
+/* =========================================================
+   演示数据（全部脱敏，key 一律 demo-key-...）
+   ========================================================= */
+const ACCOUNTS = [
+  { id:'glm', name:'GLM', authMode:'apikey', proto:'openai',
+    key:'demo-key-glm-0001', url:'https://open.bigmodel.cn/api/paas/v4', model:'glm-4.6',
+    canQuery:true, canCall:true, queryNote:'',
+    buckets:[{l:'5h',used:18,reset:'3 小时 12 分后重置'},{l:'周',used:36,reset:'4 天 2 小时后重置'}],
+    state:'ok', stateText:'正常', schedule:['08:00','20:00'], autoQueryEnabled:true, autoTriggerEnabled:true },
+
+  { id:'ollama', name:'Ollama', authMode:'apikey', proto:'openai',
+    key:'demo-key-ollama-0002', url:'http://127.0.0.1:11434/v1', model:'qwen3',
+    canQuery:true, canCall:true, queryNote:'',
+    buckets:[{l:'5h',used:24,reset:'1 小时 40 分后重置'},{l:'周',used:71,reset:'2 天 11 小时后重置'},{l:'月',used:58,reset:'12 天后重置'}],
+    state:'ok', stateText:'正常', schedule:['09:00'], autoQueryEnabled:true, autoTriggerEnabled:true },
+
+  { id:'ocgo', name:'OC-Go', authMode:'apikey', proto:'openai',
+    key:'demo-key-ocgo-0003', url:'https://oc-go.example.com/v1', model:'ocgo-chat',
+    canQuery:true, canCall:true, queryNote:'',
+    buckets:[{l:'5h',used:91,reset:'55 分后重置'},{l:'周',used:47,reset:'5 天 18 小时后重置'},{l:'月',used:33,reset:'21 天后重置'}],
+    state:'ok', stateText:'正常', schedule:['08:00','14:00','20:00'], autoQueryEnabled:true, autoTriggerEnabled:true },
+
+  { id:'gpt', name:'GPT (Codex)', authMode:'local', proto:'openai',
+    key:'', path:'本机 Codex 登录凭证（只读）', url:'https://chatgpt.com/backend-api', model:'gpt-5.1',
+    canQuery:true, canCall:false, queryNote:'授权登录的来源为本机 CLI，App 内不提供 OAuth 流程。',
+    buckets:[{l:'5h',used:68,reset:'2 小时 5 分后重置'},{l:'周',used:100,reset:'6 天 3 小时后重置'}],
+    state:'ok', stateText:'连接正常', schedule:[], autoQueryEnabled:false },
+
+  { id:'cline', name:'Cline Pass', authMode:'apikey', proto:'anthropic',
+    key:'demo-key-cline-0005', url:'https://api.cline.example.com', model:'claude-sonnet-4',
+    canQuery:true, canCall:false,
+    queryNote:'尚未查询',
+    buckets:[], state:'unqueried', stateText:'尚未查询',
+    schedule:[], autoQueryEnabled:false }
+];
+
+const TEMPLATES = [
+  { id:'tpl-glm', name:'GLM', authMode:'apikey', proto:'openai', canQuery:true, canCall:true,
+    cap:'额度查询 + 模型调用', note:'已知模板：内置额度端点与调用协议。' },
+  { id:'tpl-ollama', name:'Ollama', authMode:'apikey', proto:'openai', canQuery:true, canCall:true,
+    cap:'额度查询 + 模型调用', note:'已知模板：本机或远程 Ollama 均可。' },
+  { id:'tpl-ocgo', name:'OC-Go', authMode:'apikey', proto:'openai', canQuery:true, canCall:true,
+    cap:'额度查询 + 模型调用', note:'已知模板：内置额度端点与调用协议。' },
+  { id:'tpl-gpt', name:'GPT (Codex)', authMode:'local', proto:'openai', canQuery:true, canCall:false,
+    cap:'额度查询 · 仅监控', note:'已知模板：只读本机 Codex 登录来源，无需 API Key，不提供 App 内 OAuth 或自动触发。' },
+  { id:'tpl-cline', name:'Cline Pass', authMode:'apikey', proto:'anthropic', canQuery:true, canCall:false,
+    cap:'额度查询 · 仅监控', note:'已知模板：API Key 查询额度；当前适配不提供模型调用或自动触发。' },
+  { id:'tpl-generic-openai', name:'通用 OpenAI 兼容', authMode:'apikey', proto:'openai', canQuery:false, canCall:true,
+    cap:'仅模型调用', note:'额度查询尚未适配；OpenAI 兼容只说明调用协议，不能证明存在余额接口。' },
+  { id:'tpl-generic-anthropic', name:'通用 Anthropic 兼容', authMode:'apikey', proto:'anthropic', canQuery:false, canCall:true,
+    cap:'仅模型调用', note:'额度查询尚未适配；Anthropic 兼容只说明调用协议。' }
+];
+
+const IMPORT_SOURCES = [
+  { id:'9router', name:'9router', desc:'providers 连接；只读扫描' },
+  { id:'cc-switch', name:'cc-switch', desc:'providers 配置；只读扫描' },
+  { id:'cpamp', name:'CPAMP', desc:'auth-files 凭证；只读扫描' }
+];
+
+const IMPORT_ROWS = {
+  '9router':[
+    { n:'GLM · 工作', auth:'API Key', proto:'OpenAI 兼容', adapt:'支持额度查询', res:'可导入', kind:'new' },
+    { n:'Ollama · 本机', auth:'API Key', proto:'OpenAI 兼容', adapt:'支持额度查询', res:'已存在，默认跳过', kind:'dup' },
+    { n:'Custom · one-api', auth:'API Key', proto:'OpenAI 兼容', adapt:'额度尚未适配', res:'可导入（仅模型调用）', kind:'new' },
+    { n:'Codex (OAuth)', auth:'授权登录', proto:'—', adapt:'—', res:'不支持迁移', kind:'no',
+      why:'源端为 OAuth 会话凭证，无法转为本机 CLI 只读来源。' }
+  ],
+  'cc-switch':[
+    { n:'Claude · 主账号', auth:'API Key', proto:'Anthropic 兼容', adapt:'尚未适配', res:'可导入（仅模型调用）', kind:'new' },
+    { n:'Cline Pass', auth:'API Key', proto:'Anthropic 兼容', adapt:'当前仅监控', res:'已存在，默认跳过', kind:'dup' }
+  ],
+  'cpamp':[
+    { n:'Cline Pass', auth:'API Key', proto:'Anthropic 兼容', adapt:'当前仅监控', res:'可导入', kind:'new' },
+    { n:'Codex (OAuth)', auth:'授权登录', proto:'—', adapt:'—', res:'不支持迁移', kind:'no',
+      why:'auth-files 为 OAuth 凭证文件，本机只读来源不接收外部 token。' }
+  ]
+};
+
+/* =========================================================
+   状态
+   ========================================================= */
+const S = {
+  route:'overview',
+  editing:null,          // {mode:'edit'|'add', id, draft, errors, dirty}
+  toc:'cred',
+  query:{},              // id -> 'idle'|'busy'|'ok'|'fail'
+  call:{},               // id -> 'idle'|'busy'|'ok'|'fail'
+  imp:{step:1, src:'9router', rows:[], picked:{}, results:null, scanning:false},
+  pending:null,          // 待执行的离开动作
+  dialog:null,           // {title, body, confirmText, onConfirm, danger}
+  toast:null
+};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const acct = id => ACCOUNTS.find(a => a.id === id);
+const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+function okUrl(v){
+  const t = (v == null ? '' : String(v)).trim();
+  if (!t) return true;
+  // Reject raw whitespace / control chars up front: Chrome's URL parser strips
+  // tabs and folds newlines before we can see them in u.hostname.
+  if (/[\s\x00-\x1f\x7f]/.test(t)) return false;
+  try {
+    const u = new URL(t);
+    // "http:///nohost" parses to hostname "nohost" — reject unless the input
+    // actually carries "//authority" right after the scheme.
+    const m = t.match(/^(https?:\/\/)([^/?#]*)/i);
+    // Chrome's URL parser percent-encodes spaces in host (unlike Node, which throws).
+    // Reject hosts containing whitespace / control chars / percent, matching Node.
+    const hostOk = !/[\s\x00-\x1f\x7f%]/.test(u.hostname);
+    return !!m && m[2] !== '' && u.hostname !== '' && hostOk;
+  } catch (_e) { return false; }
+}
+
+/* =========================================================
+   通用 UI
+   ========================================================= */
+function toast(msg, sub){
+  const el = document.createElement('div');
+  el.className = 'toast'; el.setAttribute('role','status');
+  el.innerHTML = esc(msg) + '<small>' + esc(sub || '演示结果 · 未执行真实请求') + '</small>';
+  document.body.appendChild(el);
+  const live = document.getElementById('live');
+  if (live) live.textContent = msg + '。' + (sub || '');
+  setTimeout(() => el.remove(), 3200);
+}
+
+function askDialog(opts){
+  if (S.dialog) return;
+  S.dialog = opts; render();
+}
+function closeDialog(){ S.dialog = null; render(); }
+
+function confirmLeave(next){
+  if (S.editing && S.editing.dirty){ askDialog({
+    title:'放弃未保存的更改？',
+    body:'当前编辑有未保存的草稿。保存后会写入内存中的演示数据。',
+    confirmText:'放弃更改', danger:true,
+    onConfirm:() => { S.dialog = null; S.editing = null; next(); }
+  }); return; }
+  S.editing = null; next();
+}
+
+function go(route){
+  if (S.editing && S.editing.dirty) return confirmLeave(() => { S.route = route; render(); });
+  S.editing = null; S.route = route; render();
+}
+
+/* =========================================================
+   区块渲染
+   ========================================================= */
+function badge(a){
+  const cls = a.state === 'unqueried' ? 'warn' : a.state;
+  return '<span class="badge ' + cls + '"><span class="dot"></span>' + esc(a.stateText) + '</span>';
+}
+
+function bucketRows(a){
+  if (!a.buckets.length) return '<div class="note">' + esc(a.queryNote || '尚未查询') + '</div>';
+  return a.buckets.map(b => {
+    const p = Math.max(0, Math.min(100, b.used));
+    const cls = p >= 100 ? 'full' : (p <= 0 ? 'empty' : '');
+    return '<div class="bk">' +
+      '<span class="bk-l">' + esc(b.l) + '</span>' +
+      '<span class="bar" role="progressbar" tabindex="0" aria-label="' + esc(a.name + ' ' + b.l + ' 已用 ' + p + '%') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + p + '" title="' + esc(a.name + ' · ' + b.l + ' 窗口已用 ' + p + '%') + '">' +
+        '<i class="' + cls + '" style="width:' + p + '%"></i></span>' +
+      '<span class="bk-v">' + p + '%</span>' +
+      '<span class="bk-r" title="' + esc(b.reset) + '">' + esc(b.reset) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function capabilityText(a){
+  if (a.canQuery && a.canCall) return '可查询额度 · 可调用模型';
+  if (a.canQuery && !a.canCall) return '可查额度 · 不可调用';
+  return '仅模型调用 · 未接入额度查询';
+}
+
+function queryButton(a, size){
+  if (!a.canQuery) {
+    return '<button class="btn" disabled title="' + esc(a.queryNote || '当前适配仅监控') + '">额度查询不可用</button>';
+  }
+  const st = S.query[a.id] || 'idle';
+  const label = st === 'busy' ? '查询中…' : '查询额度';
+  return '<button class="btn" data-act="query" data-id="' + a.id + '"' + (st === 'busy' ? ' disabled' : '') + '>' + label + '</button>';
+}
+
+function callButton(a){
+  if (!a.canCall) return '';
+  const st = S.call[a.id] || 'idle';
+  return '<button class="btn" data-act="call" data-id="' + a.id + '"' + (st === 'busy' ? ' disabled' : '') + '>' +
+    (st === 'busy' ? '调用中…' : '发送一次测试调用') + '</button>';
+}
+
+/* =========================================================
+   额度总览
+   ========================================================= */
+function qstate(a){
+  const q = S.query[a.id] || 'idle', c = S.call[a.id] || 'idle';
+  if (q === 'busy') return '<span class="qstate">额度查询中…</span>';
+  if (q === 'ok') return '<span class="qstate ok">额度已更新（演示）</span>';
+  if (q === 'fail') return '<span class="qstate bad">额度查询失败；未采用任何新数据</span>';
+  if (c === 'busy') return '<span class="qstate">测试调用进行中…</span>';
+  if (c === 'ok') return '<span class="qstate ok">调用响应成功（不保证重置 5h 窗口）</span>';
+  if (c === 'fail') return '<span class="qstate bad">调用失败</span>';
+  if (!a.canQuery) return '<span class="qstate">当前适配仅监控</span>';
+  return '';
+}
+
+function viewOverview(){
+  const pending = ACCOUNTS.filter(a => a.state === 'unqueried' || a.state === 'error').length;
+  const schedulable = ACCOUNTS.filter(a => a.canCall).length;
+  return '' +
+  '<div class="rowhead">' +
+    '<div><h1>额度总览</h1>' +
+      '<p class="lede">' + ACCOUNTS.length + ' 个账号，' + pending + ' 个待处理，' + schedulable + ' 个支持自动触发。</p></div>' +
+    '<div class="acts">' +
+      '<div class="group"><span class="glabel">额度</span>' +
+        '<button class="btn" data-act="query-all">查询全部</button></div>' +
+      '<div class="group"><span class="glabel">账号</span>' +
+        '<button class="btn" data-act="add">添加</button>' +
+        '<button class="btn" data-act="import">导入</button></div>' +
+    '</div>' +
+  '</div>' +
+  '<div class="grid">' + ACCOUNTS.map(a =>
+    '<section class="acct" aria-label="' + esc(a.name) + '">' +
+      '<div class="acct-hd"><div>' +
+        '<div class="nm">' + esc(a.name) + '</div>' +
+        '<div class="meta">' + esc(a.authMode === 'local' ? '授权登录 · 本机 CLI' : 'API Key') +
+          (a.canCall ? '' : ' · 仅监控') + '</div>' +
+      '</div>' + badge(a) + '</div>' +
+      bucketRows(a) +
+      '<div class="acct-ft">' + queryButton(a) +
+        '<button class="btn quiet" data-act="edit" data-id="' + a.id + '">管理</button>' + qstate(a) + '</div>' +
+    '</section>').join('') +
+  '</div>';
+}
+
+/* =========================================================
+   供应商账号
+   ========================================================= */
+function viewAccounts(){
+  return '' +
+  '<div class="rowhead">' +
+    '<div><h1>供应商账号</h1><p class="lede">登录方式、能力与编辑入口。点击「编辑」在主区整页打开，不用窄浮窗。</p></div>' +
+    '<div class="acts"><button class="btn" data-act="add">添加供应商</button>' +
+      '<button class="btn" data-act="import">从本机导入</button></div>' +
+  '</div>' +
+  '<div class="list">' + ACCOUNTS.map(a =>
+    '<div class="lrow">' +
+      '<div><div class="nm">' + esc(a.name) + '</div>' +
+        '<div class="cap">' + esc(a.authMode === 'local' ? '授权登录 · 本机 CLI 只读' : 'API Key') + '</div></div>' +
+      '<div>' + badge(a) + '</div>' +
+      '<div class="cap">' + esc(capabilityText(a)) + '</div>' +
+      '<div class="acts"><button class="btn" data-act="edit" data-id="' + a.id + '">编辑</button></div>' +
+    '</div>').join('') + '</div>';
+}
+
+/* =========================================================
+   自动触发
+   ========================================================= */
+function viewTrigger(){
+  const rows = ACCOUNTS.map(a => {
+    if (!a.canCall) return '<div class="lrow">' +
+      '<div><div class="nm">' + esc(a.name) + '</div><div class="cap">' + esc(a.authMode === 'local' ? '授权登录' : 'API Key') + '</div></div>' +
+      '<div><span class="badge"><span class="dot"></span>不可设定时</span></div>' +
+      '<div class="cap">未提供自动触发：无模型调用通道；额度查询不受影响。</div>' +
+      '<div></div></div>';
+    return '<div class="lrow">' +
+      '<div><div class="nm">' + esc(a.name) + '</div><div class="cap">' + esc(a.proto === 'anthropic' ? 'Anthropic 兼容' : 'OpenAI 兼容') + '</div></div>' +
+      '<div><span class="badge ' + (a.autoTriggerEnabled ? 'ok' : '') + '"><span class="dot"></span>' + (a.autoTriggerEnabled ? '自动触发已启用' : '自动触发已停用') + '</span></div>' +
+      '<div class="cap">' + (a.schedule.length ? '每日 ' + a.schedule.join(' · ') + '（本机时区）' : '未设定时间点') + '</div>' +
+      '<div class="acts"><button class="btn" data-act="edit" data-id="' + a.id + '">编辑</button></div>' +
+    '</div>';
+  }).join('');
+  return '' +
+  '<div class="rowhead"><div><h1>自动触发</h1>' +
+    '<p class="lede">只有可调用模型的模板才会出现定时配置。时间为本机时区，由 App 运行时执行。</p></div></div>' +
+  '<div class="note" style="margin-bottom:16px">周期自动调用会消耗额度，不保证重置 5h 窗口；与自动查询互不影响。' +
+    '保存不会立即调用模型；App 未运行或设备睡眠时错过的时刻不承诺补发。</div>' +
+  '<div class="list">' + rows + '</div>';
+}
+
+/* =========================================================
+   编辑器（同壳整页）
+   ========================================================= */
+function blankDraft(tpl){
+  return {
+    name: tpl ? tpl.name : '',
+    authMode: tpl ? tpl.authMode : 'apikey',
+    proto: tpl ? tpl.proto : 'openai',
+    key: '', url: '', model: '',
+    times: tpl && tpl.canCall ? ['08:00'] : [],
+    autoQueryEnabled: false,
+    autoTriggerEnabled: false,
+    tpl: tpl ? tpl.id : null,
+    canQuery: tpl ? tpl.canQuery : false,
+    canCall: tpl ? tpl.canCall : true
+  };
+}
+
+function openEdit(id){
+  const a = acct(id);
+  const d = {
+    name:a.name, authMode:a.authMode, proto:a.proto, key:a.key, url:a.url, model:a.model,
+    times:a.schedule.slice(), autoQueryEnabled:a.autoQueryEnabled, autoTriggerEnabled:a.autoTriggerEnabled, tpl:a.id,
+    canQuery:a.canQuery, canCall:a.canCall, path:a.path || ''
+  };
+  S.editing = { mode:'edit', id:id, draft:d, errors:{}, dirty:false };
+  S.toc = 'cred';
+  S.route = 'editor';
+}
+function openAdd(){
+  if (S.editing && S.editing.dirty) return confirmLeave(() => { openAdd(); render(); });
+  S.editing = { mode:'add', id:null, draft:null, errors:{}, dirty:false };
+  S.toc = 'cred';
+  S.route = 'add';
+}
+function pickTemplate(tplId){
+  const tpl = TEMPLATES.find(t => t.id === tplId);
+  S.editing = { mode:'add', id:null, draft:blankDraft(tpl), errors:{}, dirty:false };
+  S.toc = 'cred';
+  S.route = 'add';
+}
+
+function markDirty(){
+  if (S.editing) S.editing.dirty = true;
+}
+function field(name, val){
+  const e = S.editing;
+  e.draft[name] = val; e.dirty = true;
+  if (e.errors[name]) delete e.errors[name];
+}
+
+function validate(){
+  const e = S.editing, d = e.draft, errs = {};
+  if (!d.name.trim()) errs.name = '请填写名称。';
+  if (d.authMode === 'apikey' && !d.key.trim()) errs.key = 'API Key 不能为空。';
+  if (!okUrl(d.url)) errs.url = '调用端点必须以 http:// 或 https:// 开头。';
+  if (d.canCall) {
+    const seen = {};
+    d.times.forEach((t, i) => {
+      if (!timeRe.test(t)) errs['time' + i] = '时间格式应为 HH:MM（24 小时制），例如 08:00，而不是 ' + t + '。';
+      else {
+        if (seen[t]) errs['time' + i] = '时间 ' + t + ' 与前面的时间重复。';
+        seen[t] = true;
+      }
+    });
+  }
+  e.errors = errs;
+  return Object.keys(errs).length === 0;
+}
+
+function saveEdit(){
+  if (!validate()){ render(); toast('有 ' + Object.keys(S.editing.errors).length + ' 处需要修正', '未保存'); return; }
+  const e = S.editing, d = e.draft;
+  if (e.mode === 'edit'){
+    const a = acct(e.id);
+    a.name = d.name.trim();
+    a.authMode = d.authMode;
+    a.proto = d.proto;
+    a.key = d.key;
+    a.url = d.url;
+    a.model = d.model;
+    a.schedule = d.times.slice();
+    a.autoQueryEnabled = d.autoQueryEnabled && a.canQuery;
+    a.autoTriggerEnabled = d.autoTriggerEnabled && a.canCall;
+    if (!a.canQuery){ a.state = 'unqueried'; a.stateText = '尚未查询'; }
+  } else {
+    ACCOUNTS.push({
+      id:'new-' + Date.now(), name:d.name.trim(), authMode:d.authMode, proto:d.proto,
+      key:d.key, url:d.url || '（未填写端点）', model:d.model,
+      canQuery:d.canQuery, canCall:d.canCall,
+      queryNote:d.canQuery ? '' : '未接入额度查询：该供应商仅模型调用，不写入用量数据。',
+      buckets:[], state:'unqueried', stateText:'尚未查询',
+      schedule:d.times.slice(), autoQueryEnabled:!!d.autoQueryEnabled && d.canQuery,
+      autoTriggerEnabled:!!d.autoTriggerEnabled && d.canCall
+    });
+  }
+  S.editing = null; S.route = 'accounts';
+  render(); toast('已保存到内存中的演示数据', '未写入磁盘');
+}
+
+function editField(label, name, opts){
+  const e = S.editing, d = e.draft, err = e.errors[name];
+  const extra = opts || {};
+  const val = d[name] == null ? '' : d[name];
+  const input = extra.textarea
+    ? '<textarea id="f-' + name + '" rows="2" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:6px 9px;background:#FCFDFB" aria-invalid="' + (err ? 'true' : 'false') + '"' + (extra.disabled ? ' disabled' : '') + '>' + esc(val) + '</textarea>'
+    : '<input id="f-' + name + '" type="' + (extra.type || 'text') + '" value="' + esc(val) + '" aria-invalid="' + (err ? 'true' : 'false') + '"' + (extra.disabled ? ' disabled' : '') + ' placeholder="' + esc(extra.placeholder || '') + '">';
+  return '<div class="field"><label for="f-' + name + '">' + esc(label) + '</label>' + input +
+    (extra.hint ? '<div class="hint">' + extra.hint + '</div>' : '') +
+    (err ? '<div class="err" role="alert">' + esc(err) + '</div>' : '') + '</div>';
+}
+
+function viewEditor(){
+  const e = S.editing, d = e.draft, errs = e.errors;
+  const errCount = Object.keys(errs).length;
+
+  const toc = [
+    ['cred','账号凭证'], ['query','额度查询'], ['trigger','自动触发']
+  ].map(([k,label]) =>
+    '<button data-toc="' + k + '" aria-current="' + (S.toc === k ? 'true' : 'false') + '">' + label + '</button>').join('');
+
+  const credBlock =
+    '<section class="sect" id="sec-cred" aria-labelledby="h-cred"><h3 id="h-cred">账号凭证</h3>' +
+      editField('名称','name',{placeholder:'例如 GLM · 工作'}) +
+      '<div class="field"><label for="f-authMode">授权方式</label>' +
+        '<select id="f-authMode"' + (d.authMode === 'local' ? ' disabled' : '') + '>' +
+          '<option value="apikey"' + (d.authMode === 'apikey' ? ' selected' : '') + '>API Key</option>' +
+          '<option value="local"' + (d.authMode === 'local' ? ' selected' : '') + '>授权登录 · 本机 CLI</option>' +
+        '</select>' +
+        '<div class="hint">授权登录只读取本机 CLI 已登录凭证；本 App 不提供 OAuth 授权流程。</div>' +
+      '</div>' +
+      (d.authMode === 'apikey'
+        ? editField('API Key','key',{type:'password', placeholder:'demo-key-...',
+            hint:'演示值，可替换。密钥默认掩码显示，不写入日志。'})
+        : '<div class="field"><label>来源（只读）</label>' +
+            '<div class="readout" style="display:flex;gap:24px;flex-wrap:wrap"><span>类型：本机 CLI</span>' +
+            '<span>来源：' + esc(d.path || '本机 Codex 登录凭证') + '</span></div>' +
+            '<div class="hint">只读，不可在此修改；不读取任何本机凭证（演示文案）。</div></div>') +
+      editField('调用端点','url',{placeholder:'https://…/v1'}) +
+      editField('默认模型','model',{placeholder:'例如 glm-4.6'}) +
+      '<div class="note">调用协议：' + esc(d.proto === 'anthropic' ? 'Anthropic 兼容（/v1/messages）' : 'OpenAI 兼容（/v1/chat/completions）') +
+        '。协议只说明模型调用方式，不代表存在余额接口。</div>' +
+    '</section>';
+
+  const queryBlock =
+    '<section class="sect" id="sec-query" aria-labelledby="h-query"><h3 id="h-query">额度查询</h3>' +
+      (d.canQuery
+        ? '<div class="field"><label>自动查询额度</label>' +
+            '<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink)">' +
+            '<input type="checkbox" id="f-autoquery"' + (d.autoQueryEnabled ? ' checked' : '') + ' style="width:auto;min-height:0"> 后台按周期查询额度</label>' +
+            '<div class="hint">仅控制后台轮询；关闭后仍可手动查询，也不影响定时触发。保存不发起任何请求。</div></div>' +
+          '<div class="inline"><button class="btn" data-act="query-draft">查询一次（不发模型请求）</button>' +
+          '<span class="note">只读取额度，不调用模型。</span></div>'
+        : '<p class="note" style="margin-bottom:8px"><b>未接入额度查询。</b>该供应商仅模型调用；不会写入用量数据。</p>') +
+      '<div class="field" style="margin-top:12px"><label>数据状态</label>' +
+        '<div class="readout">' + (d.canQuery ? '最新（示例）' : '不适用 — 未接入额度查询') + '</div>' +
+        '<div class="hint">「尚未查询」不等于「未启用」；「额度用尽」不等于「连接异常」。</div></div>' +
+    '</section>' +
+    (e.mode === 'edit' && d.canCall
+      ? '<section class="sect" aria-label="模型调用"><h3>模型调用</h3>' +
+        '<div class="inline">' + callButton(acct(e.id)) + qstate(acct(e.id)) + '</div>' +
+        '<p class="note" style="margin-top:8px">会消耗少量额度；不保证重置 5h 窗口。</p></section>'
+      : '');
+
+  const triggerBlock =
+    '<section class="sect" id="sec-trigger" aria-labelledby="h-trigger"><h3 id="h-trigger">自动触发</h3>' +
+      (d.canCall
+        ? '<div class="field"><label>自动触发模型调用</label>' +
+            '<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink)">' +
+            '<input type="checkbox" id="f-autotrigger"' + (d.autoTriggerEnabled ? ' checked' : '') + ' style="width:auto;min-height:0"> 按时间点自动调用一次模型</label>' +
+            '<div class="hint">会消耗少量额度，不保证重置 5h 窗口；与自动查询互不影响。保存不发起任何请求。</div></div>' +
+          '<div class="field"><label>每日时间点（本机时区）</label>' +
+            d.times.map((t, i) =>
+              '<div class="inline" style="margin-bottom:6px">' +
+                '<input id="f-time' + i + '" value="' + esc(t) + '" aria-label="触发时间 ' + (i + 1) + '"' +
+                  (errs['time' + i] ? ' aria-invalid="true" style="border-color:var(--bad)"' : '') + '>' +
+                '<button class="btn" data-act="rm-time" data-i="' + i + '">移除</button>' +
+              '</div>' +
+              (errs['time' + i] ? '<div class="err" role="alert">' + esc(errs['time' + i]) + '</div>' : '')
+            ).join('') +
+            '<div class="inline"><button class="btn" data-act="add-time">添加时间</button>' +
+              '<span class="note">格式 HH:MM，例 08:00；9:00 会被拒绝。</span></div></div>' +
+          '<p class="note">保存定时不会立即调用模型。App 运行时才执行；睡眠或未运行错过的时刻不承诺补发。' +
+            '调用结果不保证重置 5h 额度窗口。</p>'
+        : '<p class="note"><b>未提供自动触发</b>：该供应商无模型调用通道；不影响额度查询与自动查询。</p>') +
+    '</section>';
+
+  const errSum = errCount
+    ? '<div class="errsum" role="alert"><b>有 ' + errCount + ' 处需要修正</b><ul>' +
+        Object.keys(errs).map(k => '<li>' + esc(errs[k]) + '</li>').join('') + '</ul></div>'
+    : '';
+
+  return '' +
+  '<div class="rowhead"><div><h1>' + (e.mode === 'edit' ? '编辑供应商' : '添加供应商') + '</h1>' +
+    '<p class="lede">' + (e.mode === 'edit' ? esc(d.name) : '从已知模板或通用兼容协议开始') + '</p></div>' +
+    '<div class="acts"><span class="note">草稿只在内存中</span></div></div>' +
+  '<div class="editshell">' +
+    '<nav class="toc" aria-label="编辑分区">' + toc + '</nav>' +
+    '<div class="formcol">' + errSum + credBlock + queryBlock + triggerBlock +
+      '<div class="footbar">' +
+        (e.mode === 'edit'
+          ? '<button class="btn quiet" data-act="delete" data-id="' + e.id + '">删除供应商</button>'
+          : '') +
+        '<span class="state">' + (e.dirty ? '● 未保存的更改' : '无更改') + '</span>' +
+        '<span class="right">' +
+          '<button class="btn quiet" data-act="cancel-edit">取消（Esc）</button>' +
+          '<button class="btn primary" data-act="save">保存（⌘S）</button>' +
+        '</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+/* =========================================================
+   添加：模板选择
+   ========================================================= */
+function viewTemplatePicker(){
+  return '' +
+  '<div class="rowhead"><div><h1>添加供应商</h1>' +
+    '<p class="lede">先从已知模板开始；通用兼容协议只保证调用，不保证有额度接口。</p></div>' +
+    '<div class="acts"><button class="btn" data-act="cancel-add">取消</button></div></div>' +
+  '<div class="list">' + TEMPLATES.map(t =>
+    '<div class="lrow">' +
+      '<div><div class="nm">' + esc(t.name) + '</div><div class="cap">' + esc(t.note) + '</div></div>' +
+      '<div><span class="badge"><span class="dot"></span>' + esc(t.authMode === 'local' ? '授权登录' : 'API Key') + '</span></div>' +
+      '<div class="cap">' + esc(t.cap) + ' · ' + esc(t.proto === 'anthropic' ? 'Anthropic 兼容' : 'OpenAI 兼容') + '</div>' +
+      '<div class="acts"><button class="btn" data-act="pick-tpl" data-tpl="' + t.id + '">选择</button></div>' +
+    '</div>').join('') + '</div>';
+}
+
+/* =========================================================
+   导入
+   ========================================================= */
+function openImport(){
+  S.imp = { step:1, src:'9router', rows:[], picked:{}, results:null, scanning:false };
+  S.editing = null; S.route = 'import'; render();
+}
+
+function viewImport(){
+  const im = S.imp;
+  const steps = '<div class="steps" aria-label="导入步骤">' +
+    ['选择来源','预览候选','导入结果'].map((s, i) =>
+      '<span aria-current="' + (im.step === i + 1 ? 'step' : 'false') + '">' + (i + 1) + ' ' + s + '</span>').join('') + '</div>';
+
+  if (im.step === 1){
+    return '' +
+    '<div class="rowhead"><div><h1>从本机导入</h1>' +
+      '<p class="lede">扫描本机已有工具的配置并预览。源端一律只读，不修改源端。</p></div>' +
+      '<div class="acts"><button class="btn" data-act="import-cancel">取消</button></div></div>' +
+    steps +
+    '<div class="banner"><b>不修改源端。</b>本流程只读取源配置生成候选；任何写入都发生在本 App 内。</div>' +
+    '<div class="srcs">' + IMPORT_SOURCES.map(s =>
+      '<button class="src" data-src="' + s.id + '" aria-pressed="' + (im.src === s.id ? 'true' : 'false') + '">' +
+        '<b>' + esc(s.name) + '</b><span class="note">' + esc(s.desc) + '</span></button>').join('') + '</div>' +
+    '<div class="inline" style="margin-top:16px">' +
+      '<button class="btn primary" data-act="scan"' + (im.scanning ? ' disabled' : '') + '>' +
+        (im.scanning ? '扫描中…' : '扫描 ' + esc(IMPORT_SOURCES.find(s => s.id === im.src).name)) + '</button>' +
+      '<span class="note">扫描为演示过程；真实实现为异步且有超时。</span></div>';
+  }
+
+  if (im.step === 2){
+    return '' +
+    '<div class="rowhead"><div><h1>预览候选</h1>' +
+      '<p class="lede">来源：' + esc(im.src) + '（只读）。已存在项默认跳过，不静默覆盖。</p></div>' +
+      '<div class="acts"><button class="btn" data-act="import-back">返回</button></div></div>' +
+    steps +
+    '<div class="banner"><b>不修改源端。</b>勾选只影响本次导入；重复项需要另存为副本才会写入。</div>' +
+    '<div class="list" style="padding:0"><table class="itable">' +
+      '<thead><tr><th></th><th>名称</th><th>授权方式</th><th>调用协议</th><th>额度适配</th><th>结果</th></tr></thead><tbody>' +
+      im.rows.map((r, i) => {
+        const disabled = r.kind === 'dup' || r.kind === 'no';
+        const checked = !!im.picked[i] && !disabled;
+        return '<tr>' +
+          '<td><input type="checkbox" data-pick="' + i + '" aria-label="选择 ' + esc(r.n) + '"' +
+            (checked ? ' checked' : '') + (disabled ? ' disabled' : '') + ' style="width:auto"></td>' +
+          '<td class="nm">' + esc(r.n) + '</td>' +
+          '<td>' + esc(r.auth) + '</td>' +
+          '<td>' + esc(r.proto) + '</td>' +
+          '<td><span class="ist ' + (r.adapt === '支持额度查询' ? 'new' : (r.adapt === '—' ? 'no' : 'dup')) + '"><span class="d"></span></span>' + esc(r.adapt) + '</td>' +
+          '<td>' + esc(r.res) + (r.why ? '<div class="note">' + esc(r.why) + '</div>' : '') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>' +
+    '<div class="inline" style="margin-top:16px">' +
+      '<button class="btn" data-act="pick-all">勾选全部可导入</button>' +
+      '<button class="btn primary" data-act="import-run">预演导入</button>' +
+      '<span class="note">预演：只展示结果，不写入真实配置。</span></div>';
+  }
+
+  const rs = im.results || [];
+  const okN = rs.filter(r => r.status === 'ok').length;
+  const failN = rs.filter(r => r.status === 'fail').length;
+  const skipN = rs.filter(r => r.status === 'skip').length;
+  return '' +
+  '<div class="rowhead"><div><h1>导入结果</h1>' +
+    '<p class="lede">成功 ' + okN + ' · 失败 ' + failN + ' · 跳过 ' + skipN + '（演示数据）</p></div>' +
+    '<div class="acts"><button class="btn" data-act="import-done">完成</button></div></div>' +
+  steps +
+  '<div class="banner"><b>不修改源端。</b>已成功的项不会重复写入；失败项可单独重试。</div>' +
+  '<div class="list" style="padding:0"><table class="itable">' +
+    '<thead><tr><th>名称</th><th>结果</th><th>说明</th><th></th></tr></thead><tbody>' +
+    rs.map((r, i) => '<tr>' +
+      '<td class="nm">' + esc(r.n) + '</td>' +
+      '<td>' + esc(r.label) + '</td>' +
+      '<td>' + esc(r.msg) + '</td>' +
+      '<td>' + (r.status === 'fail'
+        ? '<button class="btn" data-act="retry" data-i="' + i + '">重试</button>' : '') + '</td>' +
+    '</tr>').join('') + '</tbody></table></div>';
+}
+
+function runImport(){
+  const im = S.imp;
+  const pickedIdx = Object.keys(im.picked).filter(k => im.picked[k]).map(Number);
+  if (!pickedIdx.length){ toast('没有勾选任何项', '先勾选可导入的候选'); return; }
+  im.results = pickedIdx.map((i, n) => {
+    const r = im.rows[i];
+    const fail = n === pickedIdx.length - 1 && pickedIdx.length > 1; // 演示：最后一项失败，可单独重试
+    return {
+      i: i, n: r.n,
+      status: fail ? 'fail' : 'ok',
+      label: fail ? '失败' : '成功',
+      msg: fail ? '写入时端点校验未通过（演示）；源端未被修改。'
+                 : (r.adapt === '额度尚未适配'
+                     ? '已导入；额度查询标记为尚未适配，不承诺用量数据。'
+                     : '已导入演示数据。')
+    };
+  });
+  im.step = 3; render();
+}
+
+/* =========================================================
+   渲染
+   ========================================================= */
+function render(){
+  document.querySelectorAll('.scrim').forEach(el => el.remove());
+  document.querySelectorAll('#nav button').forEach(b => {
+    const r = b.dataset.route;
+    const active = S.route === r || (S.route === 'editor' && r === 'accounts') ||
+                   (S.route === 'add' && r === 'accounts') || (S.route === 'import' && r === 'accounts');
+    if (active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  });
+
+  let html = '';
+  if (S.route === 'overview') html = viewOverview();
+  else if (S.route === 'accounts') html = viewAccounts();
+  else if (S.route === 'trigger') html = viewTrigger();
+  else if (S.route === 'import') html = viewImport();
+  else if (S.route === 'add') html = (S.editing && S.editing.draft) ? viewEditor() : viewTemplatePicker();
+  else if (S.route === 'editor') html = S.editing ? viewEditor() : viewAccounts();
+  else html = viewOverview();
+
+  $('#page').innerHTML = html;
+
+  if (S.dialog){
+    const existing = document.querySelector('.scrim');
+    if (existing) existing.remove();
+    const d = document.createElement('div');
+    d.className = 'scrim';
+    d.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t">' +
+      '<h2 id="dlg-t">' + esc(S.dialog.title) + '</h2>' +
+      '<p>' + esc(S.dialog.body) + '</p>' +
+      '<div class="acts"><button class="btn" data-dlg="no">继续编辑</button>' +
+      '<button class="btn ' + (S.dialog.danger ? 'primary' : 'primary') + '" data-dlg="yes">' +
+        esc(S.dialog.confirmText || '确定') + '</button></div></div>';
+    document.body.appendChild(d);
+    d.querySelector('[data-dlg="no"]').focus();
+  }
+  bind();
+}
+
+function bind(){
+  const page = $('#page');
+
+  page.querySelectorAll('[data-act]').forEach(btn => {
+    btn.onclick = () => handleAct(btn.dataset.act, btn.dataset);
+  });
+
+  // 表单输入
+  const map = { name:'name', key:'key', url:'url', model:'model' };
+  Object.keys(map).forEach(k => {
+    const el = document.getElementById('f-' + k);
+    if (el) el.oninput = () => { field(map[k], el.value); updateDirtyHint(); };
+  });
+  const auth = document.getElementById('f-authMode');
+  if (auth) auth.onchange = () => { field('authMode', auth.value); render(); };
+  const aq = document.getElementById('f-autoquery');
+  if (aq) aq.onchange = () => { field('autoQueryEnabled', aq.checked); updateDirtyHint(); };
+  const at = document.getElementById('f-autotrigger');
+  if (at) at.onchange = () => { field('autoTriggerEnabled', at.checked); updateDirtyHint(); };
+
+  page.querySelectorAll('input[id^="f-time"]').forEach(el => {
+    const i = Number(el.id.replace('f-time',''));
+    el.oninput = () => {
+      S.editing.draft.times[i] = el.value;
+      S.editing.dirty = true;
+      if (S.editing.errors['time' + i]) delete S.editing.errors['time' + i];
+      updateDirtyHint();
+    };
+  });
+
+  page.querySelectorAll('[data-toc]').forEach(b => {
+    b.onclick = () => {
+      S.toc = b.dataset.toc;
+      render();
+      const sec = document.getElementById('sec-' + S.toc);
+      if (sec) sec.scrollIntoView({block:'start'});
+    };
+  });
+
+  page.querySelectorAll('[data-pick]').forEach(cb => {
+    cb.onchange = () => { S.imp.picked[cb.dataset.pick] = cb.checked; };
+  });
+  page.querySelectorAll('[data-src]').forEach(b => {
+    b.onclick = () => { S.imp.src = b.dataset.src; render(); };
+  });
+
+  const scrim = document.querySelector('.scrim');
+  if (scrim){
+    scrim.querySelector('[data-dlg="no"]').onclick = () => closeDialog();
+    scrim.querySelector('[data-dlg="yes"]').onclick = () => {
+      const fn = S.dialog && S.dialog.onConfirm;
+      S.dialog = null;
+      scrim.remove();
+      if (fn) fn(); else render();
+    };
+    scrim.onclick = e => { if (e.target === scrim) closeDialog(); };
+  }
+}
+
+function updateDirtyHint(){
+  const el = document.querySelector('.footbar .state');
+  if (el && S.editing) el.textContent = S.editing.dirty ? '● 未保存的更改' : '无更改';
+}
+
+function handleAct(act, data){
+  switch(act){
+    case 'query-all':
+      ACCOUNTS.filter(a => a.canQuery).forEach(a => startQuery(a.id));
+      toast('已开始查询（演示）', '只读取额度，不调用模型');
+      break;
+    case 'query':
+      startQuery(data.id); break;
+    case 'query-draft':
+      toast('额度查询完成（演示）', '0 次模型调用');
+      break;
+    case 'call':
+      askCall(data.id); break;
+    case 'add': openAdd(); render(); break;
+    case 'pick-tpl': pickTemplate(data.tpl); render(); break;
+    case 'cancel-add': S.editing=null; S.route='accounts'; render(); break;
+    case 'import': openImport(); break;
+    case 'edit': openEdit(data.id); render(); break;
+    case 'save': saveEdit(); break;
+    case 'delete':
+      askDialog({
+        title:'删除这个供应商？',
+        body:'将从本 App 移除该账号及其演示用量数据。不会修改任何本机 CLI 凭证或源端配置。',
+        confirmText:'删除', danger:true,
+        onConfirm:() => {
+          const idx = ACCOUNTS.findIndex(x => x.id === data.id);
+          if (idx >= 0) ACCOUNTS.splice(idx, 1);
+          S.editing = null; S.route = 'accounts'; render();
+          toast('已删除（演示）', '仅移出内存数据');
+        }
+      });
+      break;
+    case 'cancel-edit':
+      if (S.editing.dirty) confirmLeave(() => { S.editing=null; S.route='accounts'; render(); });
+      else { S.editing=null; S.route='accounts'; render(); }
+      break;
+    case 'add-time':
+      S.editing.draft.times.push(''); S.editing.dirty=true; render(); break;
+    case 'rm-time':
+      S.editing.draft.times.splice(Number(data.i),1); S.editing.dirty=true; render(); break;
+    case 'import-cancel': S.route='accounts'; render(); break;
+    case 'import-back': S.imp.step=1; render(); break;
+    case 'scan': startScan(); break;
+    case 'pick-all':
+      S.imp.rows.forEach((r,i) => { if (r.kind==='new') S.imp.picked[i]=true; });
+      render(); break;
+    case 'import-run': runImport(); break;
+    case 'retry':
+      retryOne(Number(data.i)); break;
+    case 'import-done': S.route='accounts'; render(); toast('导入流程结束（演示）'); break;
+  }
+}
+
+function askCall(id){
+  const a = acct(id);
+  askDialog({
+    title:'发送一次测试调用？',
+    body:'这会向 ' + a.name + ' 发送一次真实模型请求（演示不实际发送）。会消耗少量额度；不保证重置 5h 窗口。',
+    confirmText:'确认发送',
+    onConfirm:() => {
+      S.dialog = null;
+      S.call[id] = 'busy'; render();
+      setTimeout(() => {
+        S.call[id] = 'ok'; render();
+        toast('调用响应成功（演示）', 'HTTP 200 + 可解码响应体；不保证重置 5h 窗口');
+      }, 700);
+    }
+  });
+}
+
+function startQuery(id){
+  const a = acct(id);
+  if (!a.canQuery) return;
+  S.query[id] = 'busy'; render();
+  setTimeout(() => {
+    const fail = id !== 'cline' && Math.random() < 0.18;
+    S.query[id] = fail ? 'fail' : 'ok';
+    if (!fail && id === 'cline') {
+      a.buckets = [
+        {l:'5h', used:32, reset:'2 小时 18 分后重置'},
+        {l:'周', used:46, reset:'3 天 8 小时后重置'}
+      ];
+      a.state = 'ok'; a.stateText = '最新（演示）'; a.queryNote = '';
+    }
+    render();
+    toast(fail ? '额度查询失败（演示）' : '额度查询完成（演示）',
+          fail ? '失败不会记为成功，旧数据保持原样' : '0 次模型调用');
+  }, 650);
+}
+
+function startScan(){
+  S.imp.scanning = true; render();
+  setTimeout(() => {
+    S.imp.rows = (IMPORT_ROWS[S.imp.src] || []).map(r => Object.assign({}, r));
+    S.imp.picked = {};
+    S.imp.rows.forEach((r,i) => { if (r.kind === 'new') S.imp.picked[i] = true; });
+    S.imp.scanning = false;
+    S.imp.step = 2; render();
+  }, 600);
+}
+
+function retryOne(i){
+  const r = S.imp.results[i];
+  if (!r || r.status !== 'fail') return;
+  r.status = 'ok'; r.label = '成功'; r.msg = '重试后成功（演示）；其余已成功项未重复写入。';
+  render(); toast('重试成功（演示）', '仅重试失败项');
+}
+
+/* =========================================================
+   全局键盘
+   ========================================================= */
+document.getElementById('nav').addEventListener('click', e => {
+  const b = e.target.closest('button[data-route]');
+  if (b) go(b.dataset.route);
+});
+document.querySelector('.import-btn').addEventListener('click', () => {
+  if (S.editing && S.editing.dirty) return confirmLeave(openImport);
+  S.editing = null; openImport();
+});
+
+document.addEventListener('keydown', e => {
+  const meta = e.metaKey || e.ctrlKey;
+
+  if (e.key === 'Escape'){
+    if (S.dialog){ e.preventDefault(); closeDialog(); return; }
+    if (S.route === 'editor' || S.route === 'add'){
+      e.preventDefault();
+      if (S.editing && S.editing.dirty) confirmLeave(() => { S.editing=null; S.route='accounts'; render(); });
+      else { S.editing=null; S.route='accounts'; render(); }
+      return;
+    }
+    if (S.route === 'import'){ e.preventDefault(); S.route='accounts'; render(); return; }
+  }
+
+  if (meta && e.key.toLowerCase() === 's'){
+    e.preventDefault();
+    if ((S.route === 'editor' || S.route === 'add') && S.editing) saveEdit();
+    return;
+  }
+  if (meta && e.key.toLowerCase() === 'n'){
+    e.preventDefault(); openAdd(); render();
+    return;
+  }
+  if (meta && e.key.toLowerCase() === 'f'){
+    e.preventDefault();
+    toast('搜索原型中未实现', '演示');
+  }
+});
+
+render();
+</script>
+</body>
+</html>

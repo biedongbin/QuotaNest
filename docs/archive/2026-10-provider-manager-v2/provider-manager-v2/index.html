@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokenHUD 供应商管理 v2 — 三方案对比</title>
+<style>
+:root{
+  --canvas:#F7F8F6; --surface:#FFFFFF; --ink:#1C2321; --muted:#5C6864;
+  --line:#DDE1DC; --accent:#28624F; --warn:#8A6D1F; --warn-bg:#FDF3D6; --warn-line:#EDDFAE;
+  --r:8px;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --canvas:#141817; --surface:#1C2321; --ink:#EEF2F0; --muted:#A6B1AD;
+         --line:#333B38; --accent:#7FB8A3; --warn:#E8CF88; --warn-bg:#2A2413; --warn-line:#4A3F1E; }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:36px 24px 56px;background:var(--canvas);color:var(--ink);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif}
+main{max-width:1080px;margin:0 auto}
+h1{font-size:21px;margin:0 0 4px;letter-spacing:.2px}
+.lede{color:var(--muted);margin:0 0 18px;max-width:780px}
+.notice{border:1px solid var(--warn-line);background:var(--warn-bg);color:var(--warn);
+  padding:9px 13px;border-radius:6px;margin:0 0 10px;font-size:13px}
+.notice b{font-weight:600}
+.status-note{font-size:12px;color:var(--muted);margin:0 0 30px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  margin:0 0 26px;overflow:hidden}
+.card-head{padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+.title-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 4px}
+h2{font-size:16px;margin:0}
+h2 a{color:var(--ink);text-decoration:none}
+h2 a:hover{color:var(--accent);text-decoration:underline}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted);
+  white-space:nowrap}
+.tag.rec{border-color:var(--accent);color:var(--accent)}
+.tag.pass{border-color:var(--accent);color:var(--accent);background:transparent}
+.tag.todo{border-color:var(--warn-line);background:var(--warn-bg);color:var(--warn)}
+.swatches{display:flex;gap:5px;margin-left:auto}
+.sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(0,0,0,.16)}
+.meta{font-size:12.5px;color:var(--muted);margin:0}
+.meta b{color:var(--ink);font-weight:600}
+.frame-wrap{padding:0;background:var(--canvas)}
+iframe{display:block;width:100%;height:560px;border:0;background:var(--surface)}
+.card-foot{display:flex;gap:8px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--line)}
+.btn{font-size:12.5px;color:var(--accent);text-decoration:none;border:1px solid var(--line);
+  border-radius:5px;padding:4px 11px;background:var(--canvas)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+@media (prefers-color-scheme:dark){ .btn.primary{color:#101A16} }
+
+.cmp{width:100%;border-collapse:collapse;font-size:13px;margin:30px 0 0}
+.cmp th,.cmp td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+.cmp th{background:var(--canvas);font-weight:600}
+.cmp td:first-child{color:var(--muted);white-space:nowrap}
+footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+footer code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (max-width:960px){
+  iframe{display:none}
+  .no-frame{display:block;padding:12px 18px;font-size:12.5px;color:var(--muted)}
+}
+@media (min-width:961px){ .no-frame{display:none} }
+</style>
+</head>
+<body>
+<main>
+
+<h1>TokenHUD 供应商管理 v2 — 三方案对比</h1>
+<p class="lede">三套不同的<b>任务模型</b>，不是三种配色。均为本地静态 HTML，双击即可打开。</p>
+
+<p class="notice"><b>演示数据。</b>原型中的额度、账号和日志均为内存演示数据；每个原型刷新后恢复初始演示数据。不读取本机配置，不访问任何 API，不发模型请求，不写入真实配置。原生 App 没有改变。</p>
+<p class="status-note">
+  <b>设计层：完成</b>（2026-10-29 独立浏览器 QA 三套全部通过，报告见 <a href="acceptance.md">acceptance.md</a>）。<br>
+  <b>原生层：</b>Swift 实现尚未开始（0%），未重新编译打包。原型 ≠ 产品。A 为主线程建议，非用户已选定。<br>
+  三套原型各展示一种特定外观；App 随系统切换外观、高对比与减少动态效果支持仍需原生实现后验证。
+</p>
+
+<!-- ============ A ============ -->
+<section class="card" id="a">
+  <div class="card-head">
+    <div class="title-row">
+      <h2><a href="prototypes/workbench.html">A · 工作台</a></h2>
+      <span class="tag rec">主线程建议</span>
+      <span class="tag pass">QA 验收通过</span>
+      <span class="swatches" aria-label="配色">
+        <span class="sw" style="background:#F5F6F2"></span>
+        <span class="sw" style="background:#E9EEE7"></span>
+        <span class="sw" style="background:#3E6B57"></span>
+      </span>
+    </div>
+    <p class="meta"><b>暖白 / 墨绿</b> · 左侧任务导航（额度总览 / 供应商账号 / 自动触发）· 整页分区编辑 ·
+      适合<b>看额度与安排触发并重</b></p>
+  </div>
+  <div class="frame-wrap">
+    <iframe src="prototypes/workbench.html" title="A 工作台原型预览" loading="lazy"></iframe>
+    <p class="no-frame">窄屏不内嵌预览，点下方按钮直接打开。</p>
+  </div>
+  <div class="card-foot">
+    <a class="btn primary" href="prototypes/workbench.html">打开完整原型</a>
+    <a class="btn" href="design.md">设计说明</a>
+  </div>
+</section>
+
+<!-- ============ B ============ -->
+<section class="card" id="b">
+  <div class="card-head">
+    <div class="title-row">
+      <h2><a href="prototypes/operations.html">B · 运行台</a></h2>
+      <span class="tag pass">QA 验收通过</span>
+      <span class="swatches" aria-label="配色">
+        <span class="sw" style="background:#151D28"></span>
+        <span class="sw" style="background:#202B39"></span>
+        <span class="sw" style="background:#6E9BD1"></span>
+      </span>
+    </div>
+    <p class="meta"><b>深色 / 灰蓝</b> · 顶部导航 · 额度数据表 + 可收起检查器，整宽编辑 ·
+      按时刻排计划 · 适合<b>多账号高密度</b></p>
+  </div>
+  <div class="frame-wrap">
+    <iframe src="prototypes/operations.html" title="B 运行台原型预览" loading="lazy"></iframe>
+    <p class="no-frame">窄屏不内嵌预览，点下方按钮直接打开。</p>
+  </div>
+  <div class="card-foot">
+    <a class="btn primary" href="prototypes/operations.html">打开完整原型</a>
+    <a class="btn" href="design.md">设计说明</a>
+  </div>
+</section>
+
+<!-- ============ C ============ -->
+<section class="card" id="c">
+  <div class="card-head">
+    <div class="title-row">
+      <h2><a href="prototypes/settings.html">C · 设置中心</a></h2>
+      <span class="tag pass">QA 验收通过</span>
+      <span class="swatches" aria-label="配色">
+        <span class="sw" style="background:#F3F5FA"></span>
+        <span class="sw" style="background:#FFFFFF"></span>
+        <span class="sw" style="background:#4459B8"></span>
+      </span>
+    </div>
+    <p class="meta"><b>冷白 / 靛蓝</b> · 左侧账号列表 + 搜索分组 · 右侧 额度 / 配置 / 自动触发 tab ·
+      当前账号的自动触发 tab · 就地编辑与草稿 · 导入宽 sheet · 适合<b>少账号、稳定配置</b></p>
+  </div>
+  <div class="frame-wrap">
+    <iframe src="prototypes/settings.html" title="C 设置中心原型预览" loading="lazy"></iframe>
+    <p class="no-frame">窄屏不内嵌预览，点下方按钮直接打开。</p>
+  </div>
+  <div class="card-foot">
+    <a class="btn primary" href="prototypes/settings.html">打开完整原型</a>
+    <a class="btn" href="design.md">设计说明</a>
+  </div>
+</section>
+
+<table class="cmp">
+  <caption style="text-align:left;color:var(--muted);font-size:12.5px;padding-bottom:8px">
+    三套覆盖同一能力集：总览 / 新增 / API Key 编辑 / 授权登录与本机来源 / 导入预览与结果 / 自动触发。
+  </caption>
+  <thead>
+    <tr><th scope="col">维度</th><th scope="col">A 工作台</th><th scope="col">B 运行台</th><th scope="col">C 设置中心</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>导航</td><td>左侧任务导航</td><td>顶部导航</td><td>左侧账号列表 + 搜索分组</td></tr>
+    <tr><td>主区</td><td>整页分区</td><td>额度表 + 检查器</td><td>右侧 tab 分区</td></tr>
+    <tr><td>编辑</td><td>整页替换</td><td>检查器展宽、整宽</td><td>就地编辑 + 草稿</td></tr>
+    <tr><td>导入</td><td>同层级大面板</td><td>任务队列 + 逐项重试</td><td>宽 sheet</td></tr>
+    <tr><td>密度</td><td>中</td><td>高</td><td>低</td></tr>
+    <tr><td>最适合</td><td>额度与触发并重</td><td>多账号</td><td>少账号稳定配置</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  仅作方案对比，<b>不是</b> App 内长期并存的冗余 UI；原生落地优先 A。
+  验收报告：<code>acceptance.md</code> · 设计文档：<code>design.md</code>（同目录）。无外部依赖、无 CDN、无网络请求。
+</footer>
+
+</main>
+</body>
+</html>

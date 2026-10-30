@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>A · 额度工作台 — TokenHUD 供应商管理 v2 原型（模拟数据）</title>
+<style>
+:root{
+  --canvas:#F6F7F3; --surface:#FFFFFF; --text:#202C29; --muted:#566760; --border:#D8E0D9;
+  --accent:#28624F; --accent-weak:rgba(40,98,79,.10); --danger:#B4442F; --warn:#8A6A14;
+  --ok:#2F7A57; --row-hover:#F1F4F0;
+}
+html[data-theme="dark"]{
+  --canvas:#141A17; --surface:#1C2420; --text:#E8EEE9; --muted:#9AA9A1; --border:#33403A;
+  --accent:#7FBFA4; --accent-weak:rgba(127,191,164,.14); --danger:#E08064; --warn:#D6B65A;
+  --ok:#79BE9B; --row-hover:#222C27;
+}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--canvas);color:var(--text)}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{display:flex;height:100vh;min-height:620px;min-width:900px}
+/* 176px 任务侧栏 */
+.side{width:176px;flex:none;border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:4px;background:var(--canvas)}
+.brand{font-weight:600;font-size:13px;padding:6px 8px 14px;letter-spacing:.02em}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{border:1px solid transparent;background:none;text-align:left;padding:8px 10px;border-radius:7px;color:var(--muted)}
+.nav button[aria-current="true"]{background:var(--surface);border-color:var(--border);color:var(--text);font-weight:600}
+.nav .count{margin-left:auto;font-size:11px;color:var(--muted)}
+.side .spacer{flex:1}
+.side .theme{font-size:12px;color:var(--muted);padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--surface)}
+.bar h1{font-size:15px;margin:0;font-weight:600}
+.bar .sub{font-size:12px;color:var(--muted)}
+.bar .grow{flex:1}
+.search{border:1px solid var(--border);border-radius:7px;padding:6px 10px;width:220px;background:var(--canvas);color:var(--text)}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:7px;padding:6px 12px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+html[data-theme="dark"] .btn.primary{color:#10201A}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.body{flex:1;overflow:auto;padding:16px 18px}
+.rows{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;grid-template-columns:26px minmax(150px,1.3fr) 84px minmax(240px,2.4fr) 128px 96px auto;gap:10px;align-items:center;
+  background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;cursor:default}
+.row:hover{background:var(--row-hover)}
+.row[aria-selected="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-weak)}
+.badge{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+.name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kind{font-size:11px;color:var(--muted)}
+.buckets{display:flex;flex-direction:column;gap:4px}
+.bucket{display:grid;grid-template-columns:34px 1fr 40px;gap:8px;align-items:center;font-size:11px;color:var(--muted)}
+.track{height:5px;border-radius:3px;background:var(--border);overflow:hidden}
+.fill{height:100%;background:var(--ok)}
+.fill.warn{background:var(--warn)} .fill.bad{background:var(--danger)}
+.pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+.reset{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.status{font-size:11px;padding:2px 7px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.status.ok{color:var(--ok);border-color:var(--ok)} .status.warn{color:var(--warn);border-color:var(--warn)}
+.status.bad{color:var(--danger);border-color:var(--danger)}
+.dot.ok{background:var(--ok)} .ewarn{color:var(--warn)} .ebad{color:var(--danger)}
+.rowact{display:flex;gap:6px}
+.iconbtn{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:4px 8px;font-size:12px}
+/* 编辑：同窗替换主区域 */
+.editor{display:flex;flex-direction:column;height:100%}
+.editor .head{padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:10px}
+.editor .scroll{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;font-weight:600}
+.field{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;margin-bottom:10px}
+.field:last-child{margin-bottom:0}
+.field label{font-size:12px;color:var(--muted)}
+.field input,.field select{border:1px solid var(--border);border-radius:6px;padding:6px 9px;background:var(--canvas);color:var(--text);width:100%}
+.field .hint{grid-column:2;font-size:11px;color:var(--muted);margin-top:-4px}
+.field .err{grid-column:2;font-size:11px;color:var(--danger)}
+.readonly{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.footbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--border);background:var(--surface)}
+.footbar .errsum{color:var(--danger);font-size:12px;flex:1}
+.footbar .right{margin-left:auto;display:flex;gap:8px}
+/* 导入面板 */
+.import{display:flex;flex-direction:column;height:100%}
+.steps{display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid var(--border);background:var(--surface)}
+.steps span{font-size:12px;color:var(--muted);padding:3px 10px;border-radius:20px;border:1px solid var(--border)}
+.steps span[aria-current="step"]{color:var(--text);border-color:var(--accent);background:var(--accent-weak);font-weight:600}
+.split{flex:1;display:grid;grid-template-columns:230px 1fr;min-height:0}
+.sources{border-right:1px solid var(--border);padding:12px;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.sources button{text-align:left;border:1px solid var(--border);background:var(--surface);border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.sources button small{color:var(--muted);font-size:11px}
+.sources button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-weak)}
+.cands{overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:7px}
+.cand{display:grid;grid-template-columns:26px 1fr 110px 150px;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px}
+.tag{font-size:11px;padding:2px 7px;border-radius:20px;border:1px solid var(--border);color:var(--muted);justify-self:start}
+.tag.new{color:var(--ok);border-color:var(--ok)}
+.tag.dup{color:var(--warn);border-color:var(--warn)}
+.tag.call{color:var(--muted)}
+.tag.no{color:var(--danger);border-color:var(--danger)}
+.cand .why{font-size:11px;color:var(--muted)}
+/* 遮罩与弹层 */
+.overlay{position:fixed;inset:0;background:rgba(20,26,23,.42);display:grid;place-items:center;z-index:50}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:18px 20px;max-width:420px;width:90%}
+.modal h3{margin:0 0 8px;font-size:14px}
+.modal p{margin:0 0 16px;color:var(--muted);font-size:12px}
+.modal .acts{display:flex;gap:8px;justify-content:flex-end}
+.toast{position:fixed;right:16px;bottom:16px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:8px;padding:10px 14px;font-size:12px;z-index:60;max-width:340px;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.toast .sim{color:var(--muted);font-size:11px;display:block;margin-top:2px}
+.simnote{font-size:11px;color:var(--muted);padding:6px 18px;border-bottom:1px solid var(--border);background:var(--accent-weak)}
+.mask{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">TokenHUD</div>
+    <nav class="nav" id="nav">
+      <button aria-current="true">额度总览<span class="count">5</span></button>
+      <button>供应商账号<span class="count">5</span></button>
+      <button>自动触发<span class="count">2</span></button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme" id="themeBtn">切换暗色</button>
+  </aside>
+
+  <main class="main">
+    <div class="bar">
+      <h1 id="title">额度总览</h1>
+      <span class="sub" id="subtitle">5 个账号 · 2 个可自动触发</span>
+      <span class="grow"></span>
+      <input class="search" id="search" placeholder="搜索供应商  ⌘F" aria-label="搜索供应商">
+      <button class="btn" id="editBtn" disabled>编辑</button>
+      <button class="btn primary" id="addBtn">＋ 添加</button>
+      <button class="btn" id="importBtn">导入</button>
+    </div>
+    <div class="simnote">原型演示：全部数据为内联模拟值，不读取任何本地配置；所有结果均标注「模拟」。</div>
+    <div class="body" id="body"></div>
+  </main>
+</div>
+
+<script>
+/* ---------- 模拟数据（全部脱敏） ---------- */
+const ACCOUNTS = [
+  {id:"glm", name:"GLM", init:"GL", color:"#28624F", kind:"API Key",
+   state:"ok", stateText:"正常", data:"latest", canSchedule:true, schedule:"08:00 · 20:00",
+   buckets:[{l:"5h",p:82,r:"3h 12m"},{l:"周",p:64,r:"4d 02h"}], key:"sk-••••1234"},
+  {id:"ollama", name:"Ollama", init:"OL", color:"#4A6D8C", kind:"API Key",
+   state:"warn", stateText:"额度偏低", data:"stale", canSchedule:true, schedule:"09:00",
+   buckets:[{l:"5h",p:24,r:"1h 40m"},{l:"周",p:71,r:"2d 11h"},{l:"月",p:58,r:"12d"}], key:"ol-••••7788"},
+  {id:"ocgo", name:"OC-Go", init:"OC", color:"#7A5C3E", kind:"API Key",
+   state:"ok", stateText:"正常", data:"unqueried", canSchedule:false, schedule:"",
+   buckets:[{l:"5h",p:91,r:"0h 55m"},{l:"周",p:47,r:"5d 18h"},{l:"月",p:33,r:"21d"}], key:"oc-••••4410"},
+  {id:"gpt", name:"GPT (Codex)", init:"GP", color:"#3F4A56", kind:"授权登录 · 本机 CLI",
+   state:"ok", stateText:"仅监控", data:"latest", canSchedule:false, schedule:"", path:"~/.codex/auth.json",
+   buckets:[{l:"5h",p:68,r:"2h 05m"},{l:"周",p:12,r:"6d 03h"}]},
+  {id:"cline", name:"Cline Pass", init:"CL", color:"#8B4A6B", kind:"API Key",
+   state:"bad", stateText:"密钥失效", data:"authfail", canSchedule:false, schedule:"", key:"cl-••••0099",
+   buckets:[{l:"5h",p:0,r:"—"},{l:"周",p:0,r:"—"}], err:"401 Unauthorized（模拟）"}
+];
+
+const DATA_LABEL={unqueried:"未查询",loading:"查询中",latest:"最新",stale:"过期",authfail:"认证失败",fail:"查询失败"};
+const DATA_CLS={unqueried:"",loading:"warn",latest:"ok",stale:"warn",authfail:"bad",fail:"bad"};
+
+const IMPORT_SOURCES = [
+  {id:"9router", name:"9router", desc:"providers 连接，不含历史用量"},
+  {id:"ccswitch", name:"cc-switch", desc:"providers 配置"},
+  {id:"cpamp", name:"CPAMP", desc:"auth-files 凭证 + provider 配置"},
+  {id:"cli", name:"本机 CLI", desc:"只读扫描 ~/.codex / ~/.claude"},
+  {id:"paste", name:"粘贴 JSON", desc:"手工粘贴，单条"}
+];
+
+const CANDIDATES = {
+  "9router":[
+    {n:"GLM · work", k:"sk-••••1234", tag:"new",  label:"可导入", why:"能力：查询 + 调用"},
+    {n:"Ollama · local", k:"ol-••••7788", tag:"dup", label:"已存在", why:"同名且同主机，默认跳过"},
+    {n:"Custom · one-api", k:"sk-••••8899", tag:"call", label:"仅调用", why:"未知兼容端点，不承诺额度查询"},
+    {n:"Cline Pass", k:"cl-••••0099", tag:"no", label:"不支持", why:"字段结构缺失 apiKey"}
+  ],
+  "ccswitch":[
+    {n:"OC-Go", k:"oc-••••4410", tag:"new", label:"可导入", why:"能力：查询 + 调用"},
+    {n:"GLM · personal", k:"sk-••••5566", tag:"dup", label:"已存在", why:"凭证指纹一致，默认跳过"}
+  ],
+  "cpamp":[
+    {n:"GPT · codex", k:"—", tag:"call", label:"仅监控", why:"授权登录，只读本机凭证路径"},
+    {n:"Cline Pass", k:"cl-••••0099", tag:"no", label:"不支持", why:"auth-file 缺 refreshApiKey"}
+  ],
+  "cli":[
+    {n:"GPT (Codex)", k:"—", tag:"new", label:"可导入", why:"读取 ~/.codex/auth.json（只读）"}
+  ],
+  "paste":[
+    {n:"粘贴项", k:"sk-••••0000", tag:"new", label:"可导入", why:"单条凭证"}
+  ]
+};
+
+/* ---------- 状态 ---------- */
+const S = {view:"list", selected:null, query:"", importStep:1, importSrc:"9router",
+           candidates:[], results:[], dark:false, dirty:false, editingId:null, pending:null};
+
+const $ = s => document.querySelector(s);
+const body = $("#body");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fillClass = p => p >= 70 ? "" : p >= 30 ? "warn" : "bad";
+
+function toast(msg, kind){
+  const t = document.createElement("div");
+  t.className = "toast";
+  if (kind === "error") t.style.borderLeftColor = "var(--danger)";
+  if (kind === "warn") t.style.borderLeftColor = "var(--warn)";
+  t.innerHTML = esc(msg) + '<span class="sim">模拟结果 · 未执行任何真实请求</span>';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+/* ---------- 列表 ---------- */
+function renderList(){
+  const q = S.query.trim().toLowerCase();
+  const rows = ACCOUNTS.filter(a => !q || a.name.toLowerCase().includes(q));
+  $("#editBtn").disabled = !S.selected;
+  if (!rows.length){
+    body.innerHTML = `<div class="card" style="text-align:center;padding:36px">
+      <p style="margin:0 0 6px;font-weight:600">没有匹配的供应商</p>
+      <p style="margin:0 0 14px;color:var(--muted);font-size:12px">清除搜索，或从已有配置导入。</p>
+      <button class="btn primary" onclick="openImport()">导入供应商</button>
+      <button class="btn" onclick="openEditor(null)">新建供应商</button></div>`;
+    return;
+  }
+  body.innerHTML = `<div class="rows">${rows.map(a => `
+    <div class="row" role="option" tabindex="0" data-id="${a.id}" aria-selected="${S.selected===a.id}">
+      <span class="badge" style="background:${a.color}">${a.init}</span>
+      <div><div class="name">${esc(a.name)}</div><div class="kind">${esc(a.kind)}</div></div>
+      <span class="status ${a.state}">${esc(a.stateText)}</span>
+      <div class="buckets">${a.buckets.map(b => `
+        <div class="bucket"><span>${b.l}</span>
+          <span class="track"><span class="fill ${fillClass(b.p)}" style="width:${b.p}%"></span></span>
+          <span class="pct">${b.p}%</span></div>`).join("")}</div>
+      <span class="reset">${a.buckets[0].r === "—" ? "无重置" : "重置 " + a.buckets[0].r}</span>
+      <span class="kind"><span class="dot ${DATA_CLS[a.data]}" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:4px;vertical-align:middle"></span>${DATA_LABEL[a.data]}${a.canSchedule ? " · 可定时" : " · 仅监控"}</span>
+      <span class="rowact">
+        <button class="iconbtn" data-act="edit" data-id="${a.id}">编辑</button>
+        <button class="iconbtn" data-act="query" data-id="${a.id}">查询</button>
+      </span>
+    </div>`).join("")}</div>`;
+
+  body.querySelectorAll(".row").forEach(row => {
+    row.onclick = e => {
+      if (e.target.closest("button")) return;
+      S.selected = row.dataset.id; renderList();
+    };
+    row.ondblclick = e => {
+      if (e.target.closest("button")) return;
+      S.selected = row.dataset.id; openEditor(row.dataset.id);
+    };
+    row.onkeydown = e => { if (e.key === "Enter"){ S.selected = row.dataset.id; renderList(); } };
+  });
+  body.querySelectorAll("[data-act]").forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    if (b.dataset.act === "edit"){ S.selected = b.dataset.id; openEditor(b.dataset.id); }
+    else { toast("额度查询完成（0 次模型调用）"); }
+  });
+}
+
+/* ---------- 编辑（同窗替换主区域） ---------- */
+function openEditor(id){
+  S.pending = null;
+  S.editingId = id;
+  S.view = "edit"; S.dirty = false;
+  const a = ACCOUNTS.find(x => x.id === id);
+  $("#title").textContent = id ? "编辑供应商" : "添加供应商";
+  $("#subtitle").textContent = id ? a.name : "尚未保存";
+  renderEditor(a, false);
+}
+function renderEditor(a, isNew){
+  const errs = [];
+  body.innerHTML = `<div class="editor">
+    <div class="scroll">
+      <div class="card">
+        <h2>身份与凭证</h2>
+        <div class="field"><label>名称</label><input id="f-name" value="${a?esc(a.name):""}" placeholder="例如 GLM · work"></div>
+        <div class="field"><label>凭证类型</label>
+          <select id="f-kind"><option ${a&&a.kind.startsWith("API Key")?"selected":""}>API Key</option>
+          <option ${a&&a.kind.startsWith("授权登录")?"selected":""}>授权登录 · 本机 CLI</option></select>
+          <div class="hint">授权登录仅读取本机 CLI 已登录凭证，本版本不提供 App 内 OAuth 授权流程。</div>
+        </div>
+        <div class="field"><label>API Key</label>
+          <input id="f-key" class="mask" type="password" value="${a&&a.key?esc(a.key):""}" placeholder="sk-...">
+          <div class="hint">默认掩码显示；明文不写入日志。</div>
+        </div>
+        <div class="field"><label>凭证来源路径</label>
+          <span class="readonly">${a&&a.path?esc(a.path):"—（API Key 无来源路径）"}</span>
+          <div class="hint">只读；不复制、不导出 refresh_token。</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>额度查询</h2>
+        <div class="field"><label>查询端点</label><input id="f-url" value="https://…/quota（模拟）"></div>
+        <div class="field"><label>查询脚本</label><span class="readonly">providers/${a?a.id:"new"}/fetch.sh</span></div>
+        <div class="field"><label></label><div><button class="btn" onclick="toast('额度查询完成（0 次模型调用）')">查询一次</button>
+          <span class="hint" style="display:inline;margin-left:8px">仅读取额度，不调用模型。</span></div></div>
+      </div>
+
+      <div class="card">
+        <h2>模型调用</h2>
+        <div class="field"><label>测试模型</label><input id="f-model" value="${a&&a.id==="glm"?"glm-4.6":"—"}" placeholder="留空则提示需配置"></div>
+        <div class="field"><label>测试提示词</label><input value="ping（模拟）"></div>
+        <div class="field"><label></label><div><button class="btn" onclick="confirmTest()">测试调用</button>
+          <span class="hint" style="display:inline;margin-left:8px">会消耗少量额度，且不保证重置 5h 窗口。</span></div></div>
+      </div>
+
+      <div class="card">
+        <h2>自动查询与自动触发</h2>
+        <div class="field"><label>自动查询</label>
+          <span style="font-size:12px"><input type="checkbox" ${a&&a.data!=="unqueried"?"checked":""} style="width:auto"> 仅控制后台轮询额度，<b>不影响</b>手动「查询一次」。</span></div>
+        ${a && !a.canSchedule ? `
+          <p style="margin:0;color:var(--muted);font-size:12px">该供应商未声明窗口触发端点（refreshUrl），因此<b>不提供</b>自动触发开关。当前为「仅监控」。</p>`
+        : `<div class="field"><label>自动触发</label>
+             <span style="font-size:12px"><input type="checkbox" ${a&&a.schedule?"checked":""} style="width:auto"> 按时发送一次模型请求，会消耗额度。</span></div>
+           <div class="field"><label>触发时间点</label><input id="f-sched" value="${a&&a.schedule?esc(a.schedule):"08:00"}" placeholder="HH:MM，逗号分隔">
+             <div class="hint">保存只写配置、不发模型请求；错过的时刻不补发。成功以 provider 脚本执行路径为准。</div></div>`}
+      </div>
+      ${isNew ? `<div class="card"><h2>新账号</h2><p style="margin:0;color:var(--muted);font-size:12px">保存后出现在列表；草稿不会写入磁盘。</p></div>` : ""}
+    </div>
+    <div class="footbar">
+      <span class="errsum">${errs.length?errs.map(esc).join("；"):""}</span>
+      <span class="right">
+        <button class="btn ghost" onclick="cancelEdit()">取消</button>
+        <button class="btn primary" id="saveBtn" onclick="saveEdit()">保存 ⌘S</button>
+      </span>
+    </div>
+  </div>`;
+  body.querySelectorAll("input,select").forEach(i => { i.oninput = i.onchange = () => { S.dirty = true; }; });
+  body.querySelector("select").onchange = () => { S.dirty = true; };
+}
+
+function confirmTest(){
+  S.pending = "test";
+  const o = document.createElement("div"); o.className = "overlay";
+  o.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <h3>确认测试调用？</h3>
+    <p>将真实发送一次测试请求：<b>会消耗少量额度，且不保证重置 5h 窗口</b>。此操作与「查询额度」不同。</p>
+    <div class="acts"><button class="btn ghost" data-x>取消</button><button class="btn primary" data-y>确认测试</button></div></div>`;
+  o.querySelector("[data-x]").onclick = () => o.remove();
+  o.querySelector("[data-y]").onclick = () => { o.remove(); toast("测试调用成功（模拟）"); };
+  document.body.appendChild(o);
+}
+
+function cancelEdit(){
+  if (S.dirty) return askDiscard(() => backToList());
+  backToList();
+}
+function saveEdit(){
+  const name = $("#f-name").value.trim();
+  if (!name){ toast("名称不能为空", "error"); return; }
+  S.dirty = false;
+  toast("已保存草稿（模拟，未写入磁盘）");
+  backToList();
+}
+function backToList(){
+  S.view = "list"; S.editingId = null; S.dirty = false;
+  $("#title").textContent = "额度总览";
+  $("#subtitle").textContent = "5 个账号 · 2 个可自动触发";
+  renderList();
+}
+function askDiscard(next){
+  const o = document.createElement("div"); o.className = "overlay";
+  o.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <h3>放弃未保存的更改？</h3><p>当前编辑有未保存的草稿。保存后可再次进入。</p>
+    <div class="acts"><button class="btn ghost" data-c>继续编辑</button>
+      <button class="btn" data-d>放弃更改</button>
+      <button class="btn primary" data-s>保存</button></div></div>`;
+  o.querySelector("[data-c]").onclick = () => o.remove();
+  o.querySelector("[data-d]").onclick = () => { o.remove(); S.dirty = false; next(); };
+  o.querySelector("[data-s]").onclick = () => { o.remove(); saveEdit(); };
+  document.body.appendChild(o);
+}
+
+/* ---------- 导入（同窗大面板） ---------- */
+function openImport(){
+  if (S.dirty) return askDiscard(openImport);
+  S.view = "import"; S.importStep = 1; S.candidates = []; S.results = [];
+  $("#title").textContent = "导入供应商";
+  $("#subtitle").textContent = "源只读 · 重复默认跳过";
+  renderImport();
+}
+function renderImport(){
+  const cands = S.candidates.length ? S.candidates : (CANDIDATES[S.importSrc] || []);
+  body.innerHTML = `<div class="import">
+    <div class="steps">
+      <span aria-current="${S.importStep===1?"step":"false"}">1 选择来源</span>
+      <span aria-current="${S.importStep===2?"step":"false"}">2 预览候选</span>
+      <span aria-current="${S.importStep===3?"step":"false"}">3 导入结果</span>
+      <span style="margin-left:auto;border:none;color:var(--muted)">全部为模拟数据</span>
+    </div>
+    <div class="split">
+      <div class="sources">
+        ${IMPORT_SOURCES.map(s => `<button aria-pressed="${S.importSrc===s.id}" data-src="${s.id}">
+          <b>${esc(s.name)}</b><small>${esc(s.desc)}</small></button>`).join("")}
+      </div>
+      <div class="cands" id="cands"></div>
+    </div>
+    <div class="footbar">
+      <span class="errsum" id="impMsg">${S.importStep===1?"选择来源后预览候选。":""}</span>
+      <span class="right">
+        <button class="btn ghost" onclick="closeImport()">关闭</button>
+        <button class="btn" id="scanBtn" onclick="scan()">扫描（异步 · 8s 超时）</button>
+        <button class="btn primary" id="applyBtn" onclick="applyImport()">导入选中项</button>
+      </span>
+    </div>
+  </div>`;
+  body.querySelectorAll("[data-src]").forEach(b => b.onclick = () => {
+    S.importSrc = b.dataset.src; S.importStep = 1; S.candidates = []; S.results = []; renderImport();
+  });
+  renderCands(cands);
+  $("#applyBtn").disabled = S.importStep !== 2;
+  $("#scanBtn").disabled = S.importStep === 3;
+}
+function renderCands(cands){
+  const box = $("#cands");
+  if (S.importStep === 3){
+    box.innerHTML = `<div class="cands" style="padding:0">
+      ${S.results.map((r,i) => `<div class="cand">
+        <span class="badge" style="background:var(--muted)">${i+1}</span>
+        <div><div class="name">${esc(r.n)}</div><div class="why">${esc(r.why)}</div></div>
+        <span class="tag ${r.tag}">${esc(r.label)}</span>
+        <span>${r.retry ? `<button class="iconbtn" data-retry="${i}">重试</button>` : "—"}</span>
+      </div>`).join("")}</div>`;
+    box.querySelectorAll("[data-retry]").forEach(b => b.onclick = () => {
+      toast("重试成功（模拟）"); S.results[+b.dataset.retry].retry = false;
+      S.results[+b.dataset.retry].tag = "new"; S.results[+b.dataset.retry].label = "已导入";
+      renderImport();
+    });
+    return;
+  }
+  box.innerHTML = cands.map(c => `<div class="cand">
+      <span class="badge" style="background:var(--muted)">${esc(c.n.slice(0,2).toUpperCase())}</span>
+      <div><div class="name">${esc(c.n)}</div><div class="why"><span class="mask">${esc(c.k)}</span></div></div>
+      <span class="tag ${c.tag}">${esc(c.label)}</span>
+      <span class="why">${esc(c.why)}</span>
+    </div>`).join("");
+}
+function scan(){
+  $("#impMsg").textContent = "扫描中…（模拟，8s 超时）";
+  $("#scanBtn").disabled = true;
+  setTimeout(() => {
+    S.candidates = CANDIDATES[S.importSrc] || [];
+    S.importStep = 2;
+    renderImport();
+    $("#impMsg").textContent = "候选已载入；重复项默认跳过，不静默覆盖。";
+  }, 700);
+}
+function applyImport(){
+  const base = S.candidates;
+  S.results = base.map(c => {
+    if (c.tag === "dup")  return {...c, tag:"dup", label:"已跳过", why:"重复项，未覆盖", retry:false};
+    if (c.tag === "no")   return {...c, tag:"no",  label:"不支持", why:c.why + "；需手动创建", retry:false};
+    if (c.tag === "call") return {...c, tag:"new", label:"已导入（仅调用）", why:"不承诺额度查询", retry:false};
+    return {...c, tag:"new", label:"已导入", why:"凭证已写入插件目录（模拟）", retry:false};
+  });
+  if (S.importSrc === "cpamp" && S.results[0]) S.results[0] = {...S.results[0], tag:"no", label:"部分失败", why:"401（模拟）", retry:true};
+  S.importStep = 3;
+  renderImport();
+  $("#impMsg").textContent = "导入完成：成功 " + S.results.filter(r=>r.label.startsWith("已导入")).length + "，跳过 " + S.results.filter(r=>r.label==="已跳过").length + "，失败 0–1。";
+}
+function closeImport(){ backToList(); }
+
+/* ---------- 全局 ---------- */
+$("#themeBtn").onclick = () => {
+  S.dark = !S.dark;
+  document.documentElement.dataset.theme = S.dark ? "dark" : "light";
+  $("#themeBtn").textContent = S.dark ? "切换亮色" : "切换暗色";
+};
+$("#editBtn").onclick = () => { if (S.selected) openEditor(S.selected); };
+$("#addBtn").onclick = () => { if (S.dirty) return askDiscard(() => openEditor(null)); S.selected=null; openEditor(null); };
+$("#importBtn").onclick = openImport;
+$("#search").oninput = e => { S.query = e.target.value; if (S.view === "list") renderList(); };
+document.getElementById("nav").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (S.dirty) return askDiscard(() => { b.setAttribute("aria-current","true"); toast("已切换：" + b.textContent.replace(/\d+$/,"")); });
+  document.querySelectorAll("#nav button").forEach(x => x.setAttribute("aria-current","false"));
+  b.setAttribute("aria-current","true");
+  $("#title").textContent = b.textContent.replace(/\d+$/,"").trim();
+};
+document.addEventListener("keydown", e => {
+  const meta = e.metaKey || e.ctrlKey;
+  if (e.key === "Escape"){
+    const ov = document.querySelector(".overlay");
+    if (ov){ ov.remove(); return; }
+    if (S.view === "edit") return cancelEdit();
+    if (S.view === "import") return closeImport();
+  }
+  if (meta && e.key.toLowerCase() === "s"){ e.preventDefault(); if (S.view === "edit") saveEdit(); }
+  if (meta && e.key.toLowerCase() === "n"){ e.preventDefault(); $("#addBtn").click(); }
+  if (meta && e.key.toLowerCase() === "f"){ e.preventDefault(); $("#search").focus(); $("#search").select(); }
+});
+renderList();
+</script>
+</body>
+</html>
