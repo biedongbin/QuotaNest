@@ -189,25 +189,62 @@ final class DataEngine: ObservableObject {
     }
 
     /// 定时触发: 到点发 chat 请求触发滚动计费窗口
-    /// 记录上次触发 (HH:MM), 避免同分钟重复触发
+    /// 触发去重键 = slug + 本地日期(yyyy-MM-dd) + HH:MM, 持久 UserDefaults:
+    /// 跨重启不重复消费 (旧内存键重启清零会重发), 跨天不误杀 (键含日期, 次日同时刻是不同键)
     private var lastScheduledTrigger: [String: String] = [:]
     /// scheduleTimes 缓存 (reloadRegistry 时重建, 免每 10s 重复读 auth 文件)
     private var cachedSchedules: [(slug: String, manifest: ProviderManifest, authFile: URL, times: [String])] = []
+
+    static let defaultsScheduleFiredKey = "tokenhud.scheduleFired"
+
+    /// 本地日期键 (yyyy-MM-dd): DST/时区变化自然落在日期串里
+    nonisolated static func scheduleKey(slug: String, date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return "\(f.string(from: date))|\(slug)"
+    }
+
+    private func loadFiredSchedules() -> [String: [String: String]] {
+        guard let raw = defaults.string(forKey: Self.defaultsScheduleFiredKey),
+              let data = raw.data(using: .utf8) else { return [:] }
+        return (try? JSONDecoder().decode([String: [String: String]].self, from: data)) ?? [:]
+    }
+
+    private func saveFiredSchedules(_ dict: [String: [String: String]]) {
+        guard let data = try? JSONEncoder().encode(dict),
+              let raw = String(data: data, encoding: .utf8) else { return }
+        defaults.set(raw, forKey: Self.defaultsScheduleFiredKey)
+    }
 
     private func checkSchedules() {
         let cal = Calendar.current
         let now = Date()
         let hhmm = String(format: "%02d:%02d", cal.component(.hour, from: now), cal.component(.minute, from: now))
+        var fired = loadFiredSchedules()
+        // 只保留今天与昨天的键 (防字典无限增长; 昨天保留兜 DST 深夜场景)
+        let todayPrefix = Self.dayPrefix(now), yesterdayPrefix = Self.dayPrefix(cal.date(byAdding: .day, value: -1, to: now) ?? now)
+        fired = fired.filter { k, _ in k.hasPrefix(todayPrefix) || k.hasPrefix(yesterdayPrefix) }
         for sch in cachedSchedules {
             guard sch.times.contains(hhmm) else { continue }
             guard !triggerDisabledSlugs.contains(sch.slug) else { continue } // 定时触发已关 (与跟踪开关独立)
-            if lastScheduledTrigger[sch.slug] == hhmm { continue } // 本分钟已触发
+            // 持久去重: 同 slug 同本地日 同 HH:MM 只触发一次 (跨重启/跨天均正确, 键含日期)
+            let before = fired
+            guard Self.markScheduleFired(fired: &fired, slug: sch.slug, hhmm: hhmm, date: now) else { continue }
+            saveFiredSchedules(fired)
+            _ = before
             lastScheduledTrigger[sch.slug] = hhmm
             // 走 trigger() (auth 无 testModel 时回退 manifest.refreshModel), 不能直呼 testRefresh
             Task { @MainActor in
                 _ = await RefreshTrigger.trigger(manifest: sch.manifest, authFile: sch.authFile)
             }
         }
+    }
+
+    /// 日期串前缀 (清理用): "yyyy-MM-dd|"
+    nonisolated private static func dayPrefix(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d) + "|"
     }
 
     /// auth 文件路径: manifest.authFile 展开, 缺省 hudDir/.{slug}-usage-auth.json
@@ -449,6 +486,19 @@ final class DataEngine: ObservableObject {
     }
     /// 测试注入: 模拟账号被删 (registry 清空)
     func clearAllPluginsForTest() { allPlugins = []; states = [] }
+
+    // MARK: P0-3 调度持久去重 (纯函数拆出可测)
+    /// 键结构: ["yyyy-MM-dd|slug": ["HH:MM": "fired"|"skipped:<reason>"]]
+    nonisolated static func scheduleDedupKey(slug: String, date: Date) -> String { scheduleKey(slug: slug, date: date) }
+
+    /// 判定并登记: 返回 true = 应触发 (首次), false = 已触发过 (跳过)
+    nonisolated static func markScheduleFired(fired: inout [String: [String: String]],
+                                              slug: String, hhmm: String, date: Date = Date()) -> Bool {
+        let key = scheduleDedupKey(slug: slug, date: date)
+        if fired[key]?[hhmm] != nil { return false }
+        fired[key, default: [:]][hhmm] = "fired"
+        return true
+    }
 
     private func pluginDir(slug: String) -> URL {
         // 用户目录优先, 其次 bundle

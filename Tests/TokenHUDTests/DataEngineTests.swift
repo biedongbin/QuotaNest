@@ -143,6 +143,36 @@ struct DataEngineTests {
         _ = hudDir
     }
 
+    // MARK: P0-3 调度持久去重: 键 = slug+本地日期+HH:MM, 同键不重触发, 跨天是新键
+
+    @Test func scheduleDedupSameKeySkipsDifferentDayFires() {
+        var fired: [String: [String: String]] = [:]
+        let d0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let d1 = d0.addingTimeInterval(86400) // 次日
+        #expect(DataEngine.markScheduleFired(fired: &fired, slug: "glm", hhmm: "09:00", date: d0)) // 首次触发
+        #expect(!DataEngine.markScheduleFired(fired: &fired, slug: "glm", hhmm: "09:00", date: d0)) // 同日同刻跳过 (跨重启注入同键 → 不再执行)
+        #expect(DataEngine.markScheduleFired(fired: &fired, slug: "glm", hhmm: "09:00", date: d1)) // 次日同刻 = 新键, 触发 (修跨天误杀)
+        #expect(DataEngine.markScheduleFired(fired: &fired, slug: "glm", hhmm: "21:00", date: d0)) // 同日另一时刻 = 新键
+        #expect(DataEngine.markScheduleFired(fired: &fired, slug: "ollama", hhmm: "09:00", date: d0)) // 另一账号 = 新键
+        #expect(fired[DataEngine.scheduleDedupKey(slug: "glm", date: d0)]?.count == 2)
+    }
+
+    @Test @MainActor func scheduleFiredPersistsAcrossEngineRestart() {
+        // 持久性: 写入后经 UserDefaults 读回, 新引擎实例 (模拟重启) 同键仍挡
+        let (engine, tmp, _, defaults) = makeEngine("sched")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        _ = engine
+        var fired: [String: [String: String]] = [:]
+        #expect(DataEngine.markScheduleFired(fired: &fired, slug: "glm", hhmm: "09:00"))
+        let data = try! JSONEncoder().encode(fired)
+        defaults.set(String(data: data, encoding: .utf8), forKey: DataEngine.defaultsScheduleFiredKey)
+        // "重启": 同 defaults 新引擎读回
+        let raw = defaults.string(forKey: DataEngine.defaultsScheduleFiredKey)
+        var reloaded = (try? JSONDecoder().decode([String: [String: String]].self,
+                                                  from: raw?.data(using: .utf8) ?? Data("null".utf8))) ?? [:]
+        #expect(!DataEngine.markScheduleFired(fired: &reloaded, slug: "glm", hhmm: "09:00")) // 跨重启不重复消费
+    }
+
     // MARK: P0-2 删除清理: cache 文件与 envs.json 条目不残留
 
     @Test @MainActor func deleteRemovesCacheAndEnvsEntry() async {
