@@ -150,6 +150,10 @@ final class DataEngine: ObservableObject {
     @Published var iconProviderSlug: String?
     /// 关闭用量跟踪的供应商 (slug 集合), UserDefaults 持久化
     @Published private(set) var disabledSlugs: Set<String> = []
+    /// 余额不显示到悬浮窗/菜单栏的账号 (slug 集合; 不影响查询) — v0.2 三开关之「悬浮窗显示」
+    @Published private(set) var floatingHiddenSlugs: Set<String> = []
+    /// 不同步到 Claude Code HUD (envs.json/ACCOUNT_ENVS) 的账号 — v0.2 三开关之「同步 HUD」
+    @Published private(set) var hudHiddenSlugs: Set<String> = []
     /// 关闭「定时触发」的供应商 (slug 集合), 与跟踪开关独立
     @Published private(set) var triggerDisabledSlugs: Set<String> = []
     /// 供应商显示顺序 (slug 数组), 空则按字母序
@@ -174,6 +178,8 @@ final class DataEngine: ObservableObject {
     static let defaultsTriggerDisabledKey = "tokenhud.triggerDisabled.slugs"
     static let defaultsOrderKey = "tokenhud.providerOrder"
     static let defaultsDeletedKey = "tokenhud.deletedTemplates"
+    static let defaultsFloatingHiddenKey = "tokenhud.floatingHidden.slugs"
+    static let defaultsHudHiddenKey = "tokenhud.hudHidden.slugs"
 
     init(hudDir: URL, bundleProvidersDir: URL?, userProvidersDir: URL,
          runner: ProviderRunner, defaults: UserDefaults = .standard) {
@@ -200,6 +206,8 @@ final class DataEngine: ObservableObject {
         nodeMissing = (runner.nodePath == nil)
         iconProviderSlug = defaults.string(forKey: Self.defaultsIconKey)
         disabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsDisabledKey) ?? [])
+        floatingHiddenSlugs = Set(defaults.stringArray(forKey: Self.defaultsFloatingHiddenKey) ?? [])
+        hudHiddenSlugs = Set(defaults.stringArray(forKey: Self.defaultsHudHiddenKey) ?? [])
         triggerDisabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsTriggerDisabledKey) ?? [])
         providerOrder = defaults.stringArray(forKey: Self.defaultsOrderKey) ?? []
         deletedTemplates = Set(defaults.stringArray(forKey: Self.defaultsDeletedKey) ?? [])
@@ -389,13 +397,16 @@ final class DataEngine: ObservableObject {
             return (p.slug, p.manifest, auth, ProviderConfigStore.read(authFile: auth, manifest: p.manifest).scheduleTimes)
         }
         let now = Date().timeIntervalSince1970 * 1000
+        // v0.2: 间隔取每账号覆盖 (UserDefaults) 优先, 缺省 manifest.interval
         states = plugins
             .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) }
             .sorted { orderIndex($0.slug) < orderIndex($1.slug) }
             .map {
                 let cache = readCache(slug: $0.slug, manifest: $0.manifest)
+                let interval = defaults.integer(forKey: Self.intervalKey($0.slug)) > 0
+                    ? defaults.integer(forKey: Self.intervalKey($0.slug)) * 60 : $0.manifest.interval
                 return ProviderState(slug: $0.slug, manifest: $0.manifest, cache: cache,
-                                     isStale: !HUDFmt.isFresh(cache, interval: $0.manifest.interval, now: now))
+                                     isStale: !HUDFmt.isFresh(cache, interval: interval, now: now))
             }
         // 图标指向的家若已不存在, 回退到全部取最高
         if let slug = iconProviderSlug, !states.contains(where: { $0.slug == slug }) {
@@ -417,6 +428,69 @@ final class DataEngine: ObservableObject {
         }
         defaults.set(Array(disabledSlugs), forKey: Self.defaultsDisabledKey)
         reloadRegistry()
+    }
+
+    /// v0.2 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示, 不影响查询与调度
+    func setFloatingHidden(_ slug: String, hidden: Bool) {
+        if hidden { floatingHiddenSlugs.insert(slug) } else { floatingHiddenSlugs.remove(slug) }
+        defaults.set(Array(floatingHiddenSlugs), forKey: Self.defaultsFloatingHiddenKey)
+    }
+
+    /// v0.2 「同步 HUD」: 只影响 envs.json/ACCOUNT_ENVS 写入, 不影响查询; 关闭即时从 envs 摘除
+    func setHudHidden(_ slug: String, hidden: Bool) {
+        if hidden { hudHiddenSlugs.insert(slug) } else { hudHiddenSlugs.remove(slug) }
+        defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
+        writeEnvsForHudSync()
+    }
+
+    // MARK: v0.2 每账号查询间隔覆盖 (UserDefaults; 缺省用 manifest.interval)
+
+    nonisolated static func intervalKey(_ slug: String) -> String { "tokenhud.interval.\(slug)" }
+
+    /// 有效间隔 (分钟): 覆盖值优先, 否则 manifest (秒→分)
+    func effectiveIntervalMinutes(_ slug: String, manifest: ProviderManifest) -> Int {
+        let saved = defaults.integer(forKey: Self.intervalKey(slug))
+        return saved > 0 ? saved : max(1, manifest.interval / 60)
+    }
+
+    func setIntervalMinutes(_ slug: String, minutes: Int) {
+        let clamped = max(1, min(1440, minutes))
+        defaults.set(clamped, forKey: Self.intervalKey(slug))
+        reloadRegistry()   // isStale 按 f际间隔重算
+    }
+
+    func clearIntervalOverride(_ slug: String) {
+        defaults.removeObject(forKey: Self.intervalKey(slug))
+        reloadRegistry()
+    }
+
+    /// 当前 HUD 同步键: manifest.name 列表 (envs.json 键), 排除已停用 + 已关同步的
+    var hudSyncNames: [String] {
+        allPlugins
+            .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hudHiddenSlugs.contains($0.slug) }
+            .map(\.manifest.name)
+    }
+
+    /// 现写 envs.json + settings.json ACCOUNT_ENVS (按 hudHidden/disabled 过滤); 失败仅打印 (后台静默重写)
+    func writeEnvsForHudSync() {
+        let settingsURL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/settings.json")
+        let builtin = Set(allPlugins.filter { $0.manifest.template != nil }.map(\.manifest.name))
+        let new = HUDSync.envsDict(plugins: allPlugins.filter { hudSyncNames.contains($0.manifest.name) },
+                                   hudDir: hudDir, builtinNames: builtin)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let existing = (try? Data(contentsOf: envsURL))
+            .flatMap { try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) } ?? [:]
+        do {
+            try HUDSync.writeEnvs(HUDSync.mergeEnvs(existing: existing, new: new, builtinNames: builtin),
+                                  to: envsURL)
+            let settings = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL))) as? [String: Any]
+            let current = (settings?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String
+            try HUDSync.patchSettings(settingsURL: settingsURL,
+                                      accountEnvs: HUDSync.mergeAccountEnvs(current: current, keys: hudSyncNames),
+                                      statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)
+        } catch {
+            print("[DataEngine] envs resync failed: \(error.localizedDescription)")
+        }
     }
 
     /// 开关某家「定时触发」; 与用量跟踪独立 (跟踪关 ≠ 定时关)
@@ -461,9 +535,12 @@ final class DataEngine: ObservableObject {
         // P1-3 退避: ratelimit 暂停窗口内的账号跳过本轮自动查询 (到期自动恢复; 手动 forceRefresh 不受限)
         let paused = Self.loadPaused(defaults: defaults)
         // MainActor 上下文先筛过期家 (按尝试时间: 失败也会前移 lastAttemptAt, 免 10s timer 对失败家反复重刷)
+        // v0.2: 间隔取每账号覆盖优先 (秒), 缺省 manifest.interval
         let due: [(String, PluginProvider)] = states.compactMap { st in
             guard paused[st.slug] == nil else { return nil }
-            guard !HUDFmt.isAttemptFresh(st.cache, interval: st.manifest.interval, now: now) else { return nil }
+            let override = defaults.integer(forKey: Self.intervalKey(st.slug))
+            let interval = override > 0 ? override * 60 : st.manifest.interval
+            guard !HUDFmt.isAttemptFresh(st.cache, interval: interval, now: now) else { return nil }
             return (st.slug, PluginProvider(slug: st.slug, manifest: st.manifest,
                                             dir: pluginDir(slug: st.slug)))
         }

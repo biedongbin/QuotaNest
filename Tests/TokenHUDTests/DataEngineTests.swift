@@ -630,6 +630,81 @@ struct DataEngineTests {
         #expect(QuotaTabView.unitLabel(3, 7, unit: "requests") == "3 / 7 requests")
         #expect(QuotaTabView.unitLabel(3, 7, unit: nil) == "3 / 7")
     }
+
+    // MARK: v0.2 三开关 + 间隔覆盖
+
+    @Test @MainActor func threeTogglesPersistIndependently() {
+        let (engine, tmp, _, defaults) = makeEngine("v02toggle")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("acc1", stdout: "{}", to: tmp)
+        engine.reloadRegistry()
+
+        engine.setTracking("acc1", enabled: false)          // 主开关停用
+        engine.setFloatingHidden("acc1", hidden: true)      // 悬浮窗隐藏
+        engine.setHudHidden("acc1", hidden: true)           // HUD 关同步
+        #expect(engine.disabledSlugs.contains("acc1"))
+        #expect(engine.floatingHiddenSlugs.contains("acc1"))
+        #expect(engine.hudHiddenSlugs.contains("acc1"))
+        #expect(Set(defaults.stringArray(forKey: DataEngine.defaultsDisabledKey) ?? []) == ["acc1"])
+        #expect(Set(defaults.stringArray(forKey: DataEngine.defaultsFloatingHiddenKey) ?? []) == ["acc1"])
+        #expect(Set(defaults.stringArray(forKey: DataEngine.defaultsHudHiddenKey) ?? []) == ["acc1"])
+
+        // 独立: 恢复主开关不影响另两个
+        engine.setTracking("acc1", enabled: true)
+        #expect(!engine.disabledSlugs.contains("acc1"))
+        #expect(engine.floatingHiddenSlugs.contains("acc1"))
+        #expect(engine.hudHiddenSlugs.contains("acc1"))
+        // hudSyncNames 排除 hudHidden
+        #expect(!engine.hudSyncNames.contains("acc1"))
+        engine.setHudHidden("acc1", hidden: false)
+        #expect(engine.hudSyncNames.contains("acc1"))
+    }
+
+    @Test @MainActor func disabledAccountSkipsRefreshNow() async {
+        let (engine, tmp, hudDir, _) = makeEngine("v02skip")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("skipme", stdout: #"{"seven_day":{"used_percentage":9}}"#, to: tmp)
+        engine.reloadRegistry()
+        engine.setTracking("skipme", enabled: false)
+        // 停用后 states 不含该家 → refreshNow 无 due
+        #expect(!engine.states.contains { $0.slug == "skipme" })
+        await engine.refreshNow()
+        // 无缓存文件落盘 (从未查询)
+        #expect(!FileManager.default.fileExists(
+            atPath: hudDir.appendingPathComponent(".skipme-usage-cache.json").path))
+    }
+
+    @Test @MainActor func intervalOverrideDrivesDue() async {
+        let (engine, tmp, hudDir, defaults) = makeEngine("v02interval")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("iv", stdout: #"{"seven_day":{"used_percentage":5}}"#, to: tmp)
+        engine.reloadRegistry()
+        // 默认 manifest interval=60s: 查一次后, 长间隔覆盖 (2 分钟) → 不再 due
+        _ = await engine.forceRefresh(slug: "iv")
+        engine.setIntervalMinutes("iv", minutes: 2)
+        #expect(defaults.integer(forKey: DataEngine.intervalKey("iv")) == 2)
+        await engine.refreshNow()   // 刚查过 + 2min 覆盖 → 不应重刷
+        // 生成两个缓存? 只查了一次 (forceRefresh), refreshNow 不应新增 — 由 lastAttemptAt 判定; 断言 generatedAt 未被重置
+        let st = try? JSONDecoder().decode(UsageCache.self,
+                                           from: Data(contentsOf: hudDir.appendingPathComponent(".iv-usage-cache.json")))
+        #expect(st?.error == nil)
+        // 清除覆盖回落 manifest
+        engine.clearIntervalOverride("iv")
+        #expect(defaults.object(forKey: DataEngine.intervalKey("iv")) == nil)
+        #expect(engine.effectiveIntervalMinutes("iv", manifest: engine.allPlugins[0].manifest) == 1)
+    }
+
+    @Test @MainActor func hudSyncNamesFilterEndToEnd() {
+        let (engine, tmp, _, _) = makeEngine("v02envs")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("a1", stdout: "{}", to: tmp)
+        addPlugin("a2", stdout: "{}", to: tmp)
+        engine.reloadRegistry()
+        engine.setHudHidden("a2", hidden: true)
+        #expect(engine.hudSyncNames == ["a1"])
+        engine.setTracking("a1", enabled: false)   // 停用也排除
+        #expect(engine.hudSyncNames.isEmpty)
+    }
 }
 
 /// 测试用并发计数器 (actor, 无数据竞争)

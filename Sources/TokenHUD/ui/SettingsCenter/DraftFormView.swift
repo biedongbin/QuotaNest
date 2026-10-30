@@ -213,19 +213,8 @@ struct DraftFormView: View {
         CardBox {
             VStack(alignment: .leading, spacing: 12) {
                 Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("两个开关相互独立；保存不发起任何请求；定时按本机时区 24 小时制执行，会消耗额度。")
+                Text("保存不发起任何请求；定时按本机时区 24 小时制执行，会消耗额度。自动查询开关与间隔在保存后的「自动触发」页直接操作。")
                     .font(Typo.small).foregroundStyle(Palette.muted)
-
-                Toggle(isOn: bind(\.autoQuery)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动查询额度").font(Typo.body).foregroundStyle(Palette.ink)
-                        Text("只查询额度，不调用模型；关闭后仍可手动查询。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
-                }
-                .toggleStyle(.switch)
-
-                Divider().overlay(Palette.border)
 
                 Toggle(isOn: bind(\.autoTrigger)) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -286,14 +275,8 @@ struct DraftFormView: View {
         CardBox {
             VStack(alignment: .leading, spacing: 12) {
                 Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                Toggle(isOn: bind(\.autoQuery)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动查询额度").font(Typo.body).foregroundStyle(Palette.ink)
-                        Text("只查询额度，不调用模型；保存不发起请求。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
-                }
-                .toggleStyle(.switch)
+                Text("自动查询开关与间隔在保存后的「自动触发」页直接操作。")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
                 UnsupportedBox(title: "未配置调用端点",
                                detail: "填入服务地址与模型后即可启用定时调用；当前草稿尚未填写服务地址。")
             }

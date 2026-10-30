@@ -14,12 +14,18 @@ struct FloatingView: View {
     private var style: PanelStyle { controller.style }
     private var bgOpacity: Double { controller.bgOpacity }
     private var textOpacity: Double { controller.textOpacity }
+    /// v0.2 「悬浮窗显示」: 关闭的账号不出现在悬浮窗
+    private var visibleStates: [ProviderState] {
+        engine.states.filter { st in
+            !engine.disabledSlugs.contains(st.slug) && !engine.floatingHiddenSlugs.contains(st.slug)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 6) {
             if expanded {
                 VStack(alignment: .leading, spacing: style == .compact ? 2 : 6) {
-                    ForEach(engine.states) { st in
+                    ForEach(visibleStates) { st in
                         providerCard(st)
                     }
                     HStack {
@@ -35,7 +41,7 @@ struct FloatingView: View {
                 .onTapGesture(count: 2) { onToggle() } // 展开态双击收起
             } else {
                 HStack(spacing: 10) {
-                    ForEach(engine.states) { st in
+                    ForEach(visibleStates) { st in
                         HStack(spacing: 4) {
                             ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
                                           accent: brandColor(st.manifest.accent), size: 16)

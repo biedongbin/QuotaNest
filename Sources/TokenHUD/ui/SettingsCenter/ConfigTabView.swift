@@ -125,34 +125,67 @@ struct TriggerTabView: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                            Text("自动查询额度与模型定时调用相互独立；保存不会发起请求；按本机时区执行。")
+                            Text("开关即时生效，无需保存；定时按本机时区执行，会消耗额度。")
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                         }
                         Spacer()
                         if row.authStyle == "apikey" {
-                            Button("编辑") { model.startEdit() }.barButton()
+                            Button("编辑调用配置") { model.startEdit() }.barButton()
                         }
                     }
 
-                    Text("自动查询额度").font(Typo.small).bold().foregroundStyle(Palette.muted)
-                    VStack(spacing: 0) {
-                        KeyValueRow("自动查询额度") {
-                            Text(row.autoQuery ? "已开启" : "已关闭")
-                        }
-                        KeyValueRow("查询能力") {
-                            // P1-8 四态: 通用模板无解析 = 未接入 (App 侧), 不写「供应商未提供」
-                            switch quotaStatus {
-                            case .configured: Text("支持")
-                            case .notIntegrated: Text("未接入（App 暂无该额度解析）")
-                            case .notSupported: Text("不支持（服务端无额度查询）")
-                            case .notConfigured: Text("未配置")
-                            case .unverified: Text("待核实")
+                    // v0.2 三开关 (即时生效): 启用监控 / 悬浮窗显示 / 同步 HUD
+                    VStack(spacing: 10) {
+                        Toggle(isOn: monitorBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("启用监控").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("关闭后不查询、不调度，不出现在菜单栏与 HUD。")
+                                    .font(Typo.small).foregroundStyle(Palette.muted)
                             }
                         }
+                        .toggleStyle(.switch)
+
+                        Toggle(isOn: floatingBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("悬浮窗显示").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("在悬浮窗与菜单栏显示该账号余额；不影响查询。")
+                                    .font(Typo.small).foregroundStyle(Palette.muted)
+                            }
+                        }
+                        .toggleStyle(.switch)
+
+                        Toggle(isOn: hudBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("同步 HUD").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("写入 envs.json 与 ACCOUNT_ENVS；关闭即时摘除。")
+                                    .font(Typo.small).foregroundStyle(Palette.muted)
+                            }
+                        }
+                        .toggleStyle(.switch)
                     }
 
-                    Text("模型定时调用").font(Typo.small).bold()
-                        .foregroundStyle(Palette.muted).padding(.top, 4)
+                    Divider().overlay(Palette.border)
+
+                    // v0.2 自动查询间隔 (即时生效 Stepper; 主开关开 = 按此间隔自动查)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("自动查询间隔").font(Typo.body).foregroundStyle(Palette.ink)
+                            Text(intervalNote).font(Typo.small).foregroundStyle(Palette.muted)
+                        }
+                        Spacer()
+                        Stepper("\(intervalMin) 分钟", value: intervalBinding, in: 1...1440)
+                            .font(Typo.body)
+                            .frame(width: 180)
+                        if hasOverride {
+                            Button("恢复默认") { model.engine.clearIntervalOverride(row.id) }
+                                .barButton()
+                        }
+                    }
+                    .opacity(row.enabled ? 1 : 0.5)
+                    .disabled(!row.enabled)
+
+                    Divider().overlay(Palette.border)
+                    Text("模型定时调用").font(Typo.small).bold().foregroundStyle(Palette.muted)
 
                     if row.canCall {
                         VStack(spacing: 0) {
@@ -194,6 +227,33 @@ struct TriggerTabView: View {
                 }
             }
         }
+    }
+
+    // v0.2 即时开关绑定 (直落盘, 不进草稿)
+    private var monitorBinding: Binding<Bool> {
+        Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) })
+    }
+    private var floatingBinding: Binding<Bool> {
+        Binding(get: { !model.engine.floatingHiddenSlugs.contains(row.id) },
+                set: { model.toggleFloating(row.id, shown: $0) })
+    }
+    private var hudBinding: Binding<Bool> {
+        Binding(get: { !model.engine.hudHiddenSlugs.contains(row.id) },
+                set: { model.toggleHudSync(row.id, synced: $0) })
+    }
+
+    private var intervalMin: Int {
+        model.engine.effectiveIntervalMinutes(row.id, manifest: row.plugin.manifest)
+    }
+    private var hasOverride: Bool {
+        UserDefaults.standard.integer(forKey: DataEngine.intervalKey(row.id)) > 0
+    }
+    private var intervalBinding: Binding<Int> {
+        Binding(get: { intervalMin },
+                set: { model.engine.setIntervalMinutes(row.id, minutes: $0) })
+    }
+    private var intervalNote: String {
+        hasOverride ? "已覆盖默认间隔，立即生效。" : "未设置时使用供应商默认（\(max(1, row.plugin.manifest.interval / 60)) 分钟）。"
     }
 
     private var triggerEnabled: Bool {

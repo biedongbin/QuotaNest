@@ -175,6 +175,8 @@ struct AccountRow: Identifiable {
     let plugin: PluginProvider
     let state: ProviderState?
     let autoQuery: Bool
+    /// v0.2 主开关「启用监控」: off = 不查询不调度不出现在菜单栏/HUD (复用 disabledSlugs 存储)
+    let enabled: Bool
     /// P1-10 执行性配置完整 (key/url 齐) — false = 「未配置」徽章, 依赖配置的开关已强制 off
     let isConfigured: Bool
 
@@ -195,10 +197,10 @@ struct AccountRow: Identifiable {
         }
     }
 
-    /// 列表状态点: (色, 文案)
+    /// 列表状态点: (色, 文案) — 停用优先于一切
     var status: (Color, String) {
+        if !enabled { return (Palette.muted, "已停用") }
         if !isConfigured { return (Palette.warn, "未配置") }
-        if !autoQuery { return (Palette.warn, "自动查询关") }
         guard let c = state?.cache else { return (Palette.muted, "未查询") }
         if c.error != nil { return (Palette.danger, "异常") }
         return (Palette.ok, "正常")
@@ -294,6 +296,22 @@ final class SettingsModel: ObservableObject {
     private let defaults: UserDefaults
 
     @Published var search = ""
+    /// v0.2 总览筛选: 全部 / API Key / 授权登录 / 已启用 / 已停用
+    enum ScopeFilter: String, CaseIterable, Identifiable {
+        case all, apikey, oauth, enabled, disabled
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "全部"
+            case .apikey: return "API Key"
+            case .oauth: return "授权登录"
+            case .enabled: return "已启用"
+            case .disabled: return "已停用"
+            }
+        }
+    }
+
+    @Published var scope: ScopeFilter = .all
     @Published var selected: String? { didSet { persistSelection() } }
     @Published var tab: Tab = .quota { didSet { defaults.set(tab.rawValue, forKey: SettingsPersist.tabKey) } }
     @Published var showingTemplates = false
@@ -351,8 +369,35 @@ final class SettingsModel: ObservableObject {
                 AccountRow(plugin: p,
                            state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
                            autoQuery: !engine.disabledSlugs.contains(p.slug),
+                           enabled: !engine.disabledSlugs.contains(p.slug),
                            isConfigured: Self.configured(p, readConfig: readConfig))
             }
+    }
+
+    /// 总览按供应商分组 (manifest.label 分组键, fullName 组头; v0.2 受 scope 筛选)
+    var overviewGroups: [(label: String, fullName: String, accent: String?, icon: String?, rows: [AccountRow])] {
+        let all = accounts
+        let scoped: [AccountRow]
+        switch scope {
+        case .all: scoped = all
+        case .apikey: scoped = all.filter { $0.authStyle == "apikey" }
+        case .oauth: scoped = all.filter { $0.authStyle != "apikey" }
+        case .enabled: scoped = all.filter { $0.enabled }
+        case .disabled: scoped = all.filter { !$0.enabled }
+        }
+        var order: [String] = []
+        var byLabel: [String: [AccountRow]] = [:]
+        var info: [String: (String, String?, String?)] = [:]
+        for r in scoped {
+            let key = r.plugin.manifest.label
+            if byLabel[key] == nil {
+                byLabel[key] = []
+                order.append(key)
+                info[key] = (r.plugin.manifest.fullName, r.plugin.manifest.accent, r.plugin.manifest.icon)
+            }
+            byLabel[key]?.append(r)
+        }
+        return order.map { ($0, info[$0]!.0, info[$0]!.1, info[$0]!.2, byLabel[$0]!) }
     }
 
     /// 左栏分组 (API Key / 授权登录)
@@ -368,6 +413,7 @@ final class SettingsModel: ObservableObject {
         return AccountRow(plugin: p,
                           state: engine.states.first { $0.slug == slug } ?? cachedState(for: p),
                           autoQuery: !engine.disabledSlugs.contains(slug),
+                          enabled: !engine.disabledSlugs.contains(slug),
                           isConfigured: Self.configured(p, readConfig: readConfig))
     }
 
@@ -855,9 +901,12 @@ final class SettingsModel: ObservableObject {
         if p.manifest.template != nil { engine.markTemplateDeleted(slug) }
         try? PluginGenerator.removePlugin(slug: slug, in: userDir)
         if let af = authURL(p) { try? FileManager.default.trashItem(at: af, resultingItemURL: nil) }
-        // 清理残留: cache 文件 (HUD 不再显示已删账号旧值) + envs.json 摘除该账号条目
+        // 清理残留: cache 文件 (HUD 不再显示已删账号旧值) + envs.json 摘除该账号条目 + 三个开关存储
         try? FileManager.default.removeItem(at: DataEngine.cachePath(for: p, hudDir: hudDir))
         removeEnvsEntry(name: p.manifest.name)
+        engine.setTracking(slug, enabled: true)                 // 从 disabled 摘除 (防残条目)
+        engine.setFloatingHidden(slug, hidden: false)
+        engine.setHudHidden(slug, hidden: false)
         draft = nil
         selected = engine.allPlugins.first { $0.slug != slug }?.slug
         engine.reloadRegistry()
@@ -880,23 +929,45 @@ final class SettingsModel: ObservableObject {
             engine.installScripts()
             let plugins = engine.allPlugins
             let builtin = Set(plugins.filter { $0.manifest.template != nil }.map { $0.manifest.name })
-            let new = HUDSync.envsDict(plugins: plugins, hudDir: hudDir, builtinNames: builtin)
+            // v0.2: 按「同步 HUD」开关 + 启用态过滤 (hudSyncNames), 关闭的账号不入 envs
+            let new = HUDSync.envsDict(plugins: plugins.filter { engine.hudSyncNames.contains($0.manifest.name) },
+                                       hudDir: hudDir, builtinNames: builtin)
             let envsURL = hudDir.appendingPathComponent("envs.json")
             let existing = (try? Data(contentsOf: envsURL))
                 .flatMap { try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) } ?? [:]
             try HUDSync.writeEnvs(HUDSync.mergeEnvs(existing: existing, new: new, builtinNames: builtin),
                                   to: envsURL)
-            let keys = plugins.filter { $0.manifest.isEnabled && !engine.disabledSlugs.contains($0.slug) }
-                .map(\.manifest.name)
-            let settings = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL))) as? [String: Any]
-            let current = (settings?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String
             try HUDSync.patchSettings(settingsURL: settingsURL,
-                                      accountEnvs: HUDSync.mergeAccountEnvs(current: current, keys: keys),
+                                      accountEnvs: HUDSync.mergeAccountEnvs(current: nil, keys: engine.hudSyncNames),
                                       statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)
             flash("已写入 Claude Code HUD（下次渲染生效）", error: false)
         } catch {
             flash("写入 HUD 失败：\(error.localizedDescription)", error: true)
         }
+    }
+
+    // MARK: v0.2 总览三开关 (即时生效, 不走草稿)
+
+    /// 主开关「启用监控」: 停用 = 不查询不调度不出现在菜单栏/HUD; 即时落盘 + envs 重写
+    func toggleMonitoring(_ slug: String, enabled: Bool) {
+        engine.setTracking(slug, enabled: enabled)
+        engine.writeEnvsForHudSync()
+        let name = row(slug)?.name ?? slug
+        flash(enabled ? "已启用 \(name) 的监控" : "已停用 \(name)：不再查询、不调度、不出现在菜单栏与 HUD",
+              error: false)
+    }
+
+    /// 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示
+    func toggleFloating(_ slug: String, shown: Bool) {
+        engine.setFloatingHidden(slug, hidden: !shown)
+        flash(shown ? "已在悬浮窗与菜单栏显示该账号" : "已从悬浮窗与菜单栏隐藏该账号（查询不受影响）",
+              error: false)
+    }
+
+    /// 「同步 HUD」: 关闭即时从 envs.json / ACCOUNT_ENVS 摘除
+    func toggleHudSync(_ slug: String, synced: Bool) {
+        engine.setHudHidden(slug, hidden: !synced)
+        flash(synced ? "已同步该账号到 Claude Code HUD" : "已从 Claude Code HUD 摘除该账号", error: false)
     }
 
     // MARK: 草稿守卫

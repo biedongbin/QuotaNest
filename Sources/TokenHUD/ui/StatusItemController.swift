@@ -105,6 +105,11 @@ final class StatusItemController: ObservableObject {
                                       onRefresh: { [weak self] in
                                           guard let self else { return }
                                           Task { await self.engine.refreshBalancesOnly() }
+                                      },
+                                      onQueryAccount: { [weak self] slug in
+                                          guard let self else { return }
+                                          guard let model = SettingsWindowManager.shared.modelForQuery() else { return }
+                                          model.query(slug)
                                       })
             let p = NSPopover()
             p.contentViewController = NSHostingController(rootView: content)
@@ -174,5 +179,13 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard let model, model.draft != nil else { return true }
         return model.leaveGuard()
+    }
+
+    /// 菜单栏点单条查询: 复用设置中心模型 (未开窗时懒建, 不 show)
+    func modelForQuery() -> SettingsModel? {
+        if let model { return model }
+        guard let model = makeModel?() else { return nil }
+        self.model = model
+        return model
     }
 }

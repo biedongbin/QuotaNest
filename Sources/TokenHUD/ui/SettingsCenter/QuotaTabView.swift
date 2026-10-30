@@ -50,8 +50,6 @@ struct QuotaTabView: View {
                 } else {
                     quotaGrid.padding(.top, 12)
                 }
-
-                techDetails.padding(.top, 12)
             }
         }
     }
@@ -85,8 +83,9 @@ struct QuotaTabView: View {
         if let run = model.lastRun[row.id] {
             parts.append("耗时 \(run.ms) ms")
         }
+        // v0.2: 排查信息内联到结果条 (时间 + 错误码), 完整诊断信息后续挪诊断页
         if let e = c.error {
-            parts.append(DataEngine.reason(for: e))
+            parts.append("错误码 \(e) · \(DataEngine.reason(for: e))")
         } else if let p = c.fiveHour?.usedPercentage {
             parts.append("5 小时已用 \(Int(p.rounded()))%")
         }
@@ -231,34 +230,6 @@ struct QuotaTabView: View {
     private func resetLine(_ bucket: Bucket?) -> String {
         if let r = formatResetAt(bucket?.resetsAt) { return r }
         return "重置时间未知"
-    }
-
-    // MARK: 技术详情
-
-    private var techDetails: some View {
-        DisclosureGroup {
-            VStack(spacing: 0) {
-                KeyValueRow("查询端点", mono: true) {
-                    // P1-8 四态: 端点缺失按判定给态名, 不混用「未适配」
-                    Text(row.plugin.manifest.queryUrl ?? quotaStatus.label)
-                }
-                KeyValueRow("授权方式") { Text(row.authLabel) }
-                KeyValueRow("最近错误码") {
-                    Text(row.state?.cache?.error ?? "—")
-                }
-                KeyValueRow("缓存时间") {
-                    Text(formatCacheTime(row.state?.cache?.generatedAt))
-                }
-                KeyValueRow("数据来源") {
-                    Text(row.canQuery ? "\(row.plugin.manifest.fullName) 官方额度接口" : quotaStatus.label)
-                }
-            }
-            .padding(.top, 4)
-        } label: {
-            Text("技术详情").font(Typo.small).foregroundStyle(Palette.muted)
-        }
-        .padding(.top, 4)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
     }
 }
 

@@ -96,6 +96,7 @@ struct TokenHUDApp: App {
             ("06-edit", RenderScript(mode: .edit, slug: nil, templateID: nil)),
             ("06b-edit-trigger", RenderScript(mode: .editTrigger, slug: nil, templateID: nil)),
             ("07-create", RenderScript(mode: .create, slug: nil, templateID: "glm")),
+            ("08-overview", RenderScript(mode: .overview, slug: nil, templateID: nil)),
         ]
         var hosts: [NSWindow] = []   // 存活到截图完成 (否则视图被释放)
         // 离屏渲染不碰用户真实偏好 (否则截图会改写选中账号与 tab); 每张图独立 suite, 互不串味
@@ -106,7 +107,7 @@ struct TokenHUDApp: App {
             let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
                                       settingsURL: settingsURL, bundleDir: bundleDir,
                                       defaults: UserDefaults(suiteName: suite) ?? .standard)
-            if script.mode != .quota, let slug = forcedSlug,
+            if script.mode != .quota, script.mode != .overview, let slug = forcedSlug,
                engine.allPlugins.contains(where: { $0.slug == slug }) {
                 model.selected = slug
             }
@@ -114,6 +115,10 @@ struct TokenHUDApp: App {
             if script.mode == .quota {
                 model.selected = engine.states.first(where: { $0.cache?.fiveHour != nil })?.slug
                     ?? engine.allPlugins.first?.slug
+            }
+            // 总览页: 清选中, 落在仪表盘
+            if script.mode == .overview {
+                model.selected = nil
             }
             let view = SettingsCenterView(model: model, engine: engine, renderScript: script)
             let host = NSHostingView(rootView: view)
@@ -148,6 +153,41 @@ struct TokenHUDApp: App {
                   let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
             else { continue }
             try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+        }
+        // v0.2: 菜单栏下拉面板离屏渲染 (320 宽, 按内容高)
+        do {
+            let pc = PanelController(engine: engine)
+            let menu = MenuBarView(engine: engine, panelCtrl: pc,
+                                   onOpenSettings: {}, onTogglePanel: {}, onRefresh: {})
+            let host = NSHostingView(rootView: menu)
+            host.frame = NSRect(x: 0, y: 0, width: 320, height: 520)
+            let win = NSWindow(contentRect: host.frame, styleMask: [.titled, .resizable],
+                               backing: .buffered, defer: false)
+            win.contentView = host
+            win.appearance = NSAppearance(named: .aqua)
+            win.orderFrontRegardless()
+            hosts.append(win)
+            for _ in 0..<10 {
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+            }
+            host.wantsLayer = true
+            host.displayIfNeeded()
+            let size = host.bounds.size
+            guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return }
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+            ctx.fill(CGRect(origin: .zero, size: size))
+            ctx.translateBy(x: 0, y: size.height)
+            ctx.scaleBy(x: 1, y: -1)
+            host.layer?.render(in: ctx)
+            if let cg = ctx.makeImage(),
+               let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+                try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("09-menubar.png"))
+            }
         }
     }
 }
