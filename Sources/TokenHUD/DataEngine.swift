@@ -1,6 +1,32 @@
 import Foundation
 import SwiftUI
 
+// MARK: - P1-4 模型调用并发位 (每账号 1 / 全局 2)
+
+/// 模型调用执行位: 满位 acquire 返回 nil (调用方记 skipped busy), 不排队不等待
+actor CallSlots {
+    private var perAccount: Set<String> = []
+    private var globalCount = 0
+    let globalLimit: Int
+
+    init(globalLimit: Int = 2) { self.globalLimit = globalLimit }
+
+    /// 占位: 返回 nil = 满位 (同账号占用或全局满)
+    func acquire(_ slug: String) -> Bool {
+        if perAccount.contains(slug) || globalCount >= globalLimit { return false }
+        perAccount.insert(slug)
+        globalCount += 1
+        return true
+    }
+
+    func release(_ slug: String) {
+        perAccount.remove(slug)
+        globalCount = max(0, globalCount - 1)
+    }
+
+    var inFlight: [String] { Array(perAccount) }
+}
+
 // MARK: - 纯函数
 
 enum HUDFmt {
@@ -95,6 +121,8 @@ final class DataEngine: ObservableObject {
     private let runner: ProviderRunner
     private let defaults: UserDefaults
     private var timer: Timer?
+    /// P1-4 模型调用并发位 (每账号 1 / 全局 2): 计划触发与测试调用共用
+    let callSlots = CallSlots()
 
     static let defaultsNodeKey = "tokenhud.nodePath"
     static let defaultsIconKey = "tokenhud.iconProvider"
@@ -195,7 +223,7 @@ final class DataEngine: ObservableObject {
     /// scheduleTimes 缓存 (reloadRegistry 时重建, 免每 10s 重复读 auth 文件)
     private var cachedSchedules: [(slug: String, manifest: ProviderManifest, authFile: URL, times: [String])] = []
 
-    static let defaultsScheduleFiredKey = "tokenhud.scheduleFired"
+    nonisolated static let defaultsScheduleFiredKey = "tokenhud.scheduleFired"
 
     /// 本地日期键 (yyyy-MM-dd): DST/时区变化自然落在日期串里
     nonisolated static func scheduleKey(slug: String, date: Date = Date()) -> String {
@@ -216,6 +244,19 @@ final class DataEngine: ObservableObject {
         defaults.set(raw, forKey: Self.defaultsScheduleFiredKey)
     }
 
+    /// P1-4: skipped 记录与 fired 同仓同 schema (值域加 "skipped:<reason>"), nonisolated 供 Task 内读
+    nonisolated static func loadSkipped(defaults: UserDefaults) -> [String: [String: String]] {
+        guard let raw = defaults.string(forKey: defaultsScheduleFiredKey),
+              let data = raw.data(using: .utf8) else { return [:] }
+        return (try? JSONDecoder().decode([String: [String: String]].self, from: data)) ?? [:]
+    }
+
+    nonisolated static func saveSkipped(_ dict: [String: [String: String]], defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(dict),
+              let raw = String(data: data, encoding: .utf8) else { return }
+        defaults.set(raw, forKey: defaultsScheduleFiredKey)
+    }
+
     private func checkSchedules() {
         let cal = Calendar.current
         let now = Date()
@@ -233,8 +274,15 @@ final class DataEngine: ObservableObject {
             saveFiredSchedules(fired)
             _ = before
             lastScheduledTrigger[sch.slug] = hhmm
-            // 走 trigger() (auth 无 testModel 时回退 manifest.refreshModel), 不能直呼 testRefresh
-            Task { @MainActor in
+            // P1-4 并发位: 每账号 1 / 全局 2; 满位记 skipped busy (持久 reason 字段, 复用调度去重存储)
+            Task { @MainActor [slots = callSlots] in
+                guard await slots.acquire(sch.slug) else {
+                    var f = await Self.loadSkipped(defaults: defaults)
+                    f[Self.scheduleDedupKey(slug: sch.slug, date: Date()), default: [:]][hhmm] = "skipped:busy"
+                    await Self.saveSkipped(f, defaults: defaults)
+                    return
+                }
+                defer { Task { await slots.release(sch.slug) } }
                 _ = await RefreshTrigger.trigger(manifest: sch.manifest, authFile: sch.authFile)
             }
         }

@@ -722,12 +722,19 @@ final class SettingsModel: ObservableObject {
         flash("测试调用已发送…", error: false)
         let started = Date()
         Task {
+            // P1-4 并发位: 同账号已有调用在飞 → busy 提示 (不排队)
+            guard await engine.callSlots.acquire(slug) else {
+                running.remove(slug)
+                flash("该账号已有调用进行中，请稍候再试", error: true)
+                return
+            }
             var err: String?
             if let af = authURL(row.plugin), let m = engine.allPlugins.first(where: { $0.slug == slug })?.manifest {
                 err = await RefreshTrigger.trigger(manifest: m, authFile: af)
             } else {
                 err = "凭证文件缺失"
             }
+            await engine.callSlots.release(slug)
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             running.remove(slug)
             // P1-5: send() 成功返回 "✓ …" 前缀; 其他 (含网络不确定/HTTP 错/空 body) 均按失败/异常展示
@@ -776,7 +783,14 @@ final class SettingsModel: ObservableObject {
         flash("草稿测试调用已发送…", error: false)
         let started = Date()
         Task {
+            // P1-4 并发位: 同账号 (或草稿目标账号) 已占用 → busy 提示
+            guard await engine.callSlots.acquire(slug) else {
+                running.remove(slug)
+                flash("该账号已有调用进行中，请稍候再试", error: true)
+                return
+            }
             let err = await RefreshTrigger.testRefresh(config: cfg)
+            await engine.callSlots.release(slug)
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             running.remove(slug)
             let ok = err?.hasPrefix("✓") == true

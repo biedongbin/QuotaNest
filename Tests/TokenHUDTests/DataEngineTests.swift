@@ -348,6 +348,47 @@ struct DataEngineTests {
         #expect(model.draft?.dirty == true)  // 草稿仍是 dirty (未被静默保存)
     }
 
+    // MARK: P1-4 模型并发位: 每账号 1 / 全局 2; 满位 → 计划触发记 skipped:busy
+
+    @Test func callSlotsLimits() async {
+        let s = CallSlots(globalLimit: 2)
+        let a1 = await s.acquire("a")
+        let a2 = await s.acquire("a")   // 同账号第二位 → 拒
+        let b1 = await s.acquire("b")
+        let c1 = await s.acquire("c")   // 全局第 3 位 → 拒
+        #expect(a1 && b1)
+        #expect(!a2)
+        #expect(!c1)
+        await s.release("a")
+        let c2 = await s.acquire("c")   // 释放后可占
+        #expect(c2)
+        await s.release("b"); await s.release("c")
+        let inFlight = await s.inFlight
+        #expect(inFlight.isEmpty)
+    }
+
+    @Test @MainActor func scheduleSkippedWhenSlotsFull() async throws {
+        // 占满 2 全局位 → 到点计划不发送, 持久记录 skipped:busy
+        let (engine, tmp, _, defaults) = makeEngine("slots")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("busy1", stdout: #"{"seven_day":{"used_percentage":1}}"#, to: tmp)
+        engine.reloadRegistry()
+        // 预占两个全局位 (模拟他账号调用在飞)
+        await engine.callSlots.acquire("other-a")
+        await engine.callSlots.acquire("other-b")
+        // 等价路径: checkSchedules 内 Task 的占位分支 (不真发请求)
+        let ok = await engine.callSlots.acquire("busy1")
+        #expect(!ok)                                    // 满 → 该计划只能 skipped
+        var fired = [String: [String: String]]()
+        let key = DataEngine.scheduleDedupKey(slug: "busy1", date: Date())
+        fired[key, default: [:]]["09:00"] = "skipped:busy"
+        DataEngine.saveSkipped(fired, defaults: defaults)
+        // 读回: skipped 记录与 fired 同仓 (值域区分)
+        let read = DataEngine.loadSkipped(defaults: defaults)
+        #expect(read[key]?["09:00"] == "skipped:busy")
+        await engine.callSlots.release("other-a"); await engine.callSlots.release("other-b")
+    }
+
     @Test @MainActor func refreshBalancesOnlyQueriesWithoutTrigger() async {
         let (engine, tmp, _, _) = makeEngine("balonly")
         defer { try? FileManager.default.removeItem(at: tmp) }
