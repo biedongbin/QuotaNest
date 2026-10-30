@@ -304,4 +304,78 @@ struct RefreshTriggerTests {
         #expect(SettingsValidation.triggerErrors(times: [], timeInput: "9:00",
                                                  triggerEnabled: true, canCall: false).isEmpty)
     }
+
+    // MARK: P1-9 空 key = 保持原值; 清除/替换是独立意图
+
+    @Test func emptyKeyKeepsExistingOnValidation() {
+        // 编辑态已有 Key: 空输入不再报错 (保存 = 保持原值)
+        let e = SettingsValidation.configErrors(name: "a", key: "", url: "",
+                                                authStyle: "apikey", builtin: true,
+                                                hasExistingKey: true)
+        #expect(e["key"] == nil)
+        // 新账号 (无盘上 Key): 空输入仍报错
+        let n = SettingsValidation.configErrors(name: "a", key: "", url: "",
+                                                authStyle: "apikey", builtin: true,
+                                                hasExistingKey: false)
+        #expect(n["key"] != nil)
+    }
+
+    @Test func keyIntentResolveThreeWays() {
+        // replace + 空 + 盘上有值 → nil (不动盘上)
+        #expect(SettingsValidation.resolveKey(draftKey: "", existingKey: "old",
+                                              intent: .replace) == nil)
+        // replace + 新值 → 替换
+        #expect(SettingsValidation.resolveKey(draftKey: "new", existingKey: "old",
+                                              intent: .replace) == "new")
+        // replace + 空 + 盘上也空 → 写空 (新建场景, 与校验互斥仅防御)
+        #expect(SettingsValidation.resolveKey(draftKey: "", existingKey: "",
+                                              intent: .replace) == "")
+        // clear → 清空 (即使草稿框里有值)
+        #expect(SettingsValidation.resolveKey(draftKey: "new", existingKey: "old",
+                                              intent: .clear) == "")
+        #expect(SettingsValidation.resolveKey(draftKey: "", existingKey: "old",
+                                              intent: .clear) == "")
+    }
+
+    @Test @MainActor func updateKeyThreeIntentsPersist() throws {
+        // 端到端: 三种 intent 经 update() 落盘行为 (key 空输入=保持 / clear=清空 / 新值=替换)
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("th-key-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let userDir = tmp.appendingPathComponent("providers", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
+                                runner: ProviderRunner(nodePath: nil),
+                                defaults: UserDefaults(suiteName: "th-key-\(UUID().uuidString)")!)
+        let authFile = hudDir.appendingPathComponent(".kacct-usage-auth.json")
+        try JSONSerialization.data(withJSONObject: ["refreshApiKey": "old-key", "headers": [:]])
+            .write(to: authFile)
+        let d = userDir.appendingPathComponent("kacct", isDirectory: true)
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try JSONEncoder().encode(ProviderManifest(name: "kacct", label: "kacct", buckets: [:],
+                                                  authFile: authFile.path))
+            .write(to: d.appendingPathComponent("manifest.json"))
+        try? "#!/bin/zsh\necho '{}'".write(to: d.appendingPathComponent("fetch.sh"),
+                                           atomically: true, encoding: .utf8)
+        engine.reloadRegistry()
+        let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+        model.selected = "kacct"
+
+        func runUpdate(key: String, clear: Bool) -> String {
+            model.startEdit()
+            model.draft?.values.url = "https://api.example.com"   // url 校验先行, 不设则保存被挡
+            model.draft?.values.key = key
+            model.draft?.values.clearKeyIntent = clear
+            model.save()
+            #expect(model.topError.isEmpty)
+            return ProviderConfigStore.read(authFile: authFile,
+                manifest: engine.allPlugins.first { $0.slug == "kacct" }!.manifest).refreshKey
+        }
+        #expect(runUpdate(key: "", clear: false) == "old-key")   // 空 = 保持原值
+        #expect(runUpdate(key: "", clear: true) == "")           // clear = 清空
+        #expect(runUpdate(key: "fresh", clear: false) == "fresh") // 新值 = 替换
+    }
 }

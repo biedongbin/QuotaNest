@@ -26,13 +26,20 @@ enum SettingsValidation {
         return true
     }
 
+    /// P1-9 Key 意图: 空=保持原值 (keep), 清除是独立显式意图 (clear), 填了新值=替换
+    enum KeyIntent: Equatable { case replace, clear }
+
     /// 配置校验: key 为字段名 (name/key/url)
+    /// hasExistingKey: 盘上已有 Key (编辑态) — 此时空输入 = 保持原值, 不再报错 (P1-9)
     static func configErrors(name: String, key: String, url: String,
-                             authStyle: String, builtin: Bool) -> [String: String] {
+                             authStyle: String, builtin: Bool,
+                             hasExistingKey: Bool = false) -> [String: String] {
         var e: [String: String] = [:]
         if name.trimmingCharacters(in: .whitespaces).isEmpty { e["name"] = "账号名称不能为空" }
         guard authStyle == "apikey" else { return e }
-        if key.trimmingCharacters(in: .whitespaces).isEmpty { e["key"] = "API Key 不能为空" }
+        if key.trimmingCharacters(in: .whitespaces).isEmpty && !hasExistingKey {
+            e["key"] = "API Key 不能为空"
+        }
         if !builtin {
             let u = url.trimmingCharacters(in: .whitespaces)
             if u.isEmpty {
@@ -42,6 +49,17 @@ enum SettingsValidation {
             }
         }
         return e
+    }
+
+    /// P1-9 落盘 Key 处理 (纯函数, 可测):
+    /// clear → 清空; 空 + 已有盘上值 → 不动 (隐式 keep); 其余 → 写入草稿值
+    static func resolveKey(draftKey: String, existingKey: String, intent: KeyIntent) -> String? {
+        switch intent {
+        case .clear: return ""
+        case .replace:
+            let k = draftKey.trimmingCharacters(in: .whitespaces)
+            return (k.isEmpty && !existingKey.isEmpty) ? nil : k
+        }
     }
 
     /// 定时校验: 待添加输入 + 已存在时间点 + 开启时至少一个
@@ -83,6 +101,8 @@ struct DraftValues: Equatable {
     var autoQuery = true
     var autoTrigger = false
     var times: [String] = []
+    /// P1-9 显式清除 Key 意图 (确认后置位); 空输入 = 保持原值, 不置位
+    var clearKeyIntent = false
 }
 
 struct Draft: Equatable {
@@ -97,6 +117,16 @@ struct Draft: Equatable {
     var timeInput = ""
 
     var dirty: Bool { values != base }
+    /// P1-9: 编辑态盘上已有 Key (空输入保存 = 保持原值的判据)
+    var hasExistingKey: Bool = false
+
+    init(slug: String?, template: String?, isNew: Bool, values: DraftValues, base: DraftValues) {
+        self.slug = slug
+        self.template = template
+        self.isNew = isNew
+        self.values = values
+        self.base = base
+    }
 }
 
 // MARK: - 账号模型
@@ -365,9 +395,10 @@ final class SettingsModel: ObservableObject {
         guard let row = current else { return }
         let p = row.plugin
         let cfg = readConfig(p)
+        let existingKey = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
         let v = DraftValues(name: p.manifest.fullName,
                             url: p.manifest.queryUrl ?? cfg.queryUrl,
-                            key: cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey,
+                            key: existingKey.isEmpty ? "" : existingKey,
                             model: cfg.testModel.isEmpty ? p.manifest.refreshModel : cfg.testModel,
                             prompt: cfg.testPrompt,
                             proto: cfg.refreshProtocol,
@@ -376,6 +407,7 @@ final class SettingsModel: ObservableObject {
                                 && p.manifest.refreshUrl != nil,
                             times: cfg.scheduleTimes)
         draft = Draft(slug: p.slug, template: p.manifest.template, isNew: false, values: v, base: v)
+        draft?.hasExistingKey = !existingKey.isEmpty
         errors = [:]; topError = ""
     }
 
@@ -446,7 +478,8 @@ final class SettingsModel: ObservableObject {
         guard let d = draft else { return }
         var errs = SettingsValidation.configErrors(
             name: d.values.name, key: d.values.key, url: d.values.url,
-            authStyle: draftAuthStyle(), builtin: draftBuiltin())
+            authStyle: draftAuthStyle(), builtin: draftBuiltin(),
+            hasExistingKey: d.isNew ? false : d.hasExistingKey)
         let triggerErrs = SettingsValidation.triggerErrors(
             times: d.values.times, timeInput: d.timeInput,
             triggerEnabled: d.values.autoTrigger, canCall: draftCanCall())
@@ -561,8 +594,14 @@ final class SettingsModel: ObservableObject {
               let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return d.slug ?? "" }
         let name = values.name.trimmingCharacters(in: .whitespaces)
         var cfg = readConfig(p)
-        cfg.queryKey = values.key
-        cfg.refreshKey = values.key
+        // P1-9: Key 三态落盘 — clear→清空, 空+已有→保持原值 (nil 不动), 有值→替换
+        let existingKey = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
+        let intent: SettingsValidation.KeyIntent = values.clearKeyIntent ? .clear : .replace
+        if let resolved = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingKey,
+                                                        intent: intent) {
+            cfg.queryKey = resolved
+            cfg.refreshKey = resolved
+        }
         cfg.queryUrl = values.url
         cfg.testModel = values.model
         cfg.testPrompt = values.prompt

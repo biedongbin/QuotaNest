@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - 草稿表单 (配置 / 自动触发 共用, 单页三个分区)
 
@@ -17,6 +18,29 @@ struct DraftFormView: View {
     private var isAPIKey: Bool { model.draftAuthStyle() == "apikey" }
     private var builtin: Bool { model.draftBuiltin() }
     private var canCall: Bool { model.draftCanCall() }
+    private var hasExistingKey: Bool { !isNew && draft.hasExistingKey }
+    private var clearPending: Bool { draft.values.clearKeyIntent }
+
+    /// P1-9: 清除 Key 独立意图 — 确认弹窗后置位; 再点撤销
+    private func toggleClearKey() {
+        guard var d = model.draft else { return }
+        if d.values.clearKeyIntent {
+            d.values.clearKeyIntent = false
+            model.draft = d
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "清除该账号的 API Key？"
+            alert.informativeText = "保存后凭证将被清空，额度查询与测试调用都会失效，需重新填入。"
+            alert.addButton(withTitle: "清除")
+            alert.addButton(withTitle: "取消")
+            alert.alertStyle = .warning
+            if alert.runModal() == .alertFirstButtonReturn {
+                d.values.clearKeyIntent = true
+                d.values.key = ""
+                model.draft = d
+            }
+        }
+    }
 
     /// 内置模板的 url 字段装的是额度查询接口 (脚本型取自 auth-template 的 apiUrl), 通用模板才是服务根地址
     private var urlFieldLabel: String {
@@ -128,22 +152,30 @@ struct DraftFormView: View {
                 }
 
                 if isAPIKey {
-                    field("API Key", required: true, error: model.errors["key"]) {
+                    field("API Key", required: !hasExistingKey, error: model.errors["key"]) {
                         HStack(spacing: 8) {
                             Group {
                                 if showKey {
-                                    TextField("粘贴 API Key", text: bind(\.key))
+                                    TextField(hasExistingKey ? "保持原值" : "粘贴 API Key", text: bind(\.key))
                                 } else {
-                                    SecureField("粘贴 API Key", text: bind(\.key))
+                                    SecureField(hasExistingKey ? "保持原值" : "粘贴 API Key", text: bind(\.key))
                                 }
                             }
                             .textFieldStyle(.plain)
                             .font(Typo.mono)
                             .fieldBox(invalid: model.errors["key"] != nil)
                             Button(showKey ? "隐藏" : "显示") { showKey.toggle() }.barButton()
+                            // P1-9: 清除 Key 是独立显式意图 (确认后置位, 保存时落盘清空)
+                            if hasExistingKey {
+                                Button(clearPending ? "撤销清除" : "清除 Key") { toggleClearKey() }
+                                    .barButton(clearPending ? .primary : .plain)
+                            }
                         }
-                        Text("保存后写入 ~/.claude/hud 下的凭证文件（600 权限）。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
+                        Text(clearPending
+                             ? "已标记清除：保存后该账号凭证将被清空。"
+                             : (hasExistingKey ? "留空保存即保持原 Key；清除需点「清除 Key」确认。"
+                                               : "保存后写入 ~/.claude/hud 下的凭证文件（600 权限）。"))
+                            .font(Typo.small).foregroundStyle(clearPending ? Palette.danger : Palette.muted)
                     }
                 } else {
                     field("凭证来源", required: false, error: nil) {
