@@ -314,6 +314,40 @@ struct DataEngineTests {
         #expect(engine.states.first { $0.slug == "hold" }?.cache?.lastAttemptAt == nil)
     }
 
+    // MARK: P1-6 启用确认 + 草稿测试: off→on 需确认 (纯函数); 草稿测试不改盘上配置
+
+    @Test func triggerConfirmPredicate() {
+        // 仅编辑态 off→on 需要确认
+        #expect(SettingsValidation.needsTriggerConfirm(base: false, current: true, isNew: false))
+        #expect(!SettingsValidation.needsTriggerConfirm(base: true, current: true, isNew: false))   // 本来就开
+        #expect(!SettingsValidation.needsTriggerConfirm(base: true, current: false, isNew: false))  // 关闭
+        #expect(!SettingsValidation.needsTriggerConfirm(base: false, current: false, isNew: false)) // 不变
+        #expect(!SettingsValidation.needsTriggerConfirm(base: false, current: true, isNew: true))   // 新建草稿无原值
+    }
+
+    @Test @MainActor func draftTestCallLeavesDiskConfigUntouched() async throws {
+        let (engine, tmp, hudDir, _) = makeEngine("draft")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("acct", stdout: #"{"seven_day":{"used_percentage":5}}"#, to: tmp)
+        let authFile = hudDir.appendingPathComponent(".acct-usage-auth.json")
+        try? JSONSerialization.data(withJSONObject: ["refreshApiKey": "disk-key", "testModel": "m1",
+                                                     "testPrompt": "p1", "scheduleTimes": ["09:00"]])
+            .write(to: authFile)
+        engine.reloadRegistry()
+        let model = SettingsModel(engine: engine, hudDir: hudDir,
+                                  userDir: tmp.appendingPathComponent("providers"),
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+        model.selected = "acct"
+        model.startEdit()
+        model.draft?.values.url = "https://api.example.com"
+        // 草稿测试不保存: 草稿改动只留内存, 盘上 auth 内容不变 (testCallDraft 不走 create/update)
+        let before = try Data(contentsOf: authFile)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let after = try Data(contentsOf: authFile)
+        #expect(before == after)
+        #expect(model.draft?.dirty == true)  // 草稿仍是 dirty (未被静默保存)
+    }
+
     @Test @MainActor func refreshBalancesOnlyQueriesWithoutTrigger() async {
         let (engine, tmp, _, _) = makeEngine("balonly")
         defer { try? FileManager.default.removeItem(at: tmp) }

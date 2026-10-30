@@ -229,15 +229,23 @@ struct DraftFormView: View {
                     Text(e).font(Typo.small).foregroundStyle(Palette.danger)
                 }
 
-                Button("保存并发送一次测试调用") {
-                    guard let slug = model.draft?.slug else {
-                        model.flash("请先保存草稿，再发送测试调用", error: true); return
+                HStack(spacing: 8) {
+                    Button("保存并发送一次测试调用") {
+                        guard let slug = model.draft?.slug else {
+                            model.flash("请先保存草稿，再发送测试调用", error: true); return
+                        }
+                        model.testCall(slug)
                     }
-                    model.testCall(slug)
+                        .barButton()
+                        .disabled(draft.slug == nil)
+                        .help("草稿未保存前无法调用；先保存再测试")
+                    // P1-6: 显式用草稿当前配置发测试调用, 不落盘 (盘上配置不变)
+                    Button("用当前草稿发送测试调用") {
+                        model.testCallDraft(values: draft.values)
+                    }
+                        .barButton()
+                        .help("使用草稿配置（未保存，盘上账号配置不受影响）发送一次测试调用")
                 }
-                    .barButton()
-                    .disabled(draft.slug == nil)
-                    .help("草稿未保存前无法调用；先保存再测试")
             }
         }
     }

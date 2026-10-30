@@ -62,6 +62,12 @@ enum SettingsValidation {
         }
         return e
     }
+
+    /// P1-6 开关确认判定 (纯函数): off→on 且确认未给 → 需要弹消费确认
+    /// (on→on / off→off / on→off / 新建草稿直接 on 不算 — 新建时 pickTemplate 已默认 off)
+    static func needsTriggerConfirm(base: Bool, current: Bool, isNew: Bool) -> Bool {
+        !isNew && !base && current
+    }
 }
 
 // MARK: - 草稿
@@ -458,6 +464,20 @@ final class SettingsModel: ObservableObject {
             values.times.append(pending)
             values.times.sort()
         }
+        // P1-6: autoTrigger off→on 保存前需消费确认; 拒绝则保持 off (该开关不保存, 其余照常)
+        if SettingsValidation.needsTriggerConfirm(base: d.base.autoTrigger, current: values.autoTrigger,
+                                                  isNew: d.isNew) {
+            let alert = NSAlert()
+            alert.messageText = "开启模型定时调用？"
+            let name = values.name.trimmingCharacters(in: .whitespaces)
+            alert.informativeText = "开启后 \(name) 将在设定时间点自动发送一次模型调用以刷新额度窗口，每次都会消耗该账号额度。确定开启？"
+            alert.addButton(withTitle: "开启")
+            alert.addButton(withTitle: "保持关闭")
+            alert.alertStyle = .warning
+            if alert.runModal() != .alertFirstButtonReturn {
+                values.autoTrigger = false
+            }
+        }
         do {
             let slug = d.isNew ? try create(values: values, draft: d)
                                : try update(values: values, draft: d)
@@ -644,6 +664,53 @@ final class SettingsModel: ObservableObject {
             let ok = err?.hasPrefix("✓") == true
             lastRun[slug] = (ok, ms, Date())
             flash(ok ? "测试调用成功（\(ms) ms）" : "测试调用失败：\(err ?? "")", error: !ok)
+        }
+    }
+
+    /// P1-6 草稿测试调用: 用草稿当前配置显式发送, 不落盘 (盘上配置不变)
+    func testCallDraft(values: DraftValues) {
+        var cfg = ProviderConfig()
+        cfg.refreshProtocol = values.proto
+        // 目标端点: 模板实例用 manifest.refreshUrl (锁定); 通用草稿由服务地址按协议推导
+        if let r = draftManifest()?.refreshUrl {
+            cfg.refreshUrl = r
+        } else if !values.url.trimmingCharacters(in: .whitespaces).isEmpty {
+            cfg.refreshUrl = ProviderImporter.triggerURLForTest(
+                values.url.trimmingCharacters(in: .whitespaces), values.proto)
+        }
+        cfg.refreshHeader = values.proto == "anthropic"
+            ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
+            : "Authorization: Bearer <key>"
+        cfg.testModel = values.model
+        cfg.testPrompt = values.prompt
+        // 凭证: 优先草稿输入框 (空 = 已有账号沿用盘上 Key)
+        let draftKey = values.key.trimmingCharacters(in: .whitespaces)
+        if !draftKey.isEmpty {
+            cfg.refreshKey = draftKey
+        } else if let d = draft, let slug = d.slug,
+                  let p = engine.allPlugins.first(where: { $0.slug == slug }) {
+            let disk = readConfig(p)
+            cfg.refreshKey = disk.refreshKey.isEmpty ? disk.queryKey : disk.refreshKey
+        }
+        let label = draftManifest()?.fullName ?? "草稿配置"
+        let alert = NSAlert()
+        alert.messageText = "用当前草稿发送测试调用？"
+        alert.informativeText = "使用草稿配置（未保存，盘上账号配置不受影响），将消耗 \(label) 的额度，使用 \(values.proto) 协议。"
+        alert.addButton(withTitle: "发送测试")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .informational
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let slug = draft?.slug ?? "draft"
+        guard !running.contains(slug) else { flash("已有调用进行中，请稍候", error: true); return }
+        running.insert(slug)
+        flash("草稿测试调用已发送…", error: false)
+        let started = Date()
+        Task {
+            let err = await RefreshTrigger.testRefresh(config: cfg)
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            running.remove(slug)
+            let ok = err?.hasPrefix("✓") == true
+            flash(ok ? "草稿测试调用成功（\(ms) ms）" : "草稿测试调用失败：\(err ?? "")", error: !ok)
         }
     }
 
