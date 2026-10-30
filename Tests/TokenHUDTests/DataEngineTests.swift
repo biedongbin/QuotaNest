@@ -289,7 +289,30 @@ struct DataEngineTests {
 
     // MARK: 引擎双维度独立
 
-    // MARK: P0-5 快捷刷新只查余额 (不发模型调用)
+    // MARK: P1-1 保存不发请求: save() 后无新尝试 (无 cache 落盘, 无 lastAttemptAt)
+
+    @Test @MainActor func saveDoesNotTriggerQuery() async throws {
+        let (engine, tmp, hudDir, _) = makeEngine("saveq")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("hold", stdout: #"{"seven_day":{"used_percentage":5}}"#, to: tmp)
+        // auth 文件须存在 (update() 落盘前置)
+        try? Data("{}".utf8).write(to: hudDir.appendingPathComponent(".hold-usage-auth.json"))
+        engine.reloadRegistry()
+        let model = SettingsModel(engine: engine, hudDir: hudDir,
+                                  userDir: tmp.appendingPathComponent("providers"),
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+        model.selected = "hold"
+        model.startEdit()
+        model.draft?.values.key = "k"
+        model.draft?.values.url = "https://api.example.com"
+        model.save()
+        #expect(model.topError.isEmpty)
+        // 给可能的隐式 forceRefresh 留时间 (修复前此处会写 cache 文件)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(!FileManager.default.fileExists(atPath:
+            hudDir.appendingPathComponent(".hold-usage-cache.json").path))
+        #expect(engine.states.first { $0.slug == "hold" }?.cache?.lastAttemptAt == nil)
+    }
 
     @Test @MainActor func refreshBalancesOnlyQueriesWithoutTrigger() async {
         let (engine, tmp, _, _) = makeEngine("balonly")

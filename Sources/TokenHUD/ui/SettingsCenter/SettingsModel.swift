@@ -467,7 +467,7 @@ final class SettingsModel: ObservableObject {
             selected = slug
             tab = .quota
             flash("已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
-            Task { await engine.forceRefresh(slug: slug) }
+            // P1-1: 保存不发请求 (FR-05.2) — 不再触发 forceRefresh; 新快照等 interval 到期由 10s timer 按 isAttemptFresh 判定
         } catch {
             topError = "保存失败：\(error.localizedDescription)"
             flash("保存失败：\(error.localizedDescription)", error: true)
