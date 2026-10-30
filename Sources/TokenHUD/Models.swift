@@ -142,6 +142,66 @@ struct Bucket: Codable {
     }
 }
 
+/// P1-11 动态窗口: provider 上报的真实计费窗口 (全字段可选, 解码容错)
+/// 旧 fiveHour/sevenDay/monthly 保留做投影, HUD/statusline 读端不动
+struct WindowBucket: Codable, Equatable {
+    var label: String?             // 中文窗口名 ("5小时"/"本周"/"本月"/"滚动"/…)
+    var usedPercentage: Double?
+    var remainingPercentage: Double?
+    var amount: Double?            // 已用量 (按 unit)
+    var limit: Double?             // 总额度 (按 unit)
+    var unit: String?              // "USD" / "requests" / …
+    var period: String?            // 周期描述
+    var resetsAt: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case usedPercentage = "used_percentage"
+        case remainingPercentage = "remaining_percentage"
+        case amount, limit, unit, period
+        case resetsAt = "resets_at"
+    }
+
+    init(label: String? = nil, usedPercentage: Double? = nil, remainingPercentage: Double? = nil,
+         amount: Double? = nil, limit: Double? = nil, unit: String? = nil,
+         period: String? = nil, resetsAt: Int? = nil) {
+        self.label = label
+        self.usedPercentage = usedPercentage
+        self.remainingPercentage = remainingPercentage
+        self.amount = amount
+        self.limit = limit
+        self.unit = unit
+        self.period = period
+        self.resetsAt = resetsAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try? c.decodeIfPresent(String.self, forKey: .label)
+        usedPercentage = WindowBucket.flexibleDouble(c, .usedPercentage)
+        remainingPercentage = WindowBucket.flexibleDouble(c, .remainingPercentage)
+        amount = WindowBucket.flexibleDouble(c, .amount)
+        limit = WindowBucket.flexibleDouble(c, .limit)
+        unit = try? c.decodeIfPresent(String.self, forKey: .unit)
+        period = try? c.decodeIfPresent(String.self, forKey: .period)
+        if let n = try? c.decodeIfPresent(Int.self, forKey: .resetsAt) {
+            resetsAt = n
+        } else if let s = (try? c.decodeIfPresent(String.self, forKey: .resetsAt)) ?? nil {
+            resetsAt = ISO8601DateFormatter().date(from: s).map { Int($0.timeIntervalSince1970) }
+        } else {
+            resetsAt = nil
+        }
+    }
+
+    /// 数值字段容错: number / 整数串 ("12") / null 均可
+    private static func flexibleDouble(_ c: KeyedDecodingContainer<CodingKeys>,
+                                       _ key: CodingKeys) -> Double? {
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) { return Double(s) }
+        return nil
+    }
+}
+
 struct UsageCache: Codable {
     /// 最近成功快照时间 (= snapshotCapturedAt/lastSuccessAt): 仅业务成功更新, 失败不推进 (FR-03.8)
     var generatedAt: Double?
@@ -152,13 +212,28 @@ struct UsageCache: Codable {
     var stale: Bool?
     /// 最近尝试时间: 每次尝试都更新 (失败也更新); 引擎 due 判定/statusline spawn 抑制用它, 旧缓存缺省回退 generatedAt
     var lastAttemptAt: Double?
+    /// P1-11 动态窗口列表: provider 按各自真实窗口上报 (可缺); 旧三桶保留做投影, 旧读端不破坏
+    var windows: [WindowBucket]?
 
     enum CodingKeys: String, CodingKey {
-        case generatedAt, lastAttemptAt
+        case generatedAt, lastAttemptAt, windows
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case monthly
         case error, stale
+    }
+
+    init(generatedAt: Double? = nil, fiveHour: Bucket? = nil, sevenDay: Bucket? = nil,
+         monthly: Bucket? = nil, error: String? = nil, stale: Bool? = nil,
+         lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil) {
+        self.generatedAt = generatedAt
+        self.fiveHour = fiveHour
+        self.sevenDay = sevenDay
+        self.monthly = monthly
+        self.error = error
+        self.stale = stale
+        self.lastAttemptAt = lastAttemptAt
+        self.windows = windows
     }
 
     /// 解析 fetch.sh stdout（可缺 generatedAt/ttlMs 等字段），统一盖上框架字段
@@ -170,7 +245,8 @@ struct UsageCache: Codable {
             raw.generatedAt = now
             raw.stale = false
         }
-        if raw.error == nil, raw.fiveHour == nil, raw.sevenDay == nil, raw.monthly == nil { return nil }
+        let hasLegacy = raw.fiveHour != nil || raw.sevenDay != nil || raw.monthly != nil
+        if raw.error == nil, !hasLegacy, (raw.windows ?? []).isEmpty { return nil }
         return raw
     }
 }

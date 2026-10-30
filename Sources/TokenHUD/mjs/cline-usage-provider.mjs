@@ -21,6 +21,8 @@ const CURL = process.env.TOKENHUD_CURL || '/usr/bin/curl';
 
 // 接口 type → 缓存桶名; 不在表内的 type 忽略
 const TYPE_MAP = { five_hour: 'five_hour', weekly: 'seven_day', monthly: 'monthly' };
+// P1-11 动态窗口: 接口 type → 中文窗口 label
+const TYPE_LABEL = { five_hour: '5小时', weekly: '本周', monthly: '本月' };
 
 const readJson = (p) => {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
@@ -98,22 +100,23 @@ function main() {
   if (!Array.isArray(limits)) { writeFailure('parse', '响应无 data.limits'); return; }
 
   const buckets = { five_hour: null, seven_day: null, monthly: null };
+  const windows = [];
   for (const item of limits) {
     const slot = TYPE_MAP[item?.type];
     if (!slot) continue;
     const pct = item.percentUsed;
     if (typeof pct !== 'number' || !Number.isFinite(pct)) continue;
-    buckets[slot] = {
-      used_percentage: Math.round(Math.min(100, Math.max(0, pct)) * 10) / 10,
-      resets_at: toEpochSec(item.resetsAt),
-    };
+    const clamped = Math.round(Math.min(100, Math.max(0, pct)) * 10) / 10;
+    const resetsAt = toEpochSec(item.resetsAt);
+    buckets[slot] = { used_percentage: clamped, resets_at: resetsAt };
+    windows.push({ label: TYPE_LABEL[item.type], used_percentage: clamped, resets_at: resetsAt });
   }
   if (!buckets.five_hour && !buckets.seven_day && !buckets.monthly) {
     writeFailure('parse', 'usage-limits 无已知额度桶');
     return;
   }
 
-  writeCache({ ...buckets, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
+  writeCache({ ...buckets, windows, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
   if (verbose) console.error('[cline-provider] ok');
 }
 

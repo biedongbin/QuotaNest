@@ -101,17 +101,42 @@ struct QuotaTabView: View {
         return c.error != nil || c.stale == true
     }
 
+    /// P1-11 UI 数据源切换 (纯函数): windows 非空 → 窗口行; 空 → 旧三卡回落
+    /// 行 = (label, usedPct, amount, limit, unit, period, resetsAt)
+    static func rows(from cache: UsageCache?) -> [(label: String, pct: Double?, amount: Double?,
+                                                   limit: Double?, unit: String?,
+                                                   period: String?, resetsAt: Int?)] {
+        guard let cache else { return [] }
+        if let wins = cache.windows, !wins.isEmpty {
+            return wins.compactMap { w in
+                // 无任何量化信息的窗口行不渲染 (label-only 视为噪声)
+                guard w.usedPercentage != nil || w.amount != nil || w.limit != nil else { return nil }
+                return (w.label ?? "窗口", w.usedPercentage, w.amount, w.limit, w.unit, w.period, w.resetsAt)
+            }
+        }
+        // 旧三桶投影 (回落)
+        let legacy: [(String, Bucket?)] = [("5 小时", cache.fiveHour), ("本周", cache.sevenDay), ("本月", cache.monthly)]
+        return legacy.map { (label, b) in (label, b?.usedPercentage, nil, nil, nil, nil, b?.resetsAt) }
+    }
+
+    private var quotaRows: [(label: String, pct: Double?, amount: Double?,
+                             limit: Double?, unit: String?, period: String?, resetsAt: Int?)] {
+        Self.rows(from: row.state?.cache)
+    }
+
     private var quotaGrid: some View {
         HStack(alignment: .top, spacing: 8) {
-            quotaCard("5 小时", row.state?.cache?.fiveHour)
-            quotaCard("本周", row.state?.cache?.sevenDay)
-            quotaCard("本月", row.state?.cache?.monthly)
+            ForEach(quotaRows.indices, id: \.self) { i in
+                let r = quotaRows[i]
+                quotaCard(r.label, pct: r.pct, amount: r.amount, limit: r.limit,
+                          unit: r.unit, period: r.period, resetsAt: r.resetsAt)
+            }
         }
     }
 
-    private func quotaCard(_ label: String, _ bucket: Bucket?) -> some View {
+    private func quotaCard(_ label: String, pct: Double?, amount: Double?, limit: Double?,
+                           unit: String?, period: String?, resetsAt: Int?) -> some View {
         let old = isOldValue
-        let pct = bucket?.usedPercentage
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(label).font(Typo.small).foregroundStyle(old ? Palette.muted.opacity(0.9) : Palette.muted)
@@ -137,6 +162,12 @@ struct QuotaTabView: View {
                     }
                 }
                 .padding(.top, 6)
+                // amount/limit 有则展示 "$x/$y" (unit USD) 或 "x/y <unit>"
+                if let a = amount, let l = limit {
+                    Text(Self.unitLabel(a, l, unit: unit))
+                        .font(Typo.small).foregroundStyle(old ? Palette.muted.opacity(0.75) : Palette.muted)
+                        .padding(.top, 4)
+                }
                 if old {
                     // 错误态不画进度条: 满/空都会被读成"当前用量"
                     Text(oldValueNote)
@@ -146,7 +177,7 @@ struct QuotaTabView: View {
                 } else {
                     ProgressLine(pct: p)
                         .padding(.top, 10)
-                    Text(resetLine(bucket))
+                    Text(resetLine(resetsAt, period: period))
                         .font(Typo.small).foregroundStyle(Palette.muted)
                         .padding(.top, 6)
                 }
@@ -169,6 +200,24 @@ struct QuotaTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.border, lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label)额度" + (old ? "，旧值，本次查询未成功" : ""))
+    }
+
+    /// amount/limit 行文案: USD → "$x / $y", 其他 → "x / y <unit>"
+    static func unitLabel(_ amount: Double, _ limit: Double, unit: String?) -> String {
+        func f(_ v: Double) -> String {
+            String(format: v.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", v)
+        }
+        if unit?.uppercased() == "USD" { return "$\(f(amount)) / $\(f(limit))" }
+        let suffix = unit.map { " \($0)" } ?? ""
+        return "\(f(amount)) / \(f(limit))\(suffix)"
+    }
+
+    private func resetLine(_ resetsAt: Int?, period: String?) -> String {
+        var parts: [String] = []
+        if let p = period { parts.append(p) }
+        if let r = formatResetAt(resetsAt) { parts.append(r) }
+        if parts.isEmpty { return "重置时间未知" }
+        return parts.joined(separator: " · ")
     }
 
     /// 旧值卡说明: 有记录就报上次成功时间, 没有就如实说不知道

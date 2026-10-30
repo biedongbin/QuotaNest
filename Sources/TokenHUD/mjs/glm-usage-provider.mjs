@@ -185,11 +185,30 @@ async function main() {
   const fiveHour = extractBucket(findLimit(limits, auth.five_hour), auth.five_hour);
   const sevenDay = extractBucket(findLimit(limits, auth.seven_day), auth.seven_day);
 
+  // P1-11 动态窗口: 旧桶投影为窗口数组 (label 中文; amount/limit 有则带)
+  const win = (label, b, key) => {
+    if (!b) return null;
+    const src = findLimit(limits, key) || {};
+    const used = getByPath(src, key?.usedField);
+    const total = getByPath(src, key?.totalField);
+    return {
+      label, used_percentage: b.used_percentage, resets_at: b.resets_at,
+      amount: typeof used === 'number' ? used : undefined,
+      limit: typeof total === 'number' ? total : undefined,
+      unit: (typeof used === 'number' && typeof total === 'number') ? (key?.unit || undefined) : undefined,
+    };
+  };
+  const windows = [
+    win('5小时', fiveHour, auth.five_hour),
+    win('本周', sevenDay, auth.seven_day),
+  ].filter(Boolean);
+
   writeCache({
     generatedAt: Date.now(),
     ttlMs: TTL_MS,
     five_hour: fiveHour,
     seven_day: sevenDay,
+    windows,
     error: null,
     stale: false,
   });

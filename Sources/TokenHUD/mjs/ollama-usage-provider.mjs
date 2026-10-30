@@ -36,8 +36,11 @@ const writeFailure = (kind, detail) => {
   if (verbose) console.error(`[ollama-provider] ${kind}: ${detail}`);
 };
 
+// 测试注入口: 正常路径恒为 /usr/bin/curl
+const CURL = process.env.TOKENHUD_CURL || '/usr/bin/curl';
+
 function curlJson(url, key) {
-  const r = spawnSync('/usr/bin/curl', [
+  const r = spawnSync(CURL, [
     '-sS', '--connect-timeout', '8', '--max-time', '12',
     '-H', `Authorization: Bearer ${key}`, '-H', 'Accept: application/json',
     '-w', '\n%{http_code}',
@@ -96,10 +99,17 @@ async function main() {
   } : null;
   const legacy = pct(included.session) || pct(included.weekly);
   if (legacy) {
+    const five = pct(included.session), seven = pct(included.weekly);
+    // P1-11 动态窗口: 5小时/本周 (legacy 形态)
+    const windows = [
+      five && { label: '5小时', ...five },
+      seven && { label: '本周', ...seven },
+    ].filter(Boolean);
     writeCache({
-      five_hour: pct(included.session),
-      seven_day: pct(included.weekly),
+      five_hour: five,
+      seven_day: seven,
       monthly: null,
+      windows,
       generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
     });
     if (verbose) console.error('[ollama-provider] ok (legacy)');
@@ -111,10 +121,18 @@ async function main() {
       ? Math.round((1 - included.balance_usd / included.allowance_usd) * 1000) / 10
       : 0;
     const resets = included.period?.until ? Math.floor(Date.parse(included.period.until) / 1000) : null;
+    // P1-11 动态窗口: 本月美元额度 (amount/limit/unit/period 按形态上报)
+    const windows = [{
+      label: '本月', used_percentage: usedPct, resets_at: resets || null,
+      amount: Math.round((included.allowance_usd - included.balance_usd) * 100) / 100,
+      limit: included.allowance_usd, unit: 'USD',
+      period: included.period?.type ? String(included.period.type) : undefined,
+    }];
     writeCache({
       five_hour: null,
       seven_day: null,
       monthly: { used_percentage: usedPct, resets_at: resets || null },
+      windows,
       generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
     });
     if (verbose) console.error(`[ollama-provider] ok (credit: $${included.balance_usd}/$${included.allowance_usd})`);

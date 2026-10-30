@@ -72,10 +72,21 @@ function main() {
     used_percentage: typeof b.percent === 'number' ? b.percent : null,
     resets_at: b.resetsAt ? Math.floor(Date.parse(b.resetsAt) / 1000) : null,
   };
+  // P1-11 动态窗口: rolling/weekly/monthly 原生窗口 (amount/limit 有则带 USD)
+  const win = (label, b) => {
+    if (!b) return null;
+    const w = { label, ...bucket(b) };
+    if (typeof b.used === 'number') w.amount = b.used;
+    if (typeof b.total === 'number') w.limit = b.total;
+    if (w.amount != null && w.limit != null) w.unit = 'USD';
+    return w;
+  };
+  const windows = [win('滚动', u.rolling), win('本周', u.weekly), win('本月', u.monthly)].filter(Boolean);
   writeCache({
     five_hour: bucket(u.rolling),
     seven_day: bucket(u.weekly),
     monthly: bucket(u.monthly),
+    windows,
     generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
   });
   if (verbose) console.error('[oc-go-provider] ok');

@@ -153,11 +153,17 @@ function main() {
     writeFailure('parse', '无有效窗口字段: ' + body.slice(0, 80), cred.accountId);
     return;
   }
+  // P1-11 动态窗口: 旧桶投影 (5小时/本周)
+  const windows = [
+    fiveHour && { label: '5小时', ...fiveHour },
+    sevenDay && { label: '本周', ...sevenDay },
+  ].filter(Boolean);
   writeCache({
     account_id: cred.accountId,
     five_hour: fiveHour,
     seven_day: sevenDay,
     monthly: null,
+    windows,
     generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
   });
   if (verbose) console.error('[gpt-provider] ok');

@@ -554,6 +554,82 @@ struct DataEngineTests {
         try? "#!/bin/zsh\necho '\(stdout)'".write(to: tmp.appendingPathComponent("providers/\(slug)/fetch.sh"),
                                                   atomically: true, encoding: .utf8)
     }
+
+    // MARK: P1-11 动态窗口列表: windows 解码容错 + UI 数据源切换 (纯函数 rows(from:))
+
+    @Test func windowBucketDecodesWithTolerance() throws {
+        // snake_case + 数值/串容错 + ISO8601 resets_at
+        let json = #"{"label":"本月","used_percentage":"45.5","amount":9.1,"limit":"20","unit":"USD","period":"monthly","resets_at":"2026-11-01T00:00:00Z"}"#
+        let w = try JSONDecoder().decode(WindowBucket.self, from: Data(json.utf8))
+        #expect(w.label == "本月")
+        #expect(w.usedPercentage == 45.5)             // 数值串 "45.5" → Double
+        #expect(w.amount == 9.1)
+        #expect(w.limit == 20)                        // 整数串 "20" → Double
+        #expect(w.unit == "USD")
+        #expect(w.period == "monthly")
+        #expect(w.resetsAt == 1_793_491_200)          // ISO8601 → epoch 秒
+        // epoch 秒直存 + 全字段可缺
+        let min = try JSONDecoder().decode(WindowBucket.self,
+                                           from: Data(#"{"used_percentage":10,"resets_at":123}"#.utf8))
+        #expect(min.usedPercentage == 10 && min.resetsAt == 123)
+        #expect(min.label == nil && min.unit == nil && min.period == nil)
+    }
+
+    @Test func usageCacheCarriesWindowsAlongsideLegacy() throws {
+        // windows 与旧三桶共存解码; 旧缓存 (无 windows) 照常
+        let json = #"{"generatedAt":1,"seven_day":{"used_percentage":5},"windows":[{"label":"本周","used_percentage":5}]}"#
+        let c = try JSONDecoder().decode(UsageCache.self, from: Data(json.utf8))
+        #expect(c.windows?.count == 1)
+        #expect(c.windows?.first?.label == "本周")
+        #expect(c.sevenDay?.usedPercentage == 5)
+        let legacy = try JSONDecoder().decode(UsageCache.self,
+                                              from: Data(#"{"generatedAt":1,"seven_day":{"used_percentage":5}}"#.utf8))
+        #expect(legacy.windows == nil)                // 旧读端不破坏
+        // make: 仅 windows 无旧桶也算业务成功 (不返回 nil)
+        let only = UsageCache.make(body: Data(#"{"windows":[{"label":"本月","used_percentage":30}]}"#.utf8),
+                                   now: 5)
+        #expect(only != nil && only?.windows?.count == 1)
+        // make: 无桶无 windows 无 error → nil (空回包不冒充成功)
+        #expect(UsageCache.make(body: Data("{}".utf8), now: 5) == nil)
+    }
+
+    @Test func quotaRowsSwitchesToWindowsWhenPresent() {
+        // windows 非空 → 动态行 (含 amount/limit/unit/period); windows 空 → 旧三卡回落
+        let withWindows = UsageCache(generatedAt: 1,
+                                     sevenDay: Bucket(usedPercentage: 5, resetsAt: nil),
+                                     windows: [WindowBucket(label: "5小时", usedPercentage: 12, resetsAt: 100),
+                                               WindowBucket(label: "本月", usedPercentage: 40, amount: 8,
+                                                            limit: 20, unit: "USD", period: "monthly", resetsAt: nil)])
+        let rowsW = QuotaTabView.rows(from: withWindows)
+        #expect(rowsW.count == 2)                     // 按数组渲染, 不再固定三卡
+        #expect(rowsW[0].label == "5小时" && rowsW[0].pct == 12 && rowsW[0].resetsAt == 100)
+        #expect(rowsW[1].label == "本月" && rowsW[1].amount == 8 && rowsW[1].limit == 20)
+        #expect(rowsW[1].unit == "USD" && rowsW[1].period == "monthly")
+        // 旧缓存回落: 固定三行 (5 小时/本周/本月), 无 amount
+        let legacy = UsageCache(generatedAt: 1,
+                                fiveHour: Bucket(usedPercentage: 3, resetsAt: nil),
+                                sevenDay: Bucket(usedPercentage: 5, resetsAt: nil))
+        let rowsL = QuotaTabView.rows(from: legacy)
+        #expect(rowsL.map(\.label) == ["5 小时", "本周", "本月"])
+        #expect(rowsL.allSatisfy { $0.amount == nil && $0.unit == nil })
+        #expect(rowsL[1].pct == 5)
+        // nil cache / 空数组 → 回落
+        #expect(QuotaTabView.rows(from: nil).isEmpty)
+        let empty = UsageCache(generatedAt: 1, windows: [])
+        #expect(QuotaTabView.rows(from: empty).count == 3)   // windows 空 = 回落旧三卡
+        // 量化信息全无的窗口行 (仅 label) 不渲染
+        let noisy = UsageCache(generatedAt: 1,
+                               windows: [WindowBucket(label: "噪声", usedPercentage: nil, amount: nil, limit: nil),
+                                         WindowBucket(label: "有效", usedPercentage: 1)])
+        #expect(QuotaTabView.rows(from: noisy).count == 1)
+    }
+
+    @Test func unitLabelFormats() {
+        #expect(QuotaTabView.unitLabel(9.1, 20, unit: "USD") == "$9.10 / $20")
+        #expect(QuotaTabView.unitLabel(5, 10, unit: "USD") == "$5 / $10")
+        #expect(QuotaTabView.unitLabel(3, 7, unit: "requests") == "3 / 7 requests")
+        #expect(QuotaTabView.unitLabel(3, 7, unit: nil) == "3 / 7")
+    }
 }
 
 /// 测试用并发计数器 (actor, 无数据竞争)
