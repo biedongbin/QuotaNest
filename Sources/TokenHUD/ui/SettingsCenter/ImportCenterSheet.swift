@@ -67,6 +67,8 @@ final class ImportCenterModel: ObservableObject {
     @Published var picked: Set<UUID> = []
     @Published var importing = false
     @Published var lastMessage = ""
+    /// P1-7: 导入循环后台 Task 句柄 (可取消: 已成功项保留, 未开始项标 skipped)
+    private var importTask: Task<Void, Never>??
 
     let engine: DataEngine
     let hudDir: URL
@@ -76,6 +78,12 @@ final class ImportCenterModel: ObservableObject {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
+    }
+
+    /// P1-7: 取消进行中的导入 (已成功项保留, 未开始项标 skipped)
+    func cancelImport() {
+        guard importing, let task = importTask ?? nil, !task.isCancelled else { return }
+        task.cancel()
     }
 
     /// 切换源: 清空结果并重新扫描
@@ -239,6 +247,7 @@ final class ImportCenterModel: ObservableObject {
         }
     }
 
+    /// P1-7: 导入循环移后台 Task (不冻 UI); 中途取消 → 已成功项保留, 未开始项标 skipped
     func importSelected() {
         let chosen = rows.indices.filter { picked.contains(rows[$0].id) && !rows[$0].imported }
         guard !chosen.isEmpty else {
@@ -246,27 +255,50 @@ final class ImportCenterModel: ObservableObject {
             return
         }
         importing = true
-        var ok = 0, fail = 0
+        lastMessage = "导入中…可随时取消。"
+        importTask = Task { [weak self] in
+            await self?.runImport(indices: chosen)
+        }
+    }
+
+    private func runImport(indices chosen: [Int]) async {
+        var ok = 0, fail = 0, skipped = 0
         for i in chosen {
+            if Task.isCancelled {                                   // 取消: 未开始项标 skipped, 保留勾选
+                rows[i].failure = "已取消"
+                skipped += 1
+                continue
+            }
             let c = rows[i].candidate
-            do {
-                try ProviderImporter.apply(c, templates: engine.templates, userDir: userDir, hudDir: hudDir)
+            // 磁盘操作后台执行 (导入循环已在 Task 内; templates 主线程快照后传入)
+            let templates = engine.templates
+            let result = await Task.detached(priority: .userInitiated) { [templates, userDir, hudDir] in
+                Result { try ProviderImporter.apply(c, templates: templates,
+                                                    userDir: userDir, hudDir: hudDir) }
+            }.value
+            switch result {
+            case .success:
                 rows[i].imported = true
                 rows[i].failure = nil
                 rows[i].note = "已导入"
                 picked.remove(rows[i].id)
                 ok += 1
-            } catch {
+            case .failure(let error):
                 rows[i].failure = error.localizedDescription
                 fail += 1
             }
         }
         engine.reloadRegistry()
         importing = false
-        lastMessage = fail == 0
-            ? "导入完成：\(ok) 个账号已加入列表。"
-            : "部分失败：成功 \(ok) 个，失败 \(fail) 个。失败项已保留勾选，可重试；已成功的不再重复导入。"
-        picked = Set(rows.filter { $0.failure != nil }.map(\.id))
+        if skipped > 0 {
+            lastMessage = "已取消：成功 \(ok) 个保留，\(skipped) 个未导入（已保留勾选，可重试）。"
+            picked.formUnion(rows.filter { $0.failure == "已取消" }.map(\.id))
+        } else if fail == 0 {
+            lastMessage = "导入完成：\(ok) 个账号已加入列表。"
+        } else {
+            lastMessage = "部分失败：成功 \(ok) 个，失败 \(fail) 个。失败项已保留勾选，可重试；已成功的不再重复导入。"
+            picked = Set(rows.filter { $0.failure != nil }.map(\.id))
+        }
     }
 }
 
@@ -461,6 +493,9 @@ struct ImportCenterSheet: View {
                 .barButton(.primary)
                 .disabled(im.selectedCount == 0 || im.importing)
                 .keyboardShortcut(.defaultAction)
+            if im.importing {
+                Button("取消导入") { im.cancelImport() }.barButton()
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

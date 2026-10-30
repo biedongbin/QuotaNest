@@ -161,6 +161,68 @@ struct ImportTests {
         #expect(ProviderImporter.triggerURLForTest("https://a.example/", "openai") == "https://a.example/v1/chat/completions")
     }
 
+    // MARK: P1-7 导入事务化: 失败零残留 / 取消保留成功项
+
+    @Test func applyFailureLeavesNoResidue() throws {
+        let (userDir, hudDir) = tmpDirs()
+        defer { try? FileManager.default.removeItem(at: userDir.deletingLastPathComponent()) }
+        // 冲突注入: 目标 auth 文件已预置 (uniqueSlug 只查插件目录 → slug 相同 → 阶段二冲突)
+        try? Data("{}".utf8).write(to: hudDir.appendingPathComponent(".clash-usage-auth.json"))
+        let c = ImportCandidate(source: "t", name: "Clash", template: nil, apiKey: "k",
+                                baseURL: "https://a.example", proto: "openai", note: "")
+        #expect(throws: (any Error).self) {
+            _ = try ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
+        }
+        // 目标零污染: 无插件目录, 无 staging 残留
+        #expect(!FileManager.default.fileExists(atPath: userDir.appendingPathComponent("clash").path))
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: userDir.path)) ?? []
+        #expect(leftovers.filter { $0.hasPrefix(".tokenhud-import-") }.isEmpty,
+                "staging 目录残留: \(leftovers)")
+        // 预置 auth 未被覆盖 (事务不破坏既有文件)
+        let pre = try String(contentsOf: hudDir.appendingPathComponent(".clash-usage-auth.json"), encoding: .utf8)
+        #expect(pre == "{}")
+    }
+
+    @Test @MainActor func importCancelSkipsUnstartedItems() async throws {
+        // 取消语义: 已开始 Task 未跑即取消 → 全部标 skipped, 目标零落盘; 重试后正常导入
+        let home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("th-cancel-\(UUID().uuidString)")
+        let userDir = home.appendingPathComponent("providers", isDirectory: true)
+        let hudDir = home.appendingPathComponent("hud", isDirectory: true)
+        try? FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let suite = "th-cancel-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
+                                runner: ProviderRunner(nodePath: nil), defaults: defaults)
+        let im = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
+        let c1 = ImportCandidate(source: "t", name: "Keep Me", template: nil, apiKey: "k",
+                                 baseURL: "https://a.example", proto: "openai", note: "")
+        let c2 = ImportCandidate(source: "t", name: "Skip Me", template: nil, apiKey: "k",
+                                 baseURL: "https://b.example", proto: "openai", note: "")
+        im.rows = [ImportCenterModel.Row(candidate: c1, state: .unadapted, note: ""),
+                   ImportCenterModel.Row(candidate: c2, state: .unadapted, note: "")]
+        im.picked = Set(im.rows.map(\.id))
+        im.importSelected()
+        im.cancelImport()   // 同步取消: Task 体未跑 → 首个循环迭代即见 isCancelled
+        // 等导入 Task 结束 (全部 skipped)
+        while im.importing { try await Task.sleep(nanoseconds: 20_000_000) }
+        #expect(im.rows.allSatisfy { !$0.imported })       // 未开始项不落盘
+        #expect(!FileManager.default.fileExists(atPath:
+            userDir.appendingPathComponent("keep-me").path))
+        #expect(!FileManager.default.fileExists(atPath:
+            userDir.appendingPathComponent("skip-me").path))
+        #expect(im.lastMessage.contains("已取消"))          // 取消有可见反馈
+        // 重试 (不取消): 正常完成 — 取消不破坏后续导入
+        im.importSelected()
+        while im.importing { try await Task.sleep(nanoseconds: 20_000_000) }
+        #expect(im.rows.allSatisfy { $0.imported })
+        #expect(FileManager.default.fileExists(atPath:
+            userDir.appendingPathComponent("keep-me").path))
+    }
+
     @Test func authStyleInferredWhenManifestSilent() {
         let m = ProviderManifest(name: "X", label: "X", buckets: [:], queryAuth: "header")
         #expect(m.authStyle == "local")

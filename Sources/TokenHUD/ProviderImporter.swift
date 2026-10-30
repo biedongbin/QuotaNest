@@ -226,52 +226,88 @@ enum ProviderImporter {
 
     // MARK: - 落库
 
-    /// 导入一个候选: 模板型复用 PluginGenerator.instantiate; 通用型生成 one-api 兼容插件
+    /// P1-7 导入事务化: 全部产物 (插件目录 + auth 文件) 先写临时目录, 就绪后一次性移入目标; 任一步失败清临时 (目标零污染)
     @discardableResult
     static func apply(_ c: ImportCandidate, templates: [PluginProvider],
                       userDir: URL, hudDir: URL) throws -> String {
         let slug = uniqueSlug(PluginGenerator.slugify(c.slugHint ?? c.name), userDir: userDir)
+        // 同卷临时目录 (rename 原子): userDir 下 .tokenhud-import-<uuid>
+        let staging = userDir.appendingPathComponent(".tokenhud-import-\(UUID().uuidString)", isDirectory: true)
+        let fm = FileManager.default
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: staging) }   // 成功路径已移走, 失败/抛错即清 (幂等)
+
+        // 阶段一: 在 staging 下准备插件目录 (userDir/<slug>) 与 auth (hudDir/.<slug>-usage-auth.json)
+        let stagedProviders = staging.appendingPathComponent("providers", isDirectory: true)
+        let stagedHud = staging.appendingPathComponent("hud", isDirectory: true)
+        try fm.createDirectory(at: stagedProviders, withIntermediateDirectories: true)
+        try fm.createDirectory(at: stagedHud, withIntermediateDirectories: true)
+
+        let stagedAuth: URL
+        var stagedManifest: ProviderManifest
         if let tslug = c.template, let tmpl = templates.first(where: { $0.slug == tslug }) {
-            var manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
-                                                           into: userDir, hudDir: hudDir)
-            manifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
-            try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
-                                            script: (try? String(contentsOf: userDir
+            // instantiate 写 auth 模板到 stagedHud (manifest.authFile 经入参 hudDir 决定)
+            stagedManifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
+                                                             into: stagedProviders, hudDir: stagedHud)
+            stagedManifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
+            stagedManifest.authFile = PluginGenerator.authPath(slug: slug, hudDir: hudDir)   // manifest 指向目标
+            stagedManifest.cacheFile = PluginGenerator.cachePath(slug: slug, hudDir: hudDir)
+            try PluginGenerator.writePlugin(slug: slug, manifest: stagedManifest,
+                                            script: (try? String(contentsOf: stagedProviders
                                                 .appendingPathComponent(slug + "/fetch.sh"), encoding: .utf8)) ?? "",
-                                            into: userDir)
-            guard let af = manifest.authFile.map(PluginGenerator.expandPath) else { return slug }
-            var cfg = ProviderConfigStore.read(authFile: af, manifest: manifest)
+                                            into: stagedProviders)
+            guard stagedManifest.authFile != nil else {
+                // 模板无 authFile: 插件目录直接落位 (auth 事务不适用)
+                try fm.moveItem(at: stagedProviders.appendingPathComponent(slug),
+                                to: userDir.appendingPathComponent(slug))
+                return slug
+            }
+            stagedAuth = PluginGenerator.expandPath(
+                PluginGenerator.authPath(slug: slug, hudDir: stagedHud))   // 模板 auth 落在 staging
+            var cfg = ProviderConfigStore.read(authFile: stagedAuth, manifest: stagedManifest)
             cfg.queryKey = c.apiKey
             cfg.refreshKey = c.apiKey
-            try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
-            return slug
+            try ProviderConfigStore.write(cfg, manifest: stagedManifest, to: stagedAuth)
+        } else {
+            // 通用自定义: baseURL + key, 协议决定触发端点与 header
+            var cfg = ProviderConfig()
+            cfg.queryUrl = c.baseURL
+            cfg.queryKey = c.apiKey
+            cfg.refreshKey = c.apiKey
+            cfg.refreshProtocol = c.proto
+            cfg.refreshUrl = triggerURL(c.baseURL, proto: c.proto)
+            cfg.refreshHeader = c.proto == "anthropic"
+                ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
+                : "Authorization: Bearer <key>"
+            let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)   // 直接指向目标
+            stagedManifest = PluginGenerator.customManifest(name: c.name, config: cfg, authFile: authPath)
+            stagedManifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
+            try PluginGenerator.writePlugin(slug: slug, manifest: stagedManifest,
+                                            script: PluginGenerator.oneAPIFetchScript(slug: slug),
+                                            into: stagedProviders)
+            stagedAuth = PluginGenerator.expandPath(
+                PluginGenerator.authPath(slug: slug, hudDir: stagedHud))
+            try ProviderConfigStore.createCustom(slug: slug, to: stagedAuth)
+            try ProviderConfigStore.write(cfg, manifest: stagedManifest, to: stagedAuth)
         }
-        // 通用自定义: baseURL + key, 协议决定触发端点与 header
-        var cfg = ProviderConfig()
-        cfg.queryUrl = c.baseURL
-        cfg.queryKey = c.apiKey
-        cfg.refreshKey = c.apiKey
-        cfg.refreshProtocol = c.proto
-        cfg.refreshUrl = triggerURL(c.baseURL, proto: c.proto)
-        cfg.refreshHeader = c.proto == "anthropic"
-            ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
-            : "Authorization: Bearer <key>"
-        let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
-        var manifest = PluginGenerator.customManifest(name: c.name, config: cfg, authFile: authPath)
-        manifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
-        try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
-                                        script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
-        let af = PluginGenerator.expandPath(authPath)
-        try FileManager.default.createDirectory(at: af.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: af.path) {
-            try ProviderConfigStore.createCustom(slug: slug, to: af)
+
+        // 阶段二: 全部就绪, 一次性移入 (插件目录 + auth); 目标 auth 已存在 → 冲突失败, 目标零污染
+        let finalAuth = PluginGenerator.expandPath(
+            PluginGenerator.authPath(slug: slug, hudDir: hudDir))
+        try fm.createDirectory(at: finalAuth.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fm.fileExists(atPath: finalAuth.path) {
+            throw NSError(domain: "ProviderImporter", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "auth 文件已存在: \(finalAuth.lastPathComponent)"])
         }
-        try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
+        try fm.moveItem(at: stagedProviders.appendingPathComponent(slug),
+                        to: userDir.appendingPathComponent(slug))
+        try fm.moveItem(at: stagedAuth, to: finalAuth)
         return slug
     }
 
     // MARK: - 工具
 
+    /// sqlite 子进程查询: P1-7 超时真取消 — 5s 内无退出即 terminate() (group.cancelAll 不杀子进程)
     private static func query(_ db: String, _ sql: String) -> [[String: Any]] {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: sqlite)
@@ -280,6 +316,16 @@ enum ProviderImporter {
         p.standardOutput = out
         p.standardError = Pipe() // 库被占用等错误静默: 该源视为无数据
         guard (try? p.run()) != nil else { return [] }
+        // 有界等待: 超时不留孤儿进程 (扫描取消后 sqlite 卡库文件锁也不挂死)
+        let deadline = Date().addingTimeInterval(5)
+        while p.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if p.isRunning {
+            p.terminate()
+            p.waitUntilExit()
+            return []
+        }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []

@@ -501,6 +501,59 @@ struct DataEngineTests {
         let done = await engine.queryGate.inFlightSlugs
         #expect(!done.contains("g"))
     }
+
+    // MARK: P1-3 429 退避: error=ratelimit → 暂停自动查询, 到期恢复, 不影响他账号
+
+    @Test func rateLimitPauseWindow() {
+        // 暂停窗口 = max(interval, 60s)
+        #expect(DataEngine.rateLimitPauseMs(intervalSec: 30) == 60_000)    // 短间隔抬到 60s
+        #expect(DataEngine.rateLimitPauseMs(intervalSec: 300) == 300_000)  // 长间隔保持
+    }
+
+    @Test func pausedDictSurvivesReloadAndExpiry() throws {
+        // 内存+UserDefaults 持久: 未过期条目读回, 过期条目剔除 (到期自动恢复)
+        let suite = "th-rl-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let now = Date().timeIntervalSince1970 * 1000
+        var dict: [String: Double] = ["a": now + 60_000, "b": now - 1]    // b 已过期
+        DataEngine.savePaused(dict, defaults: defaults)
+        let read = DataEngine.loadPaused(defaults: defaults)
+        #expect(read["a"] != nil)          // 暂停窗口内保留
+        #expect(read["b"] == nil)          // 过期即恢复
+        dict.removeValue(forKey: "a")
+        DataEngine.savePaused(dict, defaults: defaults)
+        #expect(DataEngine.loadPaused(defaults: defaults).isEmpty)
+    }
+
+    @Test @MainActor func ratelimitSuspendsOnlyThatAccount() async throws {
+        let (engine, tmp, _, defaults) = makeEngine("rl")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("throttled", stdout: #"{"error":"ratelimit"}"#, to: tmp)
+        addPlugin("healthy", stdout: #"{"seven_day":{"used_percentage":8}}"#, to: tmp)
+        engine.reloadRegistry()
+        // 触发一次 ratelimit 结果 (forceRefresh 走 apply → 记暂停)
+        _ = await engine.forceRefresh(slug: "throttled")
+        let paused = DataEngine.loadPaused(defaults: defaults)
+        #expect(paused["throttled"] != nil)        // 该账号进入退避
+        #expect(paused["healthy"] == nil)          // 他账号不受影响
+        // refreshNow 轮询: 暂停中的账号被跳过 (healthy 查询推进, throttled 的 lastAttemptAt 不再前移)
+        let throttledAttempt = engine.states.first { $0.slug == "throttled" }?.cache?.lastAttemptAt
+        _ = await engine.refreshNow()
+        let after = engine.states.first { $0.slug == "throttled" }?.cache?.lastAttemptAt
+        #expect(after == throttledAttempt)         // 未再尝试
+        #expect(engine.states.first { $0.slug == "healthy" }?.cache?.error == nil)
+        // 成功一次 → 清除暂停 (到期恢复的另一路径)
+        addPlugin2(tmp, slug: "throttled", stdout: #"{"seven_day":{"used_percentage":3}}"#)
+        _ = await engine.forceRefresh(slug: "throttled")
+        #expect(DataEngine.loadPaused(defaults: defaults)["throttled"] == nil)
+    }
+
+    /// 覆写既有插件脚本输出 (模拟状态翻转)
+    private func addPlugin2(_ tmp: URL, slug: String, stdout: String) {
+        try? "#!/bin/zsh\necho '\(stdout)'".write(to: tmp.appendingPathComponent("providers/\(slug)/fetch.sh"),
+                                                  atomically: true, encoding: .utf8)
+    }
 }
 
 /// 测试用并发计数器 (actor, 无数据竞争)
