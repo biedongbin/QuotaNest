@@ -27,6 +27,48 @@ actor CallSlots {
     var inFlight: [String] { Array(perAccount) }
 }
 
+// MARK: - P1-2 查询 op 体系 (全局 3 / 每账号 1, 同账号合并, 等待总预算 20s)
+
+/// 查询执行位: 同账号进行中 → 后到者附着同 op 共享结果; 满位排队等待 (计入总预算), 超预算抛错
+actor QueryGate {
+    enum GateError: Error { case waitTimeout }
+
+    private var ops: [String: Task<UsageCache?, Never>] = [:]
+    private var globalInFlight = 0
+    let globalLimit: Int
+    let waitBudgetSec: Double
+
+    init(globalLimit: Int = 3, waitBudgetSec: Double = 20) {
+        self.globalLimit = globalLimit
+        self.waitBudgetSec = waitBudgetSec
+    }
+
+    var inFlightSlugs: [String] { Array(ops.keys) }
+
+    /// 执行一次查询 op: 同账号在飞 → 合并共享; 否则占位执行 (满位先等, 等待计入总预算)
+    func run(slug: String, _ op: @escaping @Sendable () async -> UsageCache?) async throws -> UsageCache? {
+        if let existing = ops[slug] { return await existing.value }      // 合并: 后到者共享同 op
+        let deadline = Date().addingTimeInterval(waitBudgetSec)
+        while globalInFlight >= globalLimit {
+            if Date() >= deadline { throw GateError.waitTimeout }        // 等待超预算: 不再排队
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            if let existing = ops[slug] { return await existing.value }  // 等待期间同账号 op 起飞 → 合并
+        }
+        globalInFlight += 1
+        let task = Task { () async -> UsageCache? in
+            defer { Task { await self.finish(slug: slug) } }             // 完成即释放, 唤醒后续等待者
+            return await op()
+        }
+        ops[slug] = task
+        return await task.value
+    }
+
+    private func finish(slug: String) {
+        ops[slug] = nil
+        globalInFlight = max(0, globalInFlight - 1)
+    }
+}
+
 // MARK: - 纯函数
 
 enum HUDFmt {
@@ -123,6 +165,8 @@ final class DataEngine: ObservableObject {
     private var timer: Timer?
     /// P1-4 模型调用并发位 (每账号 1 / 全局 2): 计划触发与测试调用共用
     let callSlots = CallSlots()
+    /// P1-2 查询 op 体系: 手动 forceRefresh 与 timer refreshNow 走同一 gate (全局 3/每账号 1/同账号合并)
+    let queryGate = QueryGate()
 
     static let defaultsNodeKey = "tokenhud.nodePath"
     static let defaultsIconKey = "tokenhud.iconProvider"
@@ -422,7 +466,13 @@ final class DataEngine: ObservableObject {
         // 核对: 查询期间账号被删/凭证被改 → 丢弃 (FR-05.3)
         let rev0 = Self.configRevision(slug: slug, manifest: plugin.manifest)
         let now = Date().timeIntervalSince1970 * 1000
-        let fetched = await runner.run(plugin)
+        // P1-2: 查询 op 走统一 gate (同账号在飞 → 合并共享结果; 满位等待计入 20s 总预算)
+        let fetched: UsageCache?
+        do {
+            fetched = try await queryGate.run(slug: slug) { [runner] in await runner.run(plugin) }
+        } catch {
+            return .failed(Self.reason(for: "busy"))
+        }
         guard let p = allPlugins.first(where: { $0.slug == slug }),
               Self.configRevision(slug: slug, manifest: p.manifest) == rev0 else {
             return .failed("查询期间配置已变更，结果已丢弃")
@@ -441,14 +491,17 @@ final class DataEngine: ObservableObject {
     }
 
     /// 迟到回包核对: 发起时快照 revision, 提交前 slug 仍在 allPlugins 且 revision 未变 (FR-05.3)
+    /// P1-2: 每 op 经 QueryGate (全局 3/每账号 1/同账号合并), 满位等待计入总预算, 超时标 busy
     private func fetch(_ due: [(String, PluginProvider)], now: Double, checkRevision: Bool) async {
         let revisions: [String: Double] = checkRevision
             ? Dictionary(uniqueKeysWithValues: due.map { ($0.0, Self.configRevision(slug: $0.0, manifest: $0.1.manifest)) })
             : [:]
         let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?).self) { group in
             for (slug, plugin) in due {
-                group.addTask { [runner] in
-                    (slug, await runner.run(plugin))
+                group.addTask { [gate = queryGate, runner] in
+                    // gate 抛超时 → 记 busy (该家本轮未查, 不误标 fetch 失败)
+                    let cache = try? await gate.run(slug: slug) { await runner.run(plugin) }
+                    return (slug, cache ?? nil)
                 }
             }
             var acc: [(String, UsageCache?)] = []
@@ -489,6 +542,7 @@ final class DataEngine: ObservableObject {
         switch code {
         case "auth", "no-auth": return "缺凭证或凭证失效"
         case "fetch": return "查询无结果"
+        case "busy": return "查询排队超时（并发已满），请稍后重试"
         default: return code
         }
     }

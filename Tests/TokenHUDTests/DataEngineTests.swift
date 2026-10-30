@@ -420,4 +420,94 @@ struct DataEngineTests {
         engine.setTriggerEnabled("a", enabled: true)
         #expect(engine.triggerDisabledSlugs.isEmpty)
     }
+
+    // MARK: P1-2 查询 op 体系: 全局并发 3 / 每账号 1 / 同账号合并 / 等待总预算
+
+    @Test func queryGateEnforcesGlobalLimitOfThree() async throws {
+        let gate = QueryGate(globalLimit: 3, waitBudgetSec: 10)
+        let tracker = OpTracker()
+        // 5 个不同账号同时查: 任一时刻在飞 ≤ 3
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<5 {
+                group.addTask {
+                    _ = try? await gate.run(slug: "acct\(i)") {
+                        await tracker.enter()
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        await tracker.exit()
+                        return nil
+                    }
+                }
+            }
+        }
+        let peak = await tracker.peak
+        #expect(peak <= 3)          // 全局并发上限 3
+        #expect(peak >= 2)          // 确实并行了 (非串行)
+        let inFlight = await gate.inFlightSlugs
+        #expect(inFlight.isEmpty)   // 全部完成后无残留执行位
+    }
+
+    @Test func queryGateMergesSameSlugOps() async throws {
+        // 同账号两请求 → 合并为一次执行, 共享同一结果
+        let gate = QueryGate(globalLimit: 3, waitBudgetSec: 10)
+        let tracker = OpTracker()
+        async let a = gate.run(slug: "same") {
+            await tracker.enter(); await tracker.exit()
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            return UsageCache(generatedAt: 42, fiveHour: nil,
+                              sevenDay: Bucket(usedPercentage: 7, resetsAt: nil),
+                              monthly: nil, error: nil, stale: false)
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)   // 让第一个 op 先占位
+        async let b = gate.run(slug: "same") {                 // 后到者: 不新起 op
+            Issue.record("合并失败: 同账号第二个 op 不应执行")
+            return nil
+        }
+        let (ra, rb): (UsageCache?, UsageCache?) = try await (a, b)
+        #expect(ra?.sevenDay?.usedPercentage == 7)
+        #expect(rb?.sevenDay?.usedPercentage == 7)       // 共享同一结果
+        let calls = await tracker.calls
+        #expect(calls == 1)                              // 只执行了一次
+    }
+
+    @Test func queryGateWaitTimesOutWithBudget() async throws {
+        // 满位 + 等待超预算 → 抛 waitTimeout (文案"排队超时")
+        let gate = QueryGate(globalLimit: 1, waitBudgetSec: 0.15)
+        let held = Task { try await gate.run(slug: "holder") {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return nil
+        } }
+        try? await Task.sleep(nanoseconds: 30_000_000)   // holder 已占位
+        do {
+            _ = try await gate.run(slug: "waiter") { nil }
+            Issue.record("应抛 waitTimeout")
+        } catch let e as QueryGate.GateError {
+            guard case .waitTimeout = e else { Issue.record("非 waitTimeout: \(e)"); return }
+            #expect(DataEngine.reason(for: "busy").contains("排队超时"))
+        }
+        _ = try? await held.value
+    }
+
+    @Test @MainActor func forceRefreshSharesGateWithTimer() async throws {
+        // 手动 forceRefresh 与 timer refreshNow 走同一 gate: 同账号在飞 → 合并不双发
+        let (engine, tmp, _, _) = makeEngine("gate2")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("g", stdout: #"{"seven_day":{"used_percentage":21}}"#, to: tmp)
+        engine.reloadRegistry()
+        async let manual = engine.forceRefresh(slug: "g")
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        let inFlight = await engine.queryGate.inFlightSlugs
+        #expect(inFlight.contains("g"))          // 手动查询在 gate 内
+        _ = await manual
+        let done = await engine.queryGate.inFlightSlugs
+        #expect(!done.contains("g"))
+    }
+}
+
+/// 测试用并发计数器 (actor, 无数据竞争)
+actor OpTracker {
+    private(set) var calls = 0
+    private var active = 0
+    private(set) var peak = 0
+    func enter() { calls += 1; active += 1; peak = max(peak, active) }
+    func exit() { active -= 1 }
 }
