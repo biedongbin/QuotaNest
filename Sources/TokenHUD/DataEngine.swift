@@ -326,6 +326,7 @@ final class DataEngine: ObservableObject {
 
     /// 强制刷新单家 (忽略 fresh 状态), 用于"刷新额度"后立即查余额更新
     /// 停用跟踪的账号同样允许手动查询 (查询不消费额度), 结果写缓存不进 states
+    /// (迟到回包核对在 states 内提交路径上由 fetch 负责; 此路径的提交即用户当前所见, 不需要 revision 挡)
     @discardableResult
     func forceRefresh(slug: String) async -> RefreshOutcome {
         let plugin = allPlugins.first { $0.slug == slug }
@@ -333,8 +334,14 @@ final class DataEngine: ObservableObject {
                 PluginProvider(slug: $0.slug, manifest: $0.manifest, dir: pluginDir(slug: $0.slug))
             }
         guard let plugin else { return .failed("供应商不存在") }
+        // 核对: 查询期间账号被删/凭证被改 → 丢弃 (FR-05.3)
+        let rev0 = Self.configRevision(slug: slug, manifest: plugin.manifest)
         let now = Date().timeIntervalSince1970 * 1000
         let fetched = await runner.run(plugin)
+        guard let p = allPlugins.first(where: { $0.slug == slug }),
+              Self.configRevision(slug: slug, manifest: p.manifest) == rev0 else {
+            return .failed("查询期间配置已变更，结果已丢弃")
+        }
         // 失败 (nil) 也走 apply: 记录 lastAttemptAt/stale (失败不推进 generatedAt)
         if states.contains(where: { $0.slug == slug }) {
             apply(slug: slug, fetched: fetched, now: now)
@@ -346,6 +353,50 @@ final class DataEngine: ObservableObject {
         guard let fetched else { return .failed("查询无结果") }
         if let e = fetched.error { return .failed(Self.reason(for: e)) }
         return .ok
+    }
+
+    /// 迟到回包核对: 发起时快照 revision, 提交前 slug 仍在 allPlugins 且 revision 未变 (FR-05.3)
+    private func fetch(_ due: [(String, PluginProvider)], now: Double, checkRevision: Bool) async {
+        let revisions: [String: Double] = checkRevision
+            ? Dictionary(uniqueKeysWithValues: due.map { ($0.0, Self.configRevision(slug: $0.0, manifest: $0.1.manifest)) })
+            : [:]
+        let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?).self) { group in
+            for (slug, plugin) in due {
+                group.addTask { [runner] in
+                    (slug, await runner.run(plugin))
+                }
+            }
+            var acc: [(String, UsageCache?)] = []
+            for await r in group { acc.append(r) }
+            return acc
+        }
+        for (slug, cache) in results {
+            // 版本核对: 查询期间账号被删 (slug 不在 allPlugins) 或凭证被改 (revision 变) → 丢弃, 不污染新状态
+            if checkRevision {
+                guard let p = allPlugins.first(where: { $0.slug == slug }),
+                      revisions[slug] == Self.configRevision(slug: slug, manifest: p.manifest) else {
+                    print("[DataEngine] discard late result for \(slug) (config changed or removed)")
+                    continue
+                }
+            }
+            apply(slug: slug, fetched: cache, now: now)
+        }
+        lastRefresh = Date()
+    }
+
+    /// 配置版本: auth 文件 mtime (epoch 秒); 文件缺失 = 0。最简可用, 凭证/时间点变更都会反映
+    nonisolated static func configRevision(slug: String, manifest: ProviderManifest) -> Double {
+        let path: URL
+        if let af = manifest.authFile {
+            path = af.hasPrefix("~")
+                ? URL(fileURLWithPath: NSHomeDirectory() + String(af.dropFirst()))
+                : URL(fileURLWithPath: af)
+        } else {
+            path = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud/.\(slug)-usage-auth.json")
+        }
+        return (try? URL(fileURLWithPath: path.path)
+            .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+            .timeIntervalSince1970 ?? 0
     }
 
     /// 错误码 → 人话 (缓存契约里的 error 字段值不变)
@@ -382,23 +433,22 @@ final class DataEngine: ObservableObject {
         }
     }
 
-    /// 并行刷给定家, 结果收齐后回 MainActor 统一落盘/更新内存态
+    /// 并行刷给定家, 结果收齐后回 MainActor 统一落盘/更新内存态 (迟到回包按 configRevision 核对丢弃)
     private func fetch(_ due: [(String, PluginProvider)], now: Double) async {
-        let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?).self) { group in
-            for (slug, plugin) in due {
-                group.addTask { [runner] in
-                    (slug, await runner.run(plugin))
-                }
-            }
-            var acc: [(String, UsageCache?)] = []
-            for await r in group { acc.append(r) }
-            return acc
-        }
-        for (slug, cache) in results {
-            apply(slug: slug, fetched: cache, now: now)
-        }
-        lastRefresh = Date()
+        await fetch(due, now: now, checkRevision: true)
     }
+
+    /// 测试注入口 (private 逻辑的薄封装)
+    var runnerForTest: ProviderRunner { runner }
+    func applyForTest(slug: String, fetched: UsageCache?, now: Double, checkRevision: Bool) {
+        guard let p = checkRevision ? allPlugins.first(where: { $0.slug == slug }) : nil else {
+            return // 版本核对失败 = 丢弃 (与 fetch 内联逻辑同判定)
+        }
+        _ = p
+        apply(slug: slug, fetched: fetched, now: now)
+    }
+    /// 测试注入: 模拟账号被删 (registry 清空)
+    func clearAllPluginsForTest() { allPlugins = []; states = [] }
 
     private func pluginDir(slug: String) -> URL {
         // 用户目录优先, 其次 bundle

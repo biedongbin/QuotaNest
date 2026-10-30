@@ -657,10 +657,24 @@ final class SettingsModel: ObservableObject {
         if p.manifest.template != nil { engine.markTemplateDeleted(slug) }
         try? PluginGenerator.removePlugin(slug: slug, in: userDir)
         if let af = authURL(p) { try? FileManager.default.trashItem(at: af, resultingItemURL: nil) }
+        // 清理残留: cache 文件 (HUD 不再显示已删账号旧值) + envs.json 摘除该账号条目
+        try? FileManager.default.removeItem(at: DataEngine.cachePath(for: p, hudDir: hudDir))
+        removeEnvsEntry(name: p.manifest.name)
         draft = nil
         selected = engine.allPlugins.first { $0.slug != slug }?.slug
         engine.reloadRegistry()
         flash("已删除 \(p.manifest.fullName)", error: false)
+    }
+
+    /// envs.json 摘除已删账号条目 (statusline 不再读它的 cache)
+    private func removeEnvsEntry(name: String) {
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        guard let existing = (try? Data(contentsOf: envsURL))
+            .flatMap({ try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) }),
+              existing.keys.contains(name) else { return }
+        var merged = existing
+        merged.removeValue(forKey: name)
+        try? HUDSync.writeEnvs(merged, to: envsURL)
     }
 
     func syncHUD() {
