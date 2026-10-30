@@ -445,7 +445,22 @@ final class DataEngine: ObservableObject {
         }
     }
 
-    /// 立刻刷新: 对全部启用供应商发 API 请求触发额度计算, 再强制查余额+重置时间
+    /// 刷新余额: 只强制查余额 (不 POST chat, 不消费额度) — 菜单栏/面板/悬浮窗"刷新余额"入口
+    /// (FR-08.5 快览默认查询不调用模型; 触发型动作只保留在设置中心账号详情的显式"发送测试调用")
+    func refreshBalancesOnly() async {
+        isRefreshingAll = true
+        defer { isRefreshingAll = false }
+        await withTaskGroup(of: Void.self) { group in
+            for st in states {
+                group.addTask { [weak self, slug = st.slug] in
+                    _ = await self?.forceRefresh(slug: slug)
+                }
+            }
+        }
+    }
+
+    /// 触发滚动窗口并刷新: 对全部启用供应商发 chat 请求触发额度计算, 再强制查余额+重置时间
+    /// 仅显式入口使用 (消费额度); 不再挂在菜单栏/悬浮窗快捷刷新上
     func triggerAndRefreshAll() async {
         isRefreshingAll = true
         defer { isRefreshingAll = false }

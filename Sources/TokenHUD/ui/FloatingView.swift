@@ -57,10 +57,10 @@ struct FloatingView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: style)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: bgOpacity)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: textOpacity)
-        // 右键菜单: 关闭悬浮窗 / 立刻刷新 / 供应商管理 / 退出
+        // 右键菜单: 关闭悬浮窗 / 刷新余额 / 供应商管理 / 退出
         .contextMenu {
             Button("关闭悬浮窗") { controller.toggle() }
-            Button("立刻刷新") { onRefreshAll() }
+            Button("刷新余额") { onRefreshAll() }
             Button("设置中心…") { onOpenSettings() }
             Divider()
             Button("退出") { onQuit() }

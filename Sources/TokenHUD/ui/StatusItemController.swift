@@ -3,7 +3,7 @@ import AppKit
 
 // MARK: - 自绘状态栏 (替代 MenuBarExtra: 右键菜单系统不透传, NSStatusItem 可拦截)
 
-/// 菜单栏图标: 左键弹供应商面板 (NSPopover), 右键弹菜单 (立刻刷新/供应商管理/退出)
+/// 菜单栏图标: 左键弹供应商面板 (NSPopover), 右键弹菜单 (刷新余额/供应商管理/退出)
 @MainActor
 final class StatusItemController: ObservableObject {
     static var shared: StatusItemController?
@@ -58,7 +58,7 @@ final class StatusItemController: ObservableObject {
         let togglePanel = NSMenuItem(title: panelVisible ? "关闭悬浮窗" : "打开悬浮窗",
                                      action: #selector(togglePanelAction), keyEquivalent: "")
         togglePanel.target = self
-        let refresh = NSMenuItem(title: "立刻刷新", action: #selector(refreshAll), keyEquivalent: "")
+        let refresh = NSMenuItem(title: "刷新余额", action: #selector(refreshAll), keyEquivalent: "")
         refresh.target = self
         let settings = NSMenuItem(title: "设置中心…", action: #selector(openSettings), keyEquivalent: "")
         settings.target = self
@@ -82,7 +82,8 @@ final class StatusItemController: ObservableObject {
     }
 
     @objc private func refreshAll() {
-        Task { await engine.triggerAndRefreshAll() }
+        // 快捷入口只查余额, 不发模型调用 (不隐式消费额度)
+        Task { await engine.refreshBalancesOnly() }
     }
 
     @objc private func openSettings() {
@@ -103,7 +104,7 @@ final class StatusItemController: ObservableObject {
                                       onTogglePanel: { [weak self] in self?.panelCtrl.toggle() },
                                       onRefresh: { [weak self] in
                                           guard let self else { return }
-                                          Task { await self.engine.triggerAndRefreshAll() }
+                                          Task { await self.engine.refreshBalancesOnly() }
                                       })
             let p = NSPopover()
             p.contentViewController = NSHostingController(rootView: content)

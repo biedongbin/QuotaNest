@@ -289,6 +289,18 @@ struct DataEngineTests {
 
     // MARK: 引擎双维度独立
 
+    // MARK: P0-5 快捷刷新只查余额 (不发模型调用)
+
+    @Test @MainActor func refreshBalancesOnlyQueriesWithoutTrigger() async {
+        let (engine, tmp, _, _) = makeEngine("balonly")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("q", stdout: #"{"seven_day":{"used_percentage":11}}"#, to: tmp)
+        engine.reloadRegistry()
+        await engine.refreshBalancesOnly()
+        #expect(engine.states.first { $0.slug == "q" }?.cache?.sevenDay?.usedPercentage == 11)
+        #expect(!engine.isRefreshingAll)                          // 结束后复位
+    }
+
     @Test @MainActor func trackingAndTriggerTogglesIndependent() {
         let (engine, tmp, _, defaults) = makeEngine("dims")
         defer { try? FileManager.default.removeItem(at: tmp) }

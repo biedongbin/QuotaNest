@@ -137,7 +137,8 @@ final class PanelController: ObservableObject {
             onQuit: { NSApplication.shared.terminate(nil) },
             onRefreshAll: { [weak self] in
                 guard let self else { return }
-                Task { await self.engine.triggerAndRefreshAll() }
+                // 快捷入口只查余额, 不发模型调用 (不隐式消费额度)
+                Task { await self.engine.refreshBalancesOnly() }
             },
             onOpenSettings: { [weak self] in self?.openSettings() }
         ))

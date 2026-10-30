@@ -32,7 +32,7 @@ struct MenuBarView: View {
                 }
                 HStack {
                     Button { onRefresh() } label: {
-                        Label("立即刷新", systemImage: "arrow.clockwise")
+                        Label("刷新余额", systemImage: "arrow.clockwise")
                     }
                     if engine.isRefreshingAll {
                         ProgressView().controlSize(.small)
