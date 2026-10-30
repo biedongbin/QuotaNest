@@ -29,6 +29,9 @@ struct ProviderManifest: Codable {
     /// 授权模式: apikey (粘贴密钥) / local (读本机 CLI 已登录凭证) / oauth (预留)
     /// 只影响 UI 表单呈现, 不影响解析 (解析在各 provider 脚本)
     var authMode: String?
+    /// 导入来源标识 "source:recordId" (9router:<id>/cc-switch:<id>/cpamp:<文件名>); 手建账号 nil
+    /// 导入查重按它判 (同源同记录 = 已存在), 不按显示名
+    var origin: String?
 
     var isEnabled: Bool { enabled ?? true }
     var interval: Int { intervalSec ?? 60 }
@@ -41,7 +44,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -52,7 +55,7 @@ struct ProviderManifest: Codable {
          refreshUrl: String? = nil, refreshProtocol: String? = nil, refreshAuth: String? = nil,
          refreshHeader: String? = nil, builtin: Bool? = nil, template: String? = nil,
          accent: String? = nil, icon: String? = nil, enabled: Bool? = true,
-         authMode: String? = nil) {
+         authMode: String? = nil, origin: String? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -77,6 +80,7 @@ struct ProviderManifest: Codable {
         self.icon = icon
         self.enabled = enabled
         self.authMode = authMode
+        self.origin = origin
     }
 
     init(from decoder: Decoder) throws {
@@ -105,6 +109,7 @@ struct ProviderManifest: Codable {
         icon = try c.decodeIfPresent(String.self, forKey: .icon)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         authMode = try c.decodeIfPresent(String.self, forKey: .authMode)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
     }
 }
 

@@ -169,4 +169,66 @@ struct ImportTests {
         let o = ProviderManifest(name: "Z", label: "Z", buckets: [:], authMode: "oauth")
         #expect(o.authStyle == "oauth")
     }
+
+    // MARK: P0-4 导入去重按 origin (source+recordId), 同名不算重复
+
+    private func tmpDirs() -> (URL, URL) {
+        let home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("th-origin-\(UUID().uuidString)")
+        let userDir = home.appendingPathComponent("providers", isDirectory: true)
+        let hudDir = home.appendingPathComponent("hud", isDirectory: true)
+        try? FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        return (userDir, hudDir)
+    }
+
+    @Test func applyStampsOriginIntoManifest() throws {
+        let (userDir, hudDir) = tmpDirs()
+        defer { try? FileManager.default.removeItem(at: userDir.deletingLastPathComponent()) }
+        let c = ImportCandidate(source: "9router", name: "Relay", template: nil, apiKey: "k",
+                                baseURL: "https://a.example", proto: "openai", note: "",
+                                sourceRecordId: "conn-7")
+        let slug = try ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
+        let data = try Data(contentsOf: userDir.appendingPathComponent(slug + "/manifest.json"))
+        let m = try JSONDecoder().decode(ProviderManifest.self, from: data)
+        #expect(m.origin == "9router:conn-7")
+        // 解码容错: 旧 manifest 无 origin 字段照常读
+        let legacy = #"{"name":"L","label":"l","fetch":"./fetch.sh","buckets":{}}"#
+        let lm = try JSONDecoder().decode(ProviderManifest.self, from: Data(legacy.utf8))
+        #expect(lm.origin == nil)
+    }
+
+    @Test func stateOfMatchesOriginNotDisplayName() {
+        // 已存在账号: 手建 (origin nil), 同名
+        let manifest = ProviderManifest(name: "Relay", label: "Relay", displayName: "Relay",
+                                        buckets: [:], origin: nil)
+        let existing = [PluginProvider(slug: "relay", manifest: manifest,
+                                       dir: URL(fileURLWithPath: "/tmp"))]
+        let lookup: (String) -> ProviderManifest? = { _ in
+            ProviderManifest(name: "T", label: "t", buckets: [:], queryUrl: "https://q.example")
+        }
+        // 同名不同 recordId → 可新增 (FR-07.5 同名不算重复)
+        let sameName = ImportCandidate(source: "9router", name: "Relay", template: nil, apiKey: "k",
+                                       baseURL: "https://a.example", proto: "openai", note: "",
+                                       sourceRecordId: "conn-1")
+        #expect(ImportCenterModel.stateOf(sameName, existing: existing, templateLookup: lookup) == .unadapted)
+
+        // 同源同 recordId → 已存在 (默认 skip)
+        let again = ImportCandidate(source: "9router", name: "改名了也认得", template: nil, apiKey: "k2",
+                                    baseURL: "https://a.example", proto: "openai", note: "",
+                                    sourceRecordId: "conn-1")
+        var withOrigin = existing
+        withOrigin[0] = PluginProvider(slug: "relay",
+                                       manifest: ProviderManifest(name: "Relay", label: "Relay",
+                                                                  displayName: "Relay", buckets: [:],
+                                                                  origin: "9router:conn-1"),
+                                       dir: URL(fileURLWithPath: "/tmp"))
+        #expect(ImportCenterModel.stateOf(again, existing: withOrigin, templateLookup: lookup) == .exists)
+
+        // 无 recordId 的候选 (源没给) → 不判重, 走正常分类
+        let noRec = ImportCandidate(source: "t", name: "Relay", template: nil, apiKey: "k",
+                                    baseURL: "https://a.example", proto: "openai", note: "",
+                                    sourceRecordId: "")
+        #expect(ImportCenterModel.stateOf(noRec, existing: withOrigin, templateLookup: lookup) == .unadapted)
+    }
 }

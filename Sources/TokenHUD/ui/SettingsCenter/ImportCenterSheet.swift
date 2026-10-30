@@ -186,18 +186,21 @@ final class ImportCenterModel: ObservableObject {
     }
 
     private func stateOf(_ c: ImportCandidate, existing: [PluginProvider]) -> RowState {
+        Self.stateOf(c, existing: existing, templateLookup: { [engine] s in engine.template(bySlug: s)?.manifest })
+    }
+
+    /// 去重判定 (纯函数, 可测): origin 匹配才算已存在, 显示名匹配不算 (FR-07.5)
+    nonisolated static func stateOf(_ c: ImportCandidate, existing: [PluginProvider],
+                        templateLookup: (String) -> ProviderManifest?) -> RowState {
         if c.unsupportedReason != nil { return .unsupported }
-        let duplicated = existing.contains { p in
-            (c.template != nil && p.manifest.template == c.template
-                && p.manifest.fullName == c.name)
-                || (p.manifest.fullName == c.name)
-        }
-        if duplicated { return .exists }
+        // 去重按 origin (source+sourceRecordId): 同源同记录才算已存在; 显示名相同不算 (FR-07.5)
+        if !c.sourceRecordId.isEmpty,
+           existing.contains(where: { $0.manifest.origin == c.origin }) { return .exists }
         if c.apiKey.isEmpty && c.template == nil { return .unsupported }
         if c.template == nil { return .unadapted }
         // 与 AccountRow.canQuery 同口径: 脚本型模板只声明 cacheFile 也算能查额度
-        if let t = c.template, let tmpl = engine.template(bySlug: t),
-           tmpl.manifest.queryUrl == nil, tmpl.manifest.cacheFile == nil {
+        if let t = c.template, let tmpl = templateLookup(t),
+           tmpl.queryUrl == nil, tmpl.cacheFile == nil {
             return .unadapted
         }
         return .addable
@@ -206,7 +209,7 @@ final class ImportCenterModel: ObservableObject {
     private func noteOf(_ a: ImportCandidate, state: RowState) -> String {
         var note: String
         switch state {
-        case .exists: note = "已存在（同名账号），默认跳过，不覆盖 Key"
+        case .exists: note = "已存在（同源同账号），默认跳过，不覆盖 Key"
         case .unsupported: note = a.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
         case .unadapted:
             note = a.enabled ? "导入后可手动调用，额度查询需自行适配"

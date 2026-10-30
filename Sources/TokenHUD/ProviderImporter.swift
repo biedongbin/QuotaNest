@@ -20,9 +20,15 @@ struct ImportCandidate: Identifiable {
     var slugHint: String? = nil
     /// 源端账号标识 (已脱敏); 空 = 源里没给
     var sourceAccount: String = ""
+    /// 源侧稳定记录标识 (9router=provider/连接 id, cc-switch=providers.id, cpamp=文件名):
+    /// 与 source 组成 origin, 导入去重按它判, 不按显示名
+    var sourceRecordId: String = ""
 
     /// 预览表"授权方式"列
     var authLabel: String { note.lowercased().contains("oauth") ? "OAuth" : "API Key" }
+
+    /// origin 标识 (source + recordId), 写入账号 manifest.origin
+    var origin: String { "\(source):\(sourceRecordId)" }
 }
 
 enum ProviderImporter {
@@ -35,7 +41,7 @@ enum ProviderImporter {
         guard FileManager.default.fileExists(atPath: db) else { return [] }
         // 全量扫描: isActive 只是 9router 面板的启用开关 (默认 1),
         // 按它过滤会静默丢掉用户停用的账号; 停用与否交给预览列展示, 由用户决定导不导
-        let rows = query(db, "select provider, authType, name, isActive, data from providerConnections")
+        let rows = query(db, "select id, provider, authType, name, isActive, data from providerConnections")
         // 源端账号标识 (邮箱/UUID) 按家族编号命名, 原值脱敏后只进说明行
         var seq: [String: Int] = [:]
         func next(_ family: String) -> Int {
@@ -65,7 +71,8 @@ enum ProviderImporter {
                 let n = naming(family, familySlug)
                 return ImportCandidate(source: "9router", name: n.name, template: template, apiKey: key,
                                        baseURL: base, proto: proto, note: note, enabled: active,
-                                       slugHint: n.slug, sourceAccount: n.account)
+                                       slugHint: n.slug, sourceAccount: n.account,
+                                       sourceRecordId: (r["id"] as? String) ?? label)
             }
             /// 无法导入的行也要出现, 让用户看见"这条没导"的原因
             func skip(_ reason: String) -> ImportCandidate {
@@ -74,7 +81,8 @@ enum ProviderImporter {
                                        apiKey: "", baseURL: "", proto: "openai",
                                        note: "\(provider) / \(authType)",
                                        unsupportedReason: reason, enabled: active,
-                                       slugHint: n.slug, sourceAccount: n.account)
+                                       slugHint: n.slug, sourceAccount: n.account,
+                                       sourceRecordId: (r["id"] as? String) ?? label)
             }
             switch provider {
             case "glm":
@@ -155,7 +163,7 @@ enum ProviderImporter {
     static func fromCCSwitch(home: String) -> [ImportCandidate] {
         let db = home + "/.cc-switch/cc-switch.db"
         guard FileManager.default.fileExists(atPath: db) else { return [] }
-        let rows = query(db, "select app_type, name, settings_config from providers where app_type in ('claude','codex')")
+        let rows = query(db, "select id, app_type, name, settings_config from providers where app_type in ('claude','codex')")
         return rows.compactMap { r in
             guard let app = r["app_type"] as? String,
                   let name = r["name"] as? String,
@@ -178,7 +186,8 @@ enum ProviderImporter {
                                        template: nil, apiKey: bare,
                                        baseURL: base, proto: "anthropic", note: "claude / \(host(base))",
                                        slugHint: ident ? "claude" : nil,
-                                       sourceAccount: ident ? maskAccount(name) : "")
+                                       sourceAccount: ident ? maskAccount(name) : "",
+                                       sourceRecordId: (r["id"] as? String) ?? name)
             }
             // codex: OAuth 型, 凭证在 cc-switch 自己的库里, 不导 (TokenHUD 读 ~/.codex)
             return nil
@@ -207,7 +216,8 @@ enum ProviderImporter {
                                        template: "cline",
                                        apiKey: key, baseURL: "", proto: "anthropic", note: "clinepass",
                                        slugHint: ident ? "cline" : nil,
-                                       sourceAccount: ident ? maskAccount(label) : "")
+                                       sourceAccount: ident ? maskAccount(label) : "",
+                                       sourceRecordId: f)
             default:
                 return nil // codex / antigravity: 本机 CLI 已登录, 由模板直读, 无需导入凭证
             }
@@ -222,8 +232,13 @@ enum ProviderImporter {
                       userDir: URL, hudDir: URL) throws -> String {
         let slug = uniqueSlug(PluginGenerator.slugify(c.slugHint ?? c.name), userDir: userDir)
         if let tslug = c.template, let tmpl = templates.first(where: { $0.slug == tslug }) {
-            let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
+            var manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: c.name,
                                                            into: userDir, hudDir: hudDir)
+            manifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
+            try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
+                                            script: (try? String(contentsOf: userDir
+                                                .appendingPathComponent(slug + "/fetch.sh"), encoding: .utf8)) ?? "",
+                                            into: userDir)
             guard let af = manifest.authFile.map(PluginGenerator.expandPath) else { return slug }
             var cfg = ProviderConfigStore.read(authFile: af, manifest: manifest)
             cfg.queryKey = c.apiKey
@@ -242,7 +257,8 @@ enum ProviderImporter {
             ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
             : "Authorization: Bearer <key>"
         let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
-        let manifest = PluginGenerator.customManifest(name: c.name, config: cfg, authFile: authPath)
+        var manifest = PluginGenerator.customManifest(name: c.name, config: cfg, authFile: authPath)
+        manifest.origin = c.sourceRecordId.isEmpty ? nil : c.origin
         try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
                                         script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
         let af = PluginGenerator.expandPath(authPath)
