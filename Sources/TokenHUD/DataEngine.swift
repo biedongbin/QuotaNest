@@ -441,8 +441,11 @@ final class DataEngine: ObservableObject {
 
     func refreshNow() async {
         let now = Date().timeIntervalSince1970 * 1000
+        // P1-3 退避: ratelimit 暂停窗口内的账号跳过本轮自动查询 (到期自动恢复; 手动 forceRefresh 不受限)
+        let paused = Self.loadPaused(defaults: defaults)
         // MainActor 上下文先筛过期家 (按尝试时间: 失败也会前移 lastAttemptAt, 免 10s timer 对失败家反复重刷)
         let due: [(String, PluginProvider)] = states.compactMap { st in
+            guard paused[st.slug] == nil else { return nil }
             guard !HUDFmt.isAttemptFresh(st.cache, interval: st.manifest.interval, now: now) else { return nil }
             return (st.slug, PluginProvider(slug: st.slug, manifest: st.manifest,
                                             dir: pluginDir(slug: st.slug)))
@@ -542,6 +545,7 @@ final class DataEngine: ObservableObject {
         switch code {
         case "auth", "no-auth": return "缺凭证或凭证失效"
         case "fetch": return "查询无结果"
+        case "ratelimit": return "触发限频（429），稍后自动恢复"
         case "busy": return "查询排队超时（并发已满），请稍后重试"
         default: return code
         }
@@ -559,6 +563,29 @@ final class DataEngine: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: P1-3 429 退避: error=ratelimit → 该账号暂停自动查询至 max(interval, 60s), 到期自动恢复
+
+    /// 暂停截止时间戳 (epoch ms, slug → deadline); 内存 + UserDefaults (跨重启保持)
+    nonisolated static let defaultsRateLimitPausedKey = "tokenhud.ratelimit.pausedUntil"
+
+    nonisolated static func loadPaused(defaults: UserDefaults) -> [String: Double] {
+        guard let raw = defaults.string(forKey: defaultsRateLimitPausedKey),
+              let data = raw.data(using: .utf8),
+              let dict = try? JSONDecoder().decode([String: Double].self, from: data) else { return [:] }
+        return dict.filter { $0.value > Date().timeIntervalSince1970 * 1000 } // 过期条目即剔除
+    }
+
+    nonisolated static func savePaused(_ dict: [String: Double], defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(dict),
+              let raw = String(data: data, encoding: .utf8) else { return }
+        defaults.set(raw, forKey: defaultsRateLimitPausedKey)
+    }
+
+    /// 暂停窗口: error=ratelimit → max(interval, 60s) 秒 (纯函数, 可测)
+    nonisolated static func rateLimitPauseMs(intervalSec: Int) -> Double {
+        Double(max(intervalSec, 60)) * 1000
     }
 
     /// 触发滚动窗口并刷新: 对全部启用供应商发 chat 请求触发额度计算, 再强制查余额+重置时间
@@ -630,6 +657,14 @@ final class DataEngine: ObservableObject {
             writeCache(fetched, plugin: states[i])
             states[i].cache = fetched
             states[i].isStale = false
+            // P1-3: 429 退避 — ratelimit → 暂停自动查询至 max(interval, 60s); 成功则清除暂停 (到期恢复的另一路径)
+            var paused = Self.loadPaused(defaults: defaults)
+            if fetched.error == "ratelimit" {
+                paused[slug] = now + Self.rateLimitPauseMs(intervalSec: states[i].manifest.interval)
+            } else {
+                paused.removeValue(forKey: slug)
+            }
+            Self.savePaused(paused, defaults: defaults)
         } else {
             // 失败: 保留旧值与原 generatedAt (成功快照时间不因失败推进, FR-03.8),
             // 仅前移 lastAttemptAt — due 判定用 isAttemptFresh, 10s timer 不会反复重刷

@@ -34,6 +34,7 @@ function main() {
   const r = spawnSync('curl', [
     '-s', '--max-time', '10',
     '-H', `Authorization: Bearer ${auth.refreshApiKey}`,
+    '-w', '\n%{http_code}',
     url,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error || r.status !== 0 || !r.stdout) {
@@ -41,8 +42,22 @@ function main() {
     if (verbose) console.error('[oc-go-provider] curl failed:', r.error?.message || ('exit ' + r.status));
     return;
   }
+  // 拆 HTTP 状态与体 (P1-3: 429 → ratelimit 退避)
+  const out = r.stdout.trimEnd();
+  const nl = out.lastIndexOf('\n');
+  const status = parseInt(out.slice(nl + 1).trim(), 10);
+  if (status === 401 || status === 403) {
+    writeCache({ error: 'auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    if (verbose) console.error('[oc-go-provider] HTTP', status);
+    return;
+  }
+  if (status === 429) {
+    writeCache({ error: 'ratelimit', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    if (verbose) console.error('[oc-go-provider] HTTP 429');
+    return;
+  }
   let data;
-  try { data = JSON.parse(r.stdout); } catch {
+  try { data = JSON.parse(out.slice(0, nl)); } catch {
     writeCache({ error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error('[oc-go-provider] non-JSON:', r.stdout.slice(0, 120));
     return;

@@ -91,6 +91,7 @@ function main() {
     writeFailure('auth', `HTTP ${res.status}: 凭证过期, 请到 app.cline.bot 重新生成`);
     return;
   }
+  if (res.status === 429) { writeFailure('ratelimit', `HTTP 429`); return; }
   if (res.status !== 200) { writeFailure('network', `HTTP ${res.status}`); return; }
 
   const limits = res.json?.data?.limits;

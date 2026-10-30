@@ -68,6 +68,7 @@ async function main() {
   const { status, text: body, err } = curlJson(url, key);
   if (err) { lastErr = err; }
   else if (status === 200 && body) { text = body; }
+  else if (status === 429) { writeFailure('ratelimit', 'HTTP 429'); return; }
   else { lastErr = 'HTTP ' + status + ' ' + String(body).slice(0, 80); }
   if (!text) {
     writeFailure('network', lastErr);

@@ -175,7 +175,8 @@ async function main() {
     return;
   }
   if (auth.successCode != null && code !== auth.successCode) {
-    writeCache({ ...prevBuckets, error: 'api:' + code, lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    const kind = Number(code) === 429 ? 'ratelimit' : 'api:' + code; // 429 → 限频退避 (P1-3)
+    writeCache({ ...prevBuckets, error: kind, lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] api code=`, code);
     return;
   }

@@ -133,6 +133,10 @@ function main() {
     writeFailure('auth', `HTTP ${status}: Codex 登录已过期, 请 codex login`, cred.accountId);
     return;
   }
+  if (status === 429) {
+      writeFailure('ratelimit', `HTTP 429`, cred.accountId);
+    return;
+  }
   if (status !== 200) {
       writeFailure('network', `HTTP ${status}: ${body.slice(0, 80)}`, cred.accountId);
     return;
