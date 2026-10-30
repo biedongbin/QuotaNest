@@ -23,8 +23,16 @@ struct ConfigTabView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("配置").font(Typo.section).foregroundStyle(Palette.ink)
-                            Text("默认只读；点「编辑」进入草稿，保存前不会影响当前账号。")
+                            HStack(spacing: 6) {
+                                Text("配置").font(Typo.section).foregroundStyle(Palette.ink)
+                                // P1-10: 执行性缺失已保存的账号标「未配置」(可补齐后再开依赖配置的开关)
+                                if !row.isConfigured {
+                                    BadgeText(text: "未配置", locked: true)
+                                }
+                            }
+                            Text(row.isConfigured
+                                 ? "默认只读；点「编辑」进入草稿，保存前不会影响当前账号。"
+                                 : "凭证或地址缺失：账号已保存但查询与定时调用不可用，点「编辑」补齐。")
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                         }
                         Spacer()

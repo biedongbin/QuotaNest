@@ -29,26 +29,27 @@ enum SettingsValidation {
     /// P1-9 Key 意图: 空=保持原值 (keep), 清除是独立显式意图 (clear), 填了新值=替换
     enum KeyIntent: Equatable { case replace, clear }
 
-    /// 配置校验: key 为字段名 (name/key/url)
-    /// hasExistingKey: 盘上已有 Key (编辑态) — 此时空输入 = 保持原值, 不再报错 (P1-9)
+    /// 配置校验 (P1-10 两级制): 仅结构错误拒绝保存 (名称空/非法);
+    /// 执行性缺失 (key/url) 不再报错 — 可保存, 账号标「未配置」, 依赖配置的开关强制 off
     static func configErrors(name: String, key: String, url: String,
                              authStyle: String, builtin: Bool,
                              hasExistingKey: Bool = false) -> [String: String] {
         var e: [String: String] = [:]
         if name.trimmingCharacters(in: .whitespaces).isEmpty { e["name"] = "账号名称不能为空" }
-        guard authStyle == "apikey" else { return e }
-        if key.trimmingCharacters(in: .whitespaces).isEmpty && !hasExistingKey {
-            e["key"] = "API Key 不能为空"
-        }
+        return e
+    }
+
+    /// P1-10 执行性缺失判定 (纯函数): true = 账号可保存但「未配置」(查询/调用不可用)
+    static func isIncomplete(name: String, key: String, url: String,
+                             authStyle: String, builtin: Bool,
+                             hasExistingKey: Bool = false) -> Bool {
+        guard authStyle == "apikey" else { return false }
+        if key.trimmingCharacters(in: .whitespaces).isEmpty && !hasExistingKey { return true }
         if !builtin {
             let u = url.trimmingCharacters(in: .whitespaces)
-            if u.isEmpty {
-                e["url"] = "查询地址不能为空"
-            } else if !isValidURL(u) {
-                e["url"] = "地址必须是有效的 http(s) URL（含主机名）"
-            }
+            return u.isEmpty || !isValidURL(u)
         }
-        return e
+        return false
     }
 
     /// P1-9 落盘 Key 处理 (纯函数, 可测):
@@ -135,6 +136,8 @@ struct AccountRow: Identifiable {
     let plugin: PluginProvider
     let state: ProviderState?
     let autoQuery: Bool
+    /// P1-10 执行性配置完整 (key/url 齐) — false = 「未配置」徽章, 依赖配置的开关已强制 off
+    let isConfigured: Bool
 
     var id: String { plugin.slug }
     var name: String { plugin.manifest.fullName }
@@ -155,6 +158,7 @@ struct AccountRow: Identifiable {
 
     /// 列表状态点: (色, 文案)
     var status: (Color, String) {
+        if !isConfigured { return (Palette.warn, "未配置") }
         if !autoQuery { return (Palette.warn, "自动查询关") }
         guard let c = state?.cache else { return (Palette.muted, "未查询") }
         if c.error != nil { return (Palette.danger, "异常") }
@@ -307,7 +311,8 @@ final class SettingsModel: ObservableObject {
             .map { p in
                 AccountRow(plugin: p,
                            state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
-                           autoQuery: !engine.disabledSlugs.contains(p.slug))
+                           autoQuery: !engine.disabledSlugs.contains(p.slug),
+                           isConfigured: Self.configured(p, readConfig: readConfig))
             }
     }
 
@@ -323,7 +328,22 @@ final class SettingsModel: ObservableObject {
         guard let slug, let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return nil }
         return AccountRow(plugin: p,
                           state: engine.states.first { $0.slug == slug } ?? cachedState(for: p),
-                          autoQuery: !engine.disabledSlugs.contains(slug))
+                          autoQuery: !engine.disabledSlugs.contains(slug),
+                          isConfigured: Self.configured(p, readConfig: readConfig))
+    }
+
+    /// P1-10 执行性配置完整判定 (静态, 供 AccountRow 构建)
+    nonisolated private static func configured(_ p: PluginProvider,
+                                               readConfig: (PluginProvider) -> ProviderConfig) -> Bool {
+        guard p.manifest.authStyle == "apikey" else { return true }  // 本机凭证型不缺配置
+        let cfg = readConfig(p)
+        let key = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
+        if key.isEmpty { return false }
+        // 通用自定义型: url 也必须在 (manifest.queryUrl 或 auth.apiUrl)
+        if p.manifest.template == nil && p.manifest.queryUrl == nil && cfg.queryUrl.isEmpty {
+            return false
+        }
+        return true
     }
 
     /// 关闭自动查询后账号不在 states 里, 但缓存文件仍在 → 直接读盘 (手动查询结果照常显示)
@@ -512,6 +532,15 @@ final class SettingsModel: ObservableObject {
             }
         }
         do {
+            // P1-10: 执行性缺失可保存 (账号标未配置), 但依赖配置的开关强制 off + 提示
+            let incomplete = SettingsValidation.isIncomplete(
+                name: values.name, key: values.key, url: values.url,
+                authStyle: draftAuthStyle(), builtin: draftBuiltin(),
+                hasExistingKey: d.isNew ? false : d.hasExistingKey)
+            if incomplete {
+                values.autoQuery = false
+                values.autoTrigger = false
+            }
             let slug = d.isNew ? try create(values: values, draft: d)
                                : try update(values: values, draft: d)
             engine.reloadRegistry()
@@ -519,7 +548,9 @@ final class SettingsModel: ObservableObject {
             showingTemplates = false
             selected = slug
             tab = .quota
-            flash("已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
+            flash(incomplete
+                  ? "已保存（未配置：凭证或地址缺失，自动查询与定时调用已关闭）"
+                  : "已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
             // P1-1: 保存不发请求 (FR-05.2) — 不再触发 forceRefresh; 新快照等 interval 到期由 10s timer 按 isAttemptFresh 判定
         } catch {
             topError = "保存失败：\(error.localizedDescription)"

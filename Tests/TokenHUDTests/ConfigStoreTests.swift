@@ -281,10 +281,10 @@ struct RefreshTriggerTests {
         #expect(!SettingsValidation.isValidURL("https://exa\tmple.com"))
         #expect(!SettingsValidation.isValidURL("https://exa%20mple.com"))
 
-        // 配置: 名称/key 必填; 内置不校 url; 自定义必校
+        // 配置: 仅结构错误拒绝 (P1-10); key/url 缺失转 isIncomplete 判定
         var e = SettingsValidation.configErrors(name: " ", key: "", url: "",
                                                 authStyle: "apikey", builtin: false)
-        #expect(e["name"] != nil && e["key"] != nil && e["url"] != nil)
+        #expect(e["name"] != nil && e["key"] == nil && e["url"] == nil)
         e = SettingsValidation.configErrors(name: "a", key: "k", url: "",
                                            authStyle: "apikey", builtin: true)
         #expect(e.isEmpty)
@@ -305,19 +305,75 @@ struct RefreshTriggerTests {
                                                  triggerEnabled: true, canCall: false).isEmpty)
     }
 
-    // MARK: P1-9 空 key = 保持原值; 清除/替换是独立意图
+    // MARK: P1-10 合法不完整可保存: 仅结构错误拒绝; 执行性缺失 → 未配置 + 依赖开关强制 off
+
+    @Test func incompletePredicate() {
+        // 结构错误仍拒绝 (仅名称)
+        #expect(SettingsValidation.configErrors(name: " ", key: "k", url: "https://a.example",
+                                                authStyle: "apikey", builtin: false)["name"] != nil)
+        // 执行性缺失: 不进 errors, 但 isIncomplete=true
+        #expect(SettingsValidation.configErrors(name: "a", key: "", url: "",
+                                                authStyle: "apikey", builtin: false).isEmpty)
+        #expect(SettingsValidation.isIncomplete(name: "a", key: "", url: "",
+                                                authStyle: "apikey", builtin: false))          // 缺 key
+        #expect(SettingsValidation.isIncomplete(name: "a", key: "k", url: "",
+                                                authStyle: "apikey", builtin: false))          // 缺 url
+        #expect(SettingsValidation.isIncomplete(name: "a", key: "k", url: "notaurl",
+                                                authStyle: "apikey", builtin: false))          // url 非法
+        #expect(!SettingsValidation.isIncomplete(name: "a", key: "k", url: "https://a.example",
+                                                 authStyle: "apikey", builtin: false))         // 齐
+        #expect(!SettingsValidation.isIncomplete(name: "a", key: "", url: "",
+                                                 authStyle: "apikey", builtin: true,
+                                                 hasExistingKey: true))                        // 空=保持原值
+        #expect(!SettingsValidation.isIncomplete(name: "a", key: "", url: "",
+                                                 authStyle: "local", builtin: false))          // 本机凭证不缺
+    }
+
+    @Test @MainActor func incompleteSaveForcesAutoQueryOff() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("th-inc-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let userDir = tmp.appendingPathComponent("providers", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
+                                runner: ProviderRunner(nodePath: nil),
+                                defaults: UserDefaults(suiteName: "th-inc-\(UUID().uuidString)")!)
+        let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+        // 缺 key 的通用自定义账号 (url 合法) → 可保存, autoQuery 被强制 off
+        var v = DraftValues()
+        v.name = "半配置号"
+        v.url = "https://api.example.com"
+        v.key = ""            // 执行性缺失
+        v.autoQuery = true    // 用户开着 → 保存时强制关
+        model.draft = Draft(slug: nil, template: nil, isNew: true, values: v, base: DraftValues())
+        model.save()
+        #expect(model.topError.isEmpty)                 // 结构无错 → 保存放行
+        #expect(engine.allPlugins.contains { $0.slug == "ban-zhi-hao" || $0.manifest.fullName.contains("半配置") })
+        #expect(engine.disabledSlugs.contains(engine.allPlugins[0].slug))  // autoQuery 已置 off
+        let row = model.accounts.first
+        #expect(row?.isConfigured == false)             // 状态 = 未配置
+    }
 
     @Test func emptyKeyKeepsExistingOnValidation() {
-        // 编辑态已有 Key: 空输入不再报错 (保存 = 保持原值)
+        // P1-10: key 缺失不再进 errors (可保存); 区分走 isIncomplete —
+        // 已有盘上 Key + 空输入 = 保持原值 → 完整; 无盘上 Key → 未配置
         let e = SettingsValidation.configErrors(name: "a", key: "", url: "",
                                                 authStyle: "apikey", builtin: true,
                                                 hasExistingKey: true)
-        #expect(e["key"] == nil)
-        // 新账号 (无盘上 Key): 空输入仍报错
+        #expect(e.isEmpty)
+        #expect(!SettingsValidation.isIncomplete(name: "a", key: "", url: "",
+                                                 authStyle: "apikey", builtin: true,
+                                                 hasExistingKey: true))
         let n = SettingsValidation.configErrors(name: "a", key: "", url: "",
                                                 authStyle: "apikey", builtin: true,
                                                 hasExistingKey: false)
-        #expect(n["key"] != nil)
+        #expect(n.isEmpty)  // 可保存
+        #expect(SettingsValidation.isIncomplete(name: "a", key: "", url: "",
+                                                authStyle: "apikey", builtin: true,
+                                                hasExistingKey: false))  // 但标未配置
     }
 
     @Test func keyIntentResolveThreeWays() {
