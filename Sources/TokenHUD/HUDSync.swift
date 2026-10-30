@@ -5,6 +5,22 @@ struct EnvsEntry: Codable {
     var source: String
     var cache: String
     var buckets: [String: String]
+
+    init(label: String, source: String, cache: String, buckets: [String: String]) {
+        self.label = label
+        self.source = source
+        self.cache = cache
+        self.buckets = buckets
+    }
+
+    /// P2-3: 顶层 `_schemaVersion` 元数据 key 容错解码为空 entry, 读端过滤掉
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        source = try c.decodeIfPresent(String.self, forKey: .source) ?? ""
+        cache = try c.decodeIfPresent(String.self, forKey: .cache) ?? ""
+        buckets = try c.decodeIfPresent([String: String].self, forKey: .buckets) ?? [:]
+    }
 }
 
 enum HUDSync {
@@ -45,7 +61,10 @@ enum HUDSync {
     static func writeEnvs(_ dict: [String: EnvsEntry], to url: URL) throws {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(dict).write(to: url, options: .atomic)
+        // P2-3 存储版本化: 元数据 key `_` 前缀, statusline/读端均跳过
+        var out = dict.filter { !$0.key.hasPrefix("_") }
+        out["_schemaVersion"] = EnvsEntry(label: "", source: "", cache: "", buckets: [:])
+        try enc.encode(out).write(to: url, options: .atomic)
     }
 
     /// 只改 settings.json 的 env.ACCOUNT_ENVS + statusLine.command, 其余字段原样保留

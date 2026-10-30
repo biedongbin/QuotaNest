@@ -132,4 +132,55 @@ struct InstanceTests {
     private func cleanup(_ tmp: URL) {
         try? FileManager.default.removeItem(at: tmp)
     }
+    // MARK: P2-2/P2-3 凭证文件 0600 + 迁移字段级 merge
+
+    @Test func instantiateAuthFileIs0600() throws {
+        let tmp = makeTmp()
+        let tmpl = try makeTemplate(slug: "testtype", in: tmp)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        _ = try PluginGenerator.instantiate(template: tmpl, slug: "tt-perm", name: "TT", into: userDir, hudDir: hudDir)
+        let auth = hudDir.appendingPathComponent(".tt-perm-usage-auth.json")
+        let perm = try FileManager.default.attributesOfItem(atPath: auth.path)[.posixPermissions] as? Int
+        #expect(perm == 0o600)
+        cleanup(tmp)
+    }
+
+    @Test @MainActor func migrateMergesMissingFieldsOnly() throws {
+        let tmp = makeTmp()
+        _ = try makeTemplate(slug: "glm", in: tmp)
+        let bundleDir = tmp.appendingPathComponent("bundle", isDirectory: true)
+        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
+        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+
+        // 首次迁移生成实例
+        let defaults = UserDefaults(suiteName: "instance-tests-merge")!
+        defaults.removePersistentDomain(forName: "instance-tests-merge")
+        let runner = ProviderRunner(nodePath: "/usr/bin/true")
+        let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: bundleDir,
+                                userProvidersDir: userDir, runner: runner, defaults: defaults)
+        engine.migrateAccounts()
+        let manifestURL = userDir.appendingPathComponent("glm/manifest.json")
+        #expect(FileManager.default.fileExists(atPath: manifestURL.path))
+
+        // 手改实例 manifest (模拟用户/工具改动): refreshUrl 改值 + 删 testPrompt
+        var obj = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any] ?? [:]
+        obj["refreshUrl"] = "https://user-custom.example/v1/messages"
+        obj.removeValue(forKey: "accent")  // 模板有此能力字段, 实例删掉 → 迁移应补回
+        obj["displayName"] = "我的自定义名"
+        try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
+            .write(to: manifestURL, options: .atomic)
+
+        // 模板升级 (testPrompt 新增/改值) 后再迁移: 只补缺失字段, 手改不丢
+        engine.migrateAccounts()
+        let after = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any] ?? [:]
+        #expect(after["refreshUrl"] as? String == "https://user-custom.example/v1/messages", "已有字段不得覆盖")
+        #expect(after["displayName"] as? String == "我的自定义名", "用户字段不得覆盖")
+        #expect(after["accent"] as? String == "blue", "缺失能力字段应按模板补齐")
+        cleanup(tmp)
+    }
 }

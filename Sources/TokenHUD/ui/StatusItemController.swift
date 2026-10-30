@@ -159,7 +159,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         w.styleMask.insert(.closable)
         w.styleMask.insert(.miniaturizable)
         w.styleMask.insert(.resizable)
-        w.minSize = NSSize(width: 760, height: 480)
+        w.minSize = NSSize(width: 820, height: 560)  // P2-5: 主窗最小尺寸 (FR-08.6)
         let restored = WindowFrameMemory.hasSavedFrame()
         w.setFrameAutosaveName(WindowFrameMemory.autosaveName)
         w.delegate = self

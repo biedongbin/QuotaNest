@@ -91,12 +91,29 @@ final class ProviderRunner {
     }
 
     /// stderr 尾部 4KB 写 .{slug}-usage-stderr.log (hudDir 由调用环境共享, 固定 ~/.claude/hud)
+    /// P2-4 落盘前脱敏: Authorization/api key/sk_ 票据替换 [REDACTED] (NFR-03)
     private func dumpStderr(_ pipe: Pipe, plugin: PluginProvider) {
         let data = Self.readAllBounded(pipe.fileHandleForReading, within: 1)
         guard !data.isEmpty else { return }
         let tail = data.count > 4096 ? data.suffix(4096) : data[...]
+        let text = String(data: tail, encoding: .utf8) ?? String(decoding: tail, as: UTF8.self)
         let log = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud/.\(plugin.slug)-usage-stderr.log")
-        try? Data(tail).write(to: log, options: .atomic)
+        try? Data(Self.redact(text).utf8).write(to: log, options: .atomic)
+    }
+
+    /// 凭证脱敏 (纯函数, 可测): Bearer 头 / api[-_]key 赋值 / sk_ 票据 / 长 token
+    nonisolated static func redact(_ s: String) -> String {
+        var out = s
+        let patterns: [(String, String)] = [
+            (#"(?i)(Authorization\s*:\s*Bearer\s+)[^\s"']+"#, "$1[REDACTED]"),
+            (#"(?i)(api[-_]?key[=:]\s*)[^\s&"']+"#, "$1[REDACTED]"),
+            (#"\bsk-[A-Za-z0-9_-]{8,}\b"#, "[REDACTED]"),
+            (#"(?i)(token[=:]\s*)[A-Za-z0-9_-]{20,}"#, "$1[REDACTED]"),
+        ]
+        for (p, r) in patterns {
+            out = out.replacingOccurrences(of: p, with: r, options: .regularExpression)
+        }
+        return out
     }
 
     /// 有界读取: 进程已退出但孤儿孙进程可能仍持有 stdout 写端; 同步读丢后台队列, 超时放弃

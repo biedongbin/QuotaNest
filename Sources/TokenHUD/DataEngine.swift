@@ -235,28 +235,45 @@ final class DataEngine: ObservableObject {
 
     /// 首启迁移: 每个类型模板若无对应用户实例, 按原 slug 生成缺省实例 (幂等)
     /// auth 文件不覆盖 -> 现有凭证/抓取配置无缝保留
+    /// P2-3: 实例已存在 → 字段级 merge — 只补模板新增能力字段, 不全量覆盖
+    /// (用户对 manifest 的手改/工具改动保留; displayName 等用户字段一律不动)
     func migrateAccounts() {
         guard let bundleDir else { return }
         let fm = FileManager.default
         for t in ProviderRegistry.scan(dir: bundleDir) {
             if Set(defaults.stringArray(forKey: Self.defaultsDeletedKey) ?? []).contains(t.slug) { continue }
             let dir = userDir.appendingPathComponent(t.slug, isDirectory: true)
-            let manifestPath = dir.appendingPathComponent("manifest.json").path
-            if fm.fileExists(atPath: manifestPath) {
-                // 模板升级同步: 按当前模板刷新实例 manifest 能力字段, 保留用户 displayName
-                // (auth 不动: 凭证/抓取配置/定时保留)
-                let displayName = (try? JSONDecoder().decode(ProviderManifest.self,
-                                                             from: Data(contentsOf: dir.appendingPathComponent("manifest.json"))))?
-                    .displayName ?? t.manifest.fullName
-                _ = try? PluginGenerator.instantiate(template: t, slug: t.slug,
-                                                     name: displayName, into: userDir,
-                                                     hudDir: hudDir)
+            let manifestPath = dir.appendingPathComponent("manifest.json")
+            if fm.fileExists(atPath: manifestPath.path) {
+                Self.mergeManifestCapabilities(template: t.manifest, into: manifestPath)
             } else {
                 _ = try? PluginGenerator.instantiate(template: t, slug: t.slug,
                                                      name: t.manifest.fullName, into: userDir,
                                                      hudDir: hudDir)
             }
-            _ = fm
+        }
+    }
+
+    /// 模板升级同步 (字段级): 实例 manifest 缺失的能力字段按模板补齐; 已有字段 (含用户手改) 不动
+    /// 补齐范围 = 协议/能力字段 (testModel/testPrompt/queryUrl/queryAuth/queryKeyField/
+    /// refreshUrl/refreshProtocol/refreshAuth/refreshHeader/needsCredential/buckets/accent/icon/intervalSec)
+    /// 身份/用户字段 (displayName/enabled/authMode/origin) 不在补齐范围
+    nonisolated static func mergeManifestCapabilities(template: ProviderManifest, into manifestPath: URL) {
+        guard let data = try? Data(contentsOf: manifestPath),
+              var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tmplData = try? JSONEncoder().encode(template),
+              let tmpl = try? JSONSerialization.jsonObject(with: tmplData) as? [String: Any]
+        else { return }
+        let mergeKeys = ["testModel", "testPrompt", "queryUrl", "queryAuth", "queryKeyField",
+                         "refreshUrl", "refreshProtocol", "refreshAuth", "refreshHeader",
+                         "needsCredential", "buckets", "accent", "icon", "intervalSec"]
+        var changed = false
+        for k in mergeKeys where obj[k] == nil {
+            if let v = tmpl[k] { obj[k] = v; changed = true }
+        }
+        guard changed else { return }
+        if let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
+            try? out.write(to: manifestPath, options: .atomic)
         }
     }
 

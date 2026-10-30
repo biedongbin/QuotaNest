@@ -450,6 +450,12 @@ final class SettingsModel: ObservableObject {
         showingTemplates = true
     }
 
+    /// P2-1 导入入口同走草稿 guard (与 selectAccount/openTemplates 同一保护规则)
+    func openImport() {
+        guard leaveGuard() else { return }
+        importOpen = true
+    }
+
     func startEdit() {
         guard let row = current else { return }
         let p = row.plugin
@@ -479,7 +485,7 @@ final class SettingsModel: ObservableObject {
                             url: urlHint,
                             key: "",
                             model: m?.testModel ?? "",
-                            prompt: m?.testPrompt ?? "回复 OK 即视为连通。",
+                            prompt: m?.testPrompt ?? ProviderConfig.defaultPrompt,
                             proto: m?.refreshProtocol ?? choice.proto ?? "openai",
                             autoQuery: true,
                             autoTrigger: false,

@@ -36,6 +36,7 @@ enum Palette {
 
 enum Typo {
     static let body = Font.system(size: 13)
+    /// P2-5: 正文最小字号 12 (FR-08.6, 原 11)
     static let small = Font.system(size: 12)
     static let section = Font.system(size: 16, weight: .semibold)
     static let title = Font.system(size: 24, weight: .semibold)

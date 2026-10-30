@@ -460,4 +460,59 @@ struct RefreshTriggerTests {
         #expect(runUpdate(key: "", clear: true) == "")           // clear = 清空
         #expect(runUpdate(key: "fresh", clear: false) == "fresh") // 新值 = 替换
     }
+
+}
+
+@Suite
+struct ConfigP2Tests {
+    private let tmp = FileManager.default.temporaryDirectory
+
+    private func writeAuth(_ json: String) throws -> URL {
+        let u = tmp.appendingPathComponent(".auth-\(UUID().uuidString).json")
+        try json.write(to: u, atomically: true, encoding: .utf8)
+        return u
+    }
+
+    private func readBack(_ u: URL) throws -> [String: Any] {
+        try JSONSerialization.jsonObject(with: Data(contentsOf: u)) as? [String: Any] ?? [:]
+    }
+
+    // MARK: P2-2/P2-3/P2-6 凭证文件 0600 + schemaVersion + 默认调用参数
+
+    @Test func writeSetsAuthFilePermissions0600() throws {
+        let f = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"refreshApiKey":"rk"}"#)
+        var m = ProviderManifest(name: "R", label: "R")
+        m.queryAuth = "bearer"; m.refreshAuth = "bearer"
+        var c = ProviderConfigStore.read(authFile: f, manifest: m)
+        c.queryKey = "k2"; c.refreshKey = "k2"
+        try ProviderConfigStore.write(c, manifest: m, to: f)
+        let perm = try FileManager.default.attributesOfItem(atPath: f.path)[.posixPermissions] as? Int
+        #expect(perm == 0o600)
+    }
+
+    @Test func writeStampsSchemaVersion() throws {
+        let f = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"refreshApiKey":"rk"}"#)
+        var m = ProviderManifest(name: "R", label: "R")
+        m.queryAuth = "bearer"; m.refreshAuth = "bearer"
+        var c = ProviderConfigStore.read(authFile: f, manifest: m)
+        c.queryKey = "k"; c.refreshKey = "k"
+        try ProviderConfigStore.write(c, manifest: m, to: f)
+        let obj = try readBack(f)
+        #expect(obj["schemaVersion"] as? Int == 1)
+    }
+
+    @Test func defaultTestPromptAndMaxTokens() throws {
+        // 旧 auth 无 testPrompt/testMaxTokens → 新默认 ("只回复OK"/16)
+        let f = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"refreshApiKey":"rk"}"#)
+        var m = ProviderManifest(name: "R", label: "R")
+        m.queryAuth = "bearer"; m.refreshAuth = "bearer"
+        let c = ProviderConfigStore.read(authFile: f, manifest: m)
+        #expect(c.testPrompt == "只回复OK")
+        #expect(c.testMaxTokens == 16)
+        // 已有值优先
+        let f2 = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"refreshApiKey":"rk","testPrompt":"hi","testMaxTokens":8}"#)
+        let c2 = ProviderConfigStore.read(authFile: f2, manifest: m)
+        #expect(c2.testPrompt == "hi")
+        #expect(c2.testMaxTokens == 8)
+    }
 }

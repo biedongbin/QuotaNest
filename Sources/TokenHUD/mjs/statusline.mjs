@@ -131,6 +131,7 @@ try {
   const envsJson = JSON.parse(readFileSync(join(HUD_DIR, 'envs.json'), 'utf8'));
   for (const [key, cfg] of Object.entries(envsJson)) {
     if (ENV_REGISTRY[key]) continue; // 内置优先, 不覆盖
+    if (key.startsWith('_')) continue; // 元数据 key (_schemaVersion), 非供应商条目
     ENV_REGISTRY[key] = {
       label: cfg.label || key,
       source: 'cache',

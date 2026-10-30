@@ -30,7 +30,7 @@ enum RefreshTrigger {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
             "model": config.testModel,
-            "max_tokens": 50,
+            "max_tokens": config.testMaxTokens,
             "messages": [["role": "user", "content": config.testPrompt]],
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -43,6 +43,10 @@ enum RefreshTrigger {
         // auth 文件无 testModel 时回退 manifest 默认, 否则 POST body model 为空不触发计费
         if config.testModel.isEmpty {
             config.testModel = manifest.refreshModel
+        }
+        // P2-6: manifest.testPrompt 优先于 auth 值/缺省 (内置供应商声明值胜出)
+        if let mp = manifest.testPrompt, !mp.isEmpty {
+            config.testPrompt = mp
         }
         return await testRefresh(config: config)
     }

@@ -183,7 +183,7 @@ struct FloatingView: View {
                 HStack(spacing: 3) {
                     Text(r.label).font(.system(size: 9, design: .rounded)).foregroundStyle(.tertiary)
                     DotBar(pct: r.bucket.usedPercentage)
-                    PctText(pct: r.bucket.usedPercentage, size: 11, weight: .semibold)
+                    PctText(pct: r.bucket.usedPercentage, size: 12, weight: .semibold)
                     if let rt = resetText(r.bucket) {
                         CountdownChip(text: rt)
                     }
@@ -202,7 +202,7 @@ struct FloatingView: View {
                 ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
                               accent: brandColor(st.manifest.accent), size: 20)
                 Text(st.manifest.fullName)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                 Spacer()
                 starButton(st)
             }

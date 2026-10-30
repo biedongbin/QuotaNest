@@ -15,8 +15,13 @@ struct ProviderConfig {
     var refreshHeader: String = ""
     var refreshProtocol: String = "anthropic"  // 刷新协议: anthropic / openai
     var testModel: String = ""
-    var testPrompt: String = "test，收到回复1"
+    /// P2-6 默认调用参数 (FR-04.3): prompt="只回复OK"/max_tokens=16; manifest/auth 已有值优先
+    var testPrompt: String = "只回复OK"
+    var testMaxTokens: Int = 16
     var scheduleTimes: [String] = []  // 定时触发时间点 (HH:MM), 到点自动发 chat 请求
+
+    static let defaultPrompt = "只回复OK"
+    static let defaultMaxTokens = 16
 }
 
 enum ProviderConfigStore {
@@ -72,7 +77,8 @@ enum ProviderConfigStore {
         if c.refreshKey.isEmpty { c.refreshKey = c.queryKey }
 
         c.testModel = obj["testModel"] as? String ?? ""
-        c.testPrompt = obj["testPrompt"] as? String ?? "test，收到回复1"
+        c.testPrompt = obj["testPrompt"] as? String ?? ProviderConfig.defaultPrompt
+        c.testMaxTokens = obj["testMaxTokens"] as? Int ?? ProviderConfig.defaultMaxTokens
         return c
     }
 
@@ -118,17 +124,22 @@ enum ProviderConfigStore {
         default: // bearer
             obj["refreshApiKey"] = c.refreshKey
         }
-        // 可编辑字段: testModel/testPrompt 持久化到 auth 文件
+        // 可编辑字段: testModel/testPrompt/testMaxTokens 持久化到 auth 文件
         obj["testModel"] = c.testModel
         obj["testPrompt"] = c.testPrompt
+        obj["testMaxTokens"] = c.testMaxTokens
         // 定时触发时间点
         if c.scheduleTimes.isEmpty {
             obj.removeValue(forKey: "scheduleTimes")
         } else {
             obj["scheduleTimes"] = c.scheduleTimes
         }
+        // P2-3 存储版本化: auth 文件顶层 schemaVersion (读取端无消费者, 缺省=1)
+        obj["schemaVersion"] = 1
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         try out.write(to: authFile, options: .atomic)
+        // P2-2 凭证文件 0600: .atomic 重写会重置权限, 落盘后补 chmod
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
     }
 
     /// 创建自定义供应商 auth 文件 (首次编辑)
@@ -138,10 +149,13 @@ enum ProviderConfigStore {
             "headers": ["Authorization": "Bearer "],
             "refreshApiKey": "",
             "testModel": "",
-            "testPrompt": "test，收到回复1",
+            "testPrompt": "只回复OK",
+            "testMaxTokens": 16,
+            "schemaVersion": 1,
         ]
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         try out.write(to: authFile, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
     }
 
     private static func bearer(_ v: String?) -> String {

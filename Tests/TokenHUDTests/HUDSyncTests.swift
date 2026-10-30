@@ -91,4 +91,19 @@ struct HUDSyncTests {
         try HUDSync.patchSettings(settingsURL: tmp, accountEnvs: "Ollama", statuslinePath: "/tmp/s.mjs")
         #expect(FileManager.default.fileExists(atPath: tmp.appendingPathExtension("bak").path))
     }
+    // MARK: P2-3 envs.json 版本化: 顶层 _schemaVersion 元数据, 读端过滤
+
+    @Test func writeEnvsStampsSchemaVersion() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("e-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let d = HUDSync.envsDict(plugins: [custom("my-relay", label: "Relay")], hudDir: hud,
+                                 builtinNames: builtins)
+        try HUDSync.writeEnvs(d, to: tmp)
+        let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: tmp)) as? [String: Any]
+        #expect(obj?["_schemaVersion"] != nil)
+        // 读端 decode 不炸, 且 _key 过滤后条目完整
+        let back = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: tmp))
+        let entries = back.filter { !$0.key.hasPrefix("_") }
+        #expect(entries["my-relay"]?.label == "Relay")
+    }
 }

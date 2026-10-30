@@ -150,7 +150,7 @@ struct SidebarColumn: View {
             HStack(spacing: 8) {
                 Button("添加账号") { model.openTemplates() }
                     .barButton().frame(maxWidth: .infinity)
-                Button("导入…") { model.importOpen = true }
+                Button("导入…") { model.openImport() }
                     .barButton().frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 12)

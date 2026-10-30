@@ -127,4 +127,21 @@ struct SettingsPersistTests {
         #expect(rows[0].label == "服务地址")
         #expect(rows[0].value == "https://api.example.com")
     }
+    // MARK: P2-3 缓存 schemaVersion: 写入带 1, 读取缺省=1
+
+    @Test func cacheEncodeStampsSchemaVersion() throws {
+        let c = UsageCache(generatedAt: 100, sevenDay: Bucket(usedPercentage: 1))
+        let data = try JSONEncoder().encode(c)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(obj?["schemaVersion"] as? Int == 1)
+        let back = try JSONDecoder().decode(UsageCache.self, from: data)
+        #expect(back.schemaVersion == 1)
+    }
+
+    @Test func cacheDecodeDefaultsSchemaVersionTo1() throws {
+        let legacy = #"{"generatedAt":111,"seven_day":{"used_percentage":5}}"#
+        let c = try JSONDecoder().decode(UsageCache.self, from: Data(legacy.utf8))
+        #expect(c.schemaVersion == 1)
+        #expect(c.generatedAt == 111)
+    }
 }

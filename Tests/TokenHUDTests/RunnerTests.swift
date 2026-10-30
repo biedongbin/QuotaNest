@@ -88,4 +88,23 @@ final class RunnerTests {
         #expect(cache == nil)
         #expect(Date().timeIntervalSince(t0) < 8)
     }
+    // MARK: P2-4 stderr 日志脱敏
+
+    @Test func redactStripsCredentials() {
+        let in_ = """
+        curl -H 'Authorization: Bearer sk-abc123def456ghi789' https://x
+        api_key=sk-abc123def456ghi789
+        api-key: mysecret123
+        token=abcdef1234567890abcdef1234567890
+        plain text stays
+        """
+        let out = ProviderRunner.redact(in_)
+        #expect(!out.contains("sk-abc123def456ghi789"))
+        #expect(!out.contains("mysecret123"))
+        #expect(!out.contains("abcdef1234567890abcdef1234567890"))
+        #expect(out.contains("[REDACTED]"))
+        #expect(out.contains("plain text stays"))
+        #expect(out.contains("Authorization: Bearer [REDACTED]"))
+        #expect(out.contains("api_key=[REDACTED]"))
+    }
 }

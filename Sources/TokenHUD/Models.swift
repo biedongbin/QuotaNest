@@ -203,6 +203,8 @@ struct WindowBucket: Codable, Equatable {
 }
 
 struct UsageCache: Codable {
+    /// P2-3 存储版本化: 顶层 schemaVersion, 写入带 1, 读取缺省=1 (读端零改动兼容)
+    var schemaVersion: Int?
     /// 最近成功快照时间 (= snapshotCapturedAt/lastSuccessAt): 仅业务成功更新, 失败不推进 (FR-03.8)
     var generatedAt: Double?
     var fiveHour: Bucket?
@@ -216,16 +218,17 @@ struct UsageCache: Codable {
     var windows: [WindowBucket]?
 
     enum CodingKeys: String, CodingKey {
-        case generatedAt, lastAttemptAt, windows
+        case schemaVersion, generatedAt, lastAttemptAt, windows
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case monthly
         case error, stale
     }
 
-    init(generatedAt: Double? = nil, fiveHour: Bucket? = nil, sevenDay: Bucket? = nil,
+    init(schemaVersion: Int? = nil, generatedAt: Double? = nil, fiveHour: Bucket? = nil, sevenDay: Bucket? = nil,
          monthly: Bucket? = nil, error: String? = nil, stale: Bool? = nil,
          lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil) {
+        self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
@@ -236,10 +239,38 @@ struct UsageCache: Codable {
         self.windows = windows
     }
 
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // P2-3: 读取缺省 = 1 (旧缓存无此字段)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        generatedAt = try c.decodeIfPresent(Double.self, forKey: .generatedAt)
+        fiveHour = try c.decodeIfPresent(Bucket.self, forKey: .fiveHour)
+        sevenDay = try c.decodeIfPresent(Bucket.self, forKey: .sevenDay)
+        monthly = try c.decodeIfPresent(Bucket.self, forKey: .monthly)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
+        lastAttemptAt = try c.decodeIfPresent(Double.self, forKey: .lastAttemptAt)
+        windows = try c.decodeIfPresent([WindowBucket].self, forKey: .windows)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(schemaVersion ?? 1, forKey: .schemaVersion)
+        try c.encodeIfPresent(generatedAt, forKey: .generatedAt)
+        try c.encodeIfPresent(fiveHour, forKey: .fiveHour)
+        try c.encodeIfPresent(sevenDay, forKey: .sevenDay)
+        try c.encodeIfPresent(monthly, forKey: .monthly)
+        try c.encodeIfPresent(error, forKey: .error)
+        try c.encodeIfPresent(stale, forKey: .stale)
+        try c.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
+        try c.encodeIfPresent(windows, forKey: .windows)
+    }
+
     /// 解析 fetch.sh stdout（可缺 generatedAt/ttlMs 等字段），统一盖上框架字段
     static func make(body: Data, now: Double) -> UsageCache? {
         guard var raw = try? JSONDecoder().decode(UsageCache.self, from: body) else { return nil }
         raw.lastAttemptAt = now
+        raw.schemaVersion = 1
         if raw.error == nil {
             // 仅业务成功推进 generatedAt; 失败保留脚本写入的旧值 (FR-03.8 失败不推进成功时间)
             raw.generatedAt = now
