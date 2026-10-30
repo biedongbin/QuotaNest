@@ -24,10 +24,16 @@ enum HUDFmt {
         return d > 0 ? "\(d)d\(h % 24)h" : "\(h)h\(m)m"
     }
 
-    /// generatedAt(ms epoch) 距 now 未超 interval 秒
+    /// generatedAt(=最近成功快照时间, 失败不推进) 距 now 未超 interval 秒 — 展示新鲜度/stale 判定用
     static func isFresh(_ cache: UsageCache?, interval: Int, now: Double) -> Bool {
         guard let g = cache?.generatedAt else { return false }
         return now - g < Double(interval) * 1000
+    }
+
+    /// 尝试时间 (lastAttemptAt, 旧缓存缺省回退 generatedAt) 距 now 未超 interval 秒 — due/防重刷判定用
+    static func isAttemptFresh(_ cache: UsageCache?, interval: Int, now: Double) -> Bool {
+        guard let a = cache?.lastAttemptAt ?? cache?.generatedAt else { return false }
+        return now - a < Double(interval) * 1000
     }
 }
 
@@ -306,9 +312,9 @@ final class DataEngine: ObservableObject {
 
     func refreshNow() async {
         let now = Date().timeIntervalSince1970 * 1000
-        // MainActor 上下文先筛过期家 (快照), 避免闭包跨隔离访问 states
+        // MainActor 上下文先筛过期家 (按尝试时间: 失败也会前移 lastAttemptAt, 免 10s timer 对失败家反复重刷)
         let due: [(String, PluginProvider)] = states.compactMap { st in
-            guard !HUDFmt.isFresh(st.cache, interval: st.manifest.interval, now: now) else { return nil }
+            guard !HUDFmt.isAttemptFresh(st.cache, interval: st.manifest.interval, now: now) else { return nil }
             return (st.slug, PluginProvider(slug: st.slug, manifest: st.manifest,
                                             dir: pluginDir(slug: st.slug)))
         }
@@ -328,14 +334,16 @@ final class DataEngine: ObservableObject {
             }
         guard let plugin else { return .failed("供应商不存在") }
         let now = Date().timeIntervalSince1970 * 1000
-        guard let fetched = await runner.run(plugin) else { return .failed("查询无结果") }
+        let fetched = await runner.run(plugin)
+        // 失败 (nil) 也走 apply: 记录 lastAttemptAt/stale (失败不推进 generatedAt)
         if states.contains(where: { $0.slug == slug }) {
             apply(slug: slug, fetched: fetched, now: now)
-        } else {
+        } else if let fetched {
             writeCache(fetched, plugin: ProviderState(slug: slug, manifest: plugin.manifest,
                                                       cache: nil, isStale: false))
         }
         lastRefresh = Date()
+        guard let fetched else { return .failed("查询无结果") }
         if let e = fetched.error { return .failed(Self.reason(for: e)) }
         return .ok
     }
@@ -406,12 +414,12 @@ final class DataEngine: ObservableObject {
             states[i].cache = fetched
             states[i].isStale = false
         } else {
-            // 失败: 保留旧值, 标 stale (旧值写盘也盖 stale 标记, 与 statusline 约定一致)
-            var old = states[i].cache ?? UsageCache(generatedAt: now, fiveHour: nil, sevenDay: nil,
+            // 失败: 保留旧值与原 generatedAt (成功快照时间不因失败推进, FR-03.8),
+            // 仅前移 lastAttemptAt — due 判定用 isAttemptFresh, 10s timer 不会反复重刷
+            var old = states[i].cache ?? UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil,
                                                     monthly: nil, error: "fetch", stale: true)
             old.stale = true
-            // 失败也前移时间戳: 否则 isFresh 恒 false, 10s timer 每轮重刷, 与下一轮叠加致请求量超限频
-            old.generatedAt = now
+            old.lastAttemptAt = now
             if old.error == nil { old.error = "fetch" }
             states[i].cache = old
             states[i].isStale = true

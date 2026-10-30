@@ -30,13 +30,15 @@ const writeCache = (obj) => {
 };
 // 失败通用出口: 旧缓存有桶且同账号则保留 (UI 用上一轮), 否则写错误态
 // (防账号切换后沿用上一账号的额度)
+// generatedAt = 最近成功快照时间: 失败不推进, 只前移 lastAttemptAt (FR-03.8)
 const writeFailure = (kind, detail, accountId) => {
   const prev = readJson(CACHE_FILE);
   const sameAccount = prev && (prev.account_id ?? null) === (accountId ?? null);
+  const now = Date.now();
   if (sameAccount && (prev.five_hour || prev.seven_day || prev.monthly)) {
-    writeCache({ ...prev, error: kind, stale: true, generatedAt: Date.now() });
+    writeCache({ ...prev, error: kind, stale: true, lastAttemptAt: now });
   } else {
-    writeCache({ error: kind, generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ error: kind, lastAttemptAt: now, ttlMs: TTL_MS, stale: true });
   }
   if (verbose) console.error(`[gpt-provider] ${kind}: ${detail}`);
 };

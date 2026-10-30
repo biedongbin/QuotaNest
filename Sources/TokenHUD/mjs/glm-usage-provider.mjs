@@ -123,7 +123,7 @@ function nextOfTimes(times) {
 async function main() {
   const auth = readJson(AUTH_FILE, null);
   if (!auth || !auth.apiUrl) {
-    writeCache({ error: 'no-auth', generatedAt: Date.now(), ttlMs: TTL_MS });
+    writeCache({ error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS });
     if (verbose) console.error(`[${NAME}-provider] missing auth file`);
     return;
   }
@@ -145,14 +145,14 @@ async function main() {
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
   if (r.error || (r.status !== 0 && !r.stdout)) {
-    writeCache({ ...prevBuckets, error: 'network', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ ...prevBuckets, error: 'network', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] curl failed:`, r.error?.message || ('exit ' + r.status));
     return;
   }
   let data;
   try { data = JSON.parse(r.stdout); }
   catch {
-    writeCache({ ...prevBuckets, error: 'parse', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ ...prevBuckets, error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] parse failed:`, (r.stdout || '').slice(0, 200));
     return;
   }
@@ -164,18 +164,18 @@ async function main() {
   // 认证失败检测：GLM 用 body.code===401；GPT 用 {error:"Unauthorized"}（均 HTTP 200）
   const errVal = auth.errorField ? getByPath(data, auth.errorField) : undefined;
   if (errVal != null && (auth.authFailValues || ['Unauthorized']).includes(errVal)) {
-    writeCache({ ...prevBuckets, error: 'auth', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ ...prevBuckets, error: 'auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] auth expired (${auth.errorField}=${errVal})`);
     return;
   }
   const code = getByPath(data, auth.codeField || 'code');
   if (code === (auth.authFailCode ?? 401)) {
-    writeCache({ ...prevBuckets, error: 'auth', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ ...prevBuckets, error: 'auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] auth expired (body code=${code})`);
     return;
   }
   if (auth.successCode != null && code !== auth.successCode) {
-    writeCache({ ...prevBuckets, error: 'api:' + code, generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ ...prevBuckets, error: 'api:' + code, lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error(`[${NAME}-provider] api code=`, code);
     return;
   }
@@ -198,4 +198,4 @@ async function main() {
   }
 }
 
-main().catch(() => writeCache({ error: 'fatal', generatedAt: Date.now(), ttlMs: TTL_MS }));
+main().catch(() => writeCache({ error: 'fatal', lastAttemptAt: Date.now(), ttlMs: TTL_MS }));

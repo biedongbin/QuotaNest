@@ -138,15 +138,18 @@ struct Bucket: Codable {
 }
 
 struct UsageCache: Codable {
+    /// 最近成功快照时间 (= snapshotCapturedAt/lastSuccessAt): 仅业务成功更新, 失败不推进 (FR-03.8)
     var generatedAt: Double?
     var fiveHour: Bucket?
     var sevenDay: Bucket?
     var monthly: Bucket?
     var error: String?
     var stale: Bool?
+    /// 最近尝试时间: 每次尝试都更新 (失败也更新); 引擎 due 判定/statusline spawn 抑制用它, 旧缓存缺省回退 generatedAt
+    var lastAttemptAt: Double?
 
     enum CodingKeys: String, CodingKey {
-        case generatedAt
+        case generatedAt, lastAttemptAt
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case monthly
@@ -155,12 +158,15 @@ struct UsageCache: Codable {
 
     /// 解析 fetch.sh stdout（可缺 generatedAt/ttlMs 等字段），统一盖上框架字段
     static func make(body: Data, now: Double) -> UsageCache? {
-        guard let raw = try? JSONDecoder().decode(UsageCache.self, from: body) else { return nil }
-        var c = raw
-        c.generatedAt = now
-        c.stale = false
-        if c.error == nil, c.fiveHour == nil, c.sevenDay == nil, c.monthly == nil { return nil }
-        return c
+        guard var raw = try? JSONDecoder().decode(UsageCache.self, from: body) else { return nil }
+        raw.lastAttemptAt = now
+        if raw.error == nil {
+            // 仅业务成功推进 generatedAt; 失败保留脚本写入的旧值 (FR-03.8 失败不推进成功时间)
+            raw.generatedAt = now
+            raw.stale = false
+        }
+        if raw.error == nil, raw.fiveHour == nil, raw.sevenDay == nil, raw.monthly == nil { return nil }
+        return raw
     }
 }
 

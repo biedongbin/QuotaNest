@@ -24,12 +24,14 @@ const writeCache = (obj) => {
   try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2)); } catch {}
 };
 // 失败通用出口: 旧缓存有数据则保留 (UI 用上一轮), 仅无旧数据才写错误态
+// generatedAt = 最近成功快照时间: 失败不推进, 只前移 lastAttemptAt (FR-03.8)
 const writeFailure = (kind, detail) => {
   const prev = readJson(CACHE_FILE, null);
+  const now = Date.now();
   if (prev && (prev.five_hour || prev.seven_day)) {
-    writeCache({ ...prev, error: kind, stale: true, generatedAt: Date.now() });
+    writeCache({ ...prev, error: kind, stale: true, lastAttemptAt: now });
   } else {
-    writeCache({ error: kind, generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ error: kind, lastAttemptAt: now, ttlMs: TTL_MS, stale: true });
   }
   if (verbose) console.error(`[ollama-provider] ${kind}: ${detail}`);
 };

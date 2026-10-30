@@ -26,7 +26,7 @@ const DEFAULT_URL = 'https://opencode.ai/zen/go/v1/usage';
 function main() {
   const auth = readJson(AUTH_FILE, null);
   if (!auth || !auth.refreshApiKey) {
-    writeCache({ error: 'no-auth', generatedAt: Date.now(), ttlMs: TTL_MS });
+    writeCache({ error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS });
     if (verbose) console.error('[oc-go-provider] missing refreshApiKey');
     return;
   }
@@ -37,19 +37,19 @@ function main() {
     url,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error || r.status !== 0 || !r.stdout) {
-    writeCache({ error: 'network', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ error: 'network', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error('[oc-go-provider] curl failed:', r.error?.message || ('exit ' + r.status));
     return;
   }
   let data;
   try { data = JSON.parse(r.stdout); } catch {
-    writeCache({ error: 'parse', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error('[oc-go-provider] non-JSON:', r.stdout.slice(0, 120));
     return;
   }
   const u = data && data.usage;
   if (!u) {
-    writeCache({ error: 'parse', generatedAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    writeCache({ error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     if (verbose) console.error('[oc-go-provider] no usage:', r.stdout.slice(0, 120));
     return;
   }

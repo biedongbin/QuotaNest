@@ -197,12 +197,19 @@ function readAccountEnvs() {
   } catch { return []; }
 }
 
+// 展示新鲜度: 按最近成功快照时间 (generatedAt, 失败不推进)
 function usageFresh(cache) {
   return !!(cache && cache.generatedAt && Date.now() - cache.generatedAt < USAGE_TTL_MS);
 }
 
+// spawn 抑制: 按最近尝试时间 (lastAttemptAt, 旧缓存回退 generatedAt), 失败也在 TTL 内不重 spawn
+function attemptFresh(cache) {
+  const t = cache?.lastAttemptAt ?? cache?.generatedAt;
+  return !!(t && Date.now() - t < USAGE_TTL_MS);
+}
+
 function maybeSpawnUsage(cache, authFile, spawnEnv = {}, providerPath = USAGE_PROVIDER) {
-  if (usageFresh(cache)) return;
+  if (attemptFresh(cache)) return;
   try { readFileSync(authFile, 'utf8'); } catch { return; } // auth 文件不存在不 spawn
   try {
     const child = spawn(process.execPath, [providerPath], {
