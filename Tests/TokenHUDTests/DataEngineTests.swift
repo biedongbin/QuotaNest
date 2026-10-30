@@ -181,7 +181,8 @@ struct DataEngineTests {
         addPlugin("victim", stdout: #"{"seven_day":{"used_percentage":3}}"#, to: tmp)
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: tmp.appendingPathComponent("providers"),
-                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
+                                  defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
         // 先成功查一次 → cache 落盘; envs.json 预置该账号条目 (模拟已写 HUD)
         _ = await engine.forceRefresh(slug: "victim")
         let cacheFile = DataEngine.cachePath(
@@ -239,7 +240,8 @@ struct DataEngineTests {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
-                                runner: ProviderRunner(nodePath: nil), defaults: defaults)
+                                runner: ProviderRunner(nodePath: nil, logDir: hudDir), defaults: defaults,
+                                settingsURL: tmp.appendingPathComponent("settings.json"))
         return (engine, tmp, hudDir, defaults)
     }
 
@@ -300,7 +302,8 @@ struct DataEngineTests {
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hudDir,
                                   userDir: tmp.appendingPathComponent("providers"),
-                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
+                                  defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
         model.selected = "hold"
         model.startEdit()
         model.draft?.values.key = "k"
@@ -336,7 +339,8 @@ struct DataEngineTests {
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hudDir,
                                   userDir: tmp.appendingPathComponent("providers"),
-                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
+                                  defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
         model.selected = "acct"
         model.startEdit()
         model.draft?.values.url = "https://api.example.com"
@@ -639,9 +643,13 @@ struct DataEngineTests {
         addPlugin("acc1", stdout: "{}", to: tmp)
         engine.reloadRegistry()
 
+        // 隔离 settings.json (setHudHidden 会触发 envs 重写, 不碰真实 ~/.claude/settings.json)
+        let settings = tmp.appendingPathComponent("settings.json")
+        try? #"{"env":{"ACCOUNT_ENVS":"acc1"}}"#.write(to: settings, atomically: true, encoding: .utf8)
+
         engine.setTracking("acc1", enabled: false)          // 主开关停用
         engine.setFloatingHidden("acc1", hidden: true)      // 悬浮窗隐藏
-        engine.setHudHidden("acc1", hidden: true)           // HUD 关同步
+        engine.setHudHidden("acc1", hidden: true)  // HUD 关同步
         #expect(engine.disabledSlugs.contains("acc1"))
         #expect(engine.floatingHiddenSlugs.contains("acc1"))
         #expect(engine.hudHiddenSlugs.contains("acc1"))
@@ -658,6 +666,26 @@ struct DataEngineTests {
         #expect(!engine.hudSyncNames.contains("acc1"))
         engine.setHudHidden("acc1", hidden: false)
         #expect(engine.hudSyncNames.contains("acc1"))
+    }
+
+    @Test @MainActor func disabledAccountSkipsScheduledModelCall() async throws {
+        let (engine, tmp, hudDir, defaults) = makeEngine("disabled-schedule")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("scheduled", stdout: "{}", to: tmp)
+        let now = Date()
+        let calendar = Calendar.current
+        let hhmm = String(format: "%02d:%02d", calendar.component(.hour, from: now),
+                          calendar.component(.minute, from: now))
+        try JSONSerialization.data(withJSONObject: ["scheduleTimes": [hhmm]])
+            .write(to: hudDir.appendingPathComponent(".scheduled-usage-auth.json"))
+        engine.reloadRegistry()
+        engine.setTracking("scheduled", enabled: false)
+        let calls = OpTracker()
+        engine.checkSchedules(now: now) { _, _ in await calls.enter(); return nil }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        #expect(await calls.calls == 0)
+        #expect(!engine.triggerDisabledSlugs.contains("scheduled"))
+        #expect(defaults.string(forKey: DataEngine.defaultsScheduleFiredKey) == nil)
     }
 
     @Test @MainActor func disabledAccountSkipsRefreshNow() async {
@@ -697,6 +725,8 @@ struct DataEngineTests {
     @Test @MainActor func hudSyncNamesFilterEndToEnd() {
         let (engine, tmp, _, _) = makeEngine("v02envs")
         defer { try? FileManager.default.removeItem(at: tmp) }
+        let settings = tmp.appendingPathComponent("settings.json")
+        try? #"{"env":{"ACCOUNT_ENVS":"a1,a2,acc-junk"}}"#.write(to: settings, atomically: true, encoding: .utf8)
         addPlugin("a1", stdout: "{}", to: tmp)
         addPlugin("a2", stdout: "{}", to: tmp)
         engine.reloadRegistry()
@@ -704,6 +734,163 @@ struct DataEngineTests {
         #expect(engine.hudSyncNames == ["a1"])
         engine.setTracking("a1", enabled: false)   // 停用也排除
         #expect(engine.hudSyncNames.isEmpty)
+        // 事故修复验证: ACCOUNT_ENVS 垃圾值被清, 合法键保留
+        engine.setTracking("a1", enabled: true)
+        engine.writeEnvsForHudSync()
+        let obj = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settings))) as? [String: Any]
+        #expect((obj?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String == "a1,acc-junk")
+    }
+
+    // MARK: HUD 同步必须保留外部配置并避免部分写入
+
+    @Test @MainActor func hudSyncPreservesExternalAccountsAndEntries() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("hud-external")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("acc1", stdout: "{}", to: tmp)
+        engine.reloadRegistry()
+        let settings = tmp.appendingPathComponent("settings.json")
+        try #"{"env":{"ACCOUNT_ENVS":"Claude-Max,External,acc1","OTHER":"keep"},"theme":"dark"}"#
+            .write(to: settings, atomically: true, encoding: .utf8)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let external = EnvsEntry(label: "External", source: "cache", cache: "/tmp/external-cache", buckets: [:])
+        try HUDSync.writeEnvs(["External": external], to: envsURL)
+
+        engine.writeEnvsForHudSync()
+
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
+        let env = try #require(obj["env"] as? [String: Any])
+        #expect(env["ACCOUNT_ENVS"] as? String == "Claude-Max,External,acc1")
+        #expect(env["OTHER"] as? String == "keep")
+        #expect(obj["theme"] as? String == "dark")
+        let entries = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: envsURL))
+        #expect(entries["External"]?.cache == "/tmp/external-cache")
+        #expect(entries["acc1"] != nil)
+    }
+
+    @Test @MainActor func hudSyncRejectsDifferentBuiltinInstanceWithoutChangingFiles() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("hud-builtin-instance")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let settings = tmp.appendingPathComponent("settings.json")
+        let settingsData = Data(#"{"env":{"ACCOUNT_ENVS":"Cline"}}"#.utf8)
+        try settingsData.write(to: settings)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let envsData = Data("{}".utf8)
+        try envsData.write(to: envsURL)
+        let second = tmp.appendingPathComponent("providers/cline-2", isDirectory: true)
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        try JSONEncoder().encode(ProviderManifest(name: "Cline", label: "Cline", template: "cline"))
+            .write(to: second.appendingPathComponent("manifest.json"))
+        engine.reloadRegistry()
+        let result = engine.writeEnvsForHudSync()
+        if case .success = result { Issue.record("非默认实例不能读取默认账号缓存") }
+        #expect(try Data(contentsOf: settings) == settingsData)
+        #expect(try Data(contentsOf: envsURL) == envsData)
+        // 已隐藏的第二账号不能阻止其他账号正常同步。
+        engine.setTracking("cline-2", enabled: false)
+        if case .failure(let error) = engine.writeEnvsForHudSync() {
+            Issue.record("停用的第二账号不应阻断同步：\(error.localizedDescription)")
+        }
+    }
+
+    @Test @MainActor func hudSyncRejectsCustomBuiltinNameWithDifferentCache() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("hud-custom-builtin")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let settings = tmp.appendingPathComponent("settings.json")
+        let originalSettings = Data(#"{"env":{"ACCOUNT_ENVS":"Cline"}}"#.utf8)
+        try originalSettings.write(to: settings)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let originalEnvs = Data("{}".utf8)
+        try originalEnvs.write(to: envsURL)
+        let customDir = tmp.appendingPathComponent("providers/custom-cline", isDirectory: true)
+        try FileManager.default.createDirectory(at: customDir, withIntermediateDirectories: true)
+        try JSONEncoder().encode(ProviderManifest(name: "Cline", label: "Custom",
+                                                  cacheFile: hudDir.appendingPathComponent(".custom-usage-cache.json").path))
+            .write(to: customDir.appendingPathComponent("manifest.json"))
+        engine.reloadRegistry()
+
+        if case .success = engine.writeEnvsForHudSync() { Issue.record("自定义同名账号不能读取内置缓存") }
+        #expect(try Data(contentsOf: settings) == originalSettings)
+        #expect(try Data(contentsOf: envsURL) == originalEnvs)
+        // 冲突账号已关闭 HUD 时，不应阻断其他账号同步。
+        if case .failure(let error) = engine.setHudHidden("custom-cline", hidden: true) {
+            Issue.record("未选中的冲突账号不应阻断同步：\(error.localizedDescription)")
+        }
+    }
+
+    @Test @MainActor func hudSyncRejectsDefaultSlugWithChangedCache() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("hud-changed-cache")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let settings = tmp.appendingPathComponent("settings.json")
+        let originalSettings = Data(#"{"env":{"ACCOUNT_ENVS":"Cline"}}"#.utf8)
+        try originalSettings.write(to: settings)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let originalEnvs = Data("{}".utf8)
+        try originalEnvs.write(to: envsURL)
+        let pluginDir = tmp.appendingPathComponent("providers/cline", isDirectory: true)
+        try FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+        try JSONEncoder().encode(ProviderManifest(name: "Cline", label: "Cline",
+                                                  cacheFile: hudDir.appendingPathComponent(".changed-usage-cache.json").path,
+                                                  template: "cline"))
+            .write(to: pluginDir.appendingPathComponent("manifest.json"))
+        engine.reloadRegistry()
+
+        if case .success = engine.writeEnvsForHudSync() { Issue.record("默认 slug 也必须检查实际缓存路径") }
+        #expect(try Data(contentsOf: settings) == originalSettings)
+        #expect(try Data(contentsOf: envsURL) == originalEnvs)
+        engine.setTracking("cline", enabled: false)
+        if case .failure(let error) = engine.writeEnvsForHudSync() {
+            Issue.record("停用冲突账号不应阻断同步：\(error.localizedDescription)")
+        }
+    }
+
+    @Test @MainActor func hudSyncInvalidSettingsDoesNotChangeEnvs() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("hud-invalid-settings")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        addPlugin("acc1", stdout: "{}", to: tmp)
+        engine.reloadRegistry()
+        let settings = tmp.appendingPathComponent("settings.json")
+        try Data("invalid-json".utf8).write(to: settings)
+        let envsURL = hudDir.appendingPathComponent("envs.json")
+        let original = Data(#"{"External":{"label":"External","source":"cache","cache":"/tmp/cache","buckets":{}}}"#.utf8)
+        try original.write(to: envsURL)
+
+        let result = engine.writeEnvsForHudSync()
+        if case .success = result { Issue.record("无效设置必须返回同步失败") }
+        #expect(try Data(contentsOf: envsURL) == original)
+        #expect(try Data(contentsOf: settings) == Data("invalid-json".utf8))
+    }
+
+    // MARK: v0.2 HUD 事故修复: 内置键不被清
+
+    @Test @MainActor func accountEnvsKeepBuiltinKeysWithMixedPlugins() throws {
+        let (engine, tmp, hudDir, _) = makeEngine("v02builtin")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        // 内置实例 (template 指向模板 slug) + 自定义并存
+        let d = tmp.appendingPathComponent("providers/builtin1", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(ProviderManifest(name: "CC-X", label: "X", template: "xtmpl"))
+            .write(to: d.appendingPathComponent("manifest.json"))
+        addPlugin("custom1", stdout: "{}", to: tmp)
+        engine.reloadRegistry()
+        #expect(engine.hudSyncNames.count == 2)                    // 含内置 CC-X
+        #expect(engine.hudSyncNames.contains("CC-X"))
+        #expect(engine.envsEntryNames == ["custom1"])              // envs entry 仅自定义
+        // 既有合法 ACCOUNT_ENVS (含内置) 保留, 垃圾值滤除
+        let settings = tmp.appendingPathComponent("settings.json")
+        try? #"{"env":{"ACCOUNT_ENVS":"CC-X,acc-junk,custom1"}}"#
+            .write(to: settings, atomically: true, encoding: .utf8)
+        engine.writeEnvsForHudSync()
+        let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any]
+        let v = ((obj?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String) ?? ""
+        #expect(v == "CC-X,acc-junk,custom1")   // 顺序保留，未知外部条目不擅自移除
+        // envs.json 只含自定义 entry (内置走 registry 硬编码)
+        let envs = try JSONDecoder().decode([String: EnvsEntry].self,
+                                            from: Data(contentsOf: hudDir.appendingPathComponent("envs.json")))
+        #expect(envs.keys.contains("custom1"))
+        #expect(!envs.keys.contains("CC-X"))
+        // 停用账号不进 keys
+        engine.setTracking("custom1", enabled: false)
+        #expect(engine.hudSyncNames == ["CC-X"])
     }
 }
 

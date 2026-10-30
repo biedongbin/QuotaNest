@@ -192,7 +192,9 @@ function readJsonSafe(p) {
 function readAccountEnvs() {
   try {
     const s = JSON.parse(readFileSync(join(CLAUDE_DIR, 'settings.json'), 'utf8'));
-    const v = s?.env?.ACCOUNT_ENVS || s?.env?.ACCOUNT_ENV;
+    // 显式空列表表示不显示；只有多值键不存在时才回退旧单值。
+    const v = Object.prototype.hasOwnProperty.call(s?.env || {}, 'ACCOUNT_ENVS')
+      ? s.env.ACCOUNT_ENVS : s?.env?.ACCOUNT_ENV;
     if (!v) return [];
     return String(v).split(',').map(x => x.trim()).filter(Boolean);
   } catch { return []; }

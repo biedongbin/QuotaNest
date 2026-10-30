@@ -27,14 +27,19 @@ struct SettingsCenterView: View {
                 .frame(width: 200)
             Divider().overlay(Palette.border)
             VStack(spacing: 0) {
-                if model.selected != nil || model.showingTemplates || model.draft != nil {
+                switch model.navPage {
+                case .overview:
+                    OverviewPage(model: model, engine: engine)
+                case .plan:
+                    PlanPage(model: model)
+                case .settings:
+                    GlobalSettingsPage(model: model, engine: engine)
+                case .detail:
                     DetailHeader(model: model)
                     Rectangle().fill(Palette.border).frame(height: 1)
                     DetailPanel(model: model, engine: engine)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Palette.canvas)
-                } else {
-                    OverviewPage(model: model, engine: engine)
                 }
             }
         }
@@ -47,8 +52,8 @@ struct SettingsCenterView: View {
             // Esc: 草稿 → 取消 (带确认); 模板目录 → 返回账号; 详情 → 返回总览
             Button("") {
                 if model.draft != nil { model.cancelEdit() }
-                else if model.showingTemplates { model.showingTemplates = false }
-                else if model.selected != nil { model.selectAccount("") ; model.selected = nil }
+                else if model.showingTemplates { model.closeTemplates() }
+                else if model.navPage == .detail { model.navigate(to: .overview) }
             }
             .keyboardShortcut(.cancelAction)
             .opacity(0)
@@ -62,25 +67,31 @@ struct SettingsCenterView: View {
             model.selected = slug
         }
         switch s.mode {
-        case .quota: model.tab = .quota
-        case .config: model.tab = .config
-        case .trigger: model.tab = .trigger
+        case .quota: model.tab = .quota; model.navPage = model.selected != nil ? .detail : .overview
+        case .config: model.tab = .config; model.navPage = .detail
+        case .trigger: model.tab = .trigger; model.navPage = .detail
         case .edit:
             model.tab = .config
+            model.navPage = .detail
             model.startEdit()
         case .editTrigger:
             model.tab = .trigger
+            model.navPage = .detail
             model.startEdit()
         case .templates:
-            model.showingTemplates = true
+            model.openTemplates()
         case .create:
-            model.showingTemplates = true
+            model.openTemplates()
             if let c = model.choices.first(where: { $0.id == s.templateID }) {
                 model.pickTemplate(c)
             }
         case .importer:
             model.importOpen = true
             if let im = renderScript?.importModel { im.scanSynchronously() }
+        case .plan:
+            model.navPage = .plan
+        case .globalSettings:
+            model.navPage = .settings
         case .full, .overview:
             break
         }
@@ -102,13 +113,11 @@ struct SettingsCenterView: View {
     }
 }
 
-// MARK: - 左栏导航 (v0.2: 账号列表移除, 总览页即账号列表)
+// MARK: - 左栏导航 (v0.2: 总览/调用计划/全局设置 三段路由)
 
 struct NavColumn: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
-
-    private var inDetail: Bool { model.selected != nil || model.showingTemplates || model.draft != nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -121,11 +130,15 @@ struct NavColumn: View {
             .padding(.bottom, 10)
 
             VStack(spacing: 2) {
-                navRow("额度总览", icon: "square.grid.2x2", active: !inDetail) {
-                    backToOverview()
+                navRow("额度总览", icon: "square.grid.2x2", active: model.navPage == .overview) {
+                    model.navigate(to: .overview)
                 }
-                navRow("调用计划", icon: "clock.arrow.circlepath", active: false) { backToOverviewThenTab(.trigger) }
-                navRow("设置", icon: "slider.horizontal.3", active: false) { backToOverviewThenTab(.config) }
+                navRow("调用计划", icon: "clock.arrow.circlepath", active: model.navPage == .plan) {
+                    model.navigate(to: .plan)
+                }
+                navRow("设置", icon: "slider.horizontal.3", active: model.navPage == .settings) {
+                    model.navigate(to: .settings)
+                }
             }
             .padding(.horizontal, 8)
 
@@ -135,14 +148,14 @@ struct NavColumn: View {
 
             VStack(spacing: 8) {
                 Button {
-                    if !inDetail { model.openTemplates() } else { backToOverviewThen(nil) { model.openTemplates() } }
+                    model.openTemplates()
                 } label: {
                     Label("添加账号", systemImage: "plus")
                 }
                 .barButton().frame(maxWidth: .infinity)
 
                 Button {
-                    if !inDetail { model.openImport() } else { backToOverviewThen(nil) { model.openImport() } }
+                    model.openImport()
                 } label: {
                     Label("导入…", systemImage: "square.and.arrow.down.on.square")
                 }
@@ -152,32 +165,6 @@ struct NavColumn: View {
             .padding(.vertical, 12)
         }
         .background(Palette.sidebar)
-    }
-
-    /// 有草稿先走 guard; 返回总览 (清选中, 不动 tab)
-    private func backToOverview() {
-        guard model.leaveGuard() else { return }
-        model.showingTemplates = false
-        model.draft = nil
-        model.selected = nil
-    }
-
-    /// 返回总览后进指定账号 tab (调用计划/设置: 取第一个账号; 无账号仅返回)
-    private func backToOverviewThenTab(_ tab: SettingsModel.Tab) {
-        backToOverviewThen(tab) {}
-    }
-
-    private func backToOverviewThen(_ tab: SettingsModel.Tab?, then: @escaping () -> Void) {
-        guard model.leaveGuard() else { return }
-        model.showingTemplates = false
-        model.draft = nil
-        if let tab, let first = model.accounts.first {
-            model.selected = first.id
-            model.tab = tab
-        } else {
-            model.selected = nil
-        }
-        then()
     }
 
     private func navRow(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -354,9 +341,7 @@ struct AccountCard: View {
             Divider()
             Button(row.enabled ? "停用监控" : "启用监控") { model.toggleMonitoring(row.id, enabled: !row.enabled) }
             Button("编辑配置") {
-                model.selectAccount(row.id)
-                model.tab = .config
-                model.startEdit()
+                if model.selectAccount(row.id, tab: .config) { model.startEdit() }
             }
             Divider()
             Button("删除…", role: .destructive) { model.delete(row.id) }
@@ -390,9 +375,7 @@ struct AccountCard: View {
                 Toggle(isOn: hudBinding) { Text("同步 HUD") }
                 Divider()
                 Button("编辑配置") {
-                    model.selectAccount(row.id)
-                    model.tab = .config
-                    model.startEdit()
+                    if model.selectAccount(row.id, tab: .config) { model.startEdit() }
                 }
                 Button("删除…", role: .destructive) { model.delete(row.id) }
             } label: {
@@ -512,11 +495,7 @@ struct DetailHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Button {
-                    if model.leaveGuard() {
-                        model.showingTemplates = false
-                        model.draft = nil
-                        model.selected = nil
-                    }
+                    model.navigate(to: .overview)
                 } label: {
                     Label("返回总览", systemImage: "chevron.left")
                 }
@@ -574,7 +553,7 @@ struct DetailHeader: View {
     @ViewBuilder
     private var actions: some View {
         if model.showingTemplates {
-            Button("取消") { model.showingTemplates = false; model.selectAccount(model.selected ?? "") }
+            Button("取消") { model.closeTemplates() }
                 .barButton()
         } else if let d = model.draft, d.isNew {
             Button("返回模板目录") { model.cancelEdit() }.barButton()
@@ -716,9 +695,214 @@ struct DetailPanel: View {
 // MARK: - 渲染钩子
 
 struct RenderScript {
-    enum Mode { case quota, config, trigger, edit, editTrigger, templates, create, importer, full, overview }
+    enum Mode { case quota, config, trigger, edit, editTrigger, templates, create, importer, full,
+                overview, plan, globalSettings }
     var mode: Mode
     var slug: String?
     var templateID: String?
     var importModel: ImportCenterModel? = nil
+}
+
+// MARK: - v0.2 调用计划页 (全部账号的定时计划, 独立页面非账号详情)
+
+struct PlanPage: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("调用计划").font(Typo.title).foregroundStyle(Palette.ink)
+                Spacer()
+                Text("\(model.planRows.filter(\.enabled).count)/\(model.planRows.count) 启用")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
+            Rectangle().fill(Palette.border).frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("各账号的模型定时调用计划；点行进入该账号的「自动触发」tab 编辑。到点调用会消耗额度。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    if model.planRows.isEmpty {
+                        Text("暂无账号。可添加或导入账号后设置调用计划。")
+                            .font(Typo.body).foregroundStyle(Palette.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 16)
+                    } else {
+                        ForEach(model.planRows) { row in
+                            planRow(row)
+                        }
+                    }
+                }
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+        }
+        .background(Palette.canvas)
+    }
+
+    private func planRow(_ r: SettingsModel.PlanRow) -> some View {
+        Button {
+            model.selectAccount(r.slug, tab: .trigger)
+        } label: {
+            HStack(spacing: 12) {
+                ProviderBadge(icon: r.icon, label: r.name, accent: brandColor(r.accent), size: 24)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(r.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        if !r.canCall {
+                            BadgeText(text: "尚未配置调用", locked: true)
+                        } else if r.times.isEmpty {
+                            Text("未设置时间").font(Typo.small).foregroundStyle(Palette.muted)
+                        } else if r.enabled {
+                            Text("计划已启用").font(Typo.small).foregroundStyle(Palette.ok)
+                        } else if r.pausedByAccount {
+                            Text("账号已停用，计划暂停").font(Typo.small).foregroundStyle(Palette.muted)
+                        } else {
+                            Text("计划已关闭").font(Typo.small).foregroundStyle(Palette.muted)
+                        }
+                    }
+                    if r.canCall {
+                        HStack(spacing: 6) {
+                            if r.times.isEmpty {
+                                Text("未设置时间点").font(Typo.small).foregroundStyle(Palette.muted)
+                            } else {
+                                ForEach(r.times, id: \.self) { t in
+                                    Text(t).font(Typo.small).monospacedDigit()
+                                        .foregroundStyle(Palette.ink)
+                                        .padding(.horizontal, 8).padding(.vertical, 1)
+                                        .background(Capsule().fill(Palette.badgeBg))
+                                        .overlay(Capsule().strokeBorder(Palette.border, lineWidth: 1))
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Text(r.lastOutcome ?? "今日无记录")
+                                .font(Typo.small)
+                                .foregroundStyle(r.lastOutcome == nil ? Palette.muted : Palette.ink)
+                        }
+                    } else {
+                        Text("当前账号尚未配置模型调用。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.border, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(r.enabled ? 1 : 0.7)
+    }
+}
+
+// MARK: - v0.2 全局设置页 (全局项, 非账号配置)
+
+struct GlobalSettingsPage: View {
+    @ObservedObject var model: SettingsModel
+    @ObservedObject var engine: DataEngine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("设置").font(Typo.title).foregroundStyle(Palette.ink)
+                Spacer()
+            }
+            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
+            Rectangle().fill(Palette.border).frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    hudSyncCard
+                    iconCard
+                    diagnosticsCard
+                }
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+        }
+        .background(Palette.canvas)
+    }
+
+    // HUD 同步状态 + 手动重写
+    private var hudSyncCard: some View {
+        CardBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Claude Code HUD").font(Typo.section).foregroundStyle(Palette.ink)
+                Text("已启用同步的账号：")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+                if engine.hudSyncNames.isEmpty {
+                    Text("无").font(Typo.small).foregroundStyle(Palette.muted)
+                } else {
+                    HStack(spacing: 6) {
+                        ForEach(engine.hudSyncNames, id: \.self) { n in
+                            BadgeText(text: n)
+                        }
+                    }
+                }
+                Button("同步到 Claude Code HUD") { model.syncHUD() }.barButton()
+                    .help("同步已启用的账号额度到 Claude Code HUD")
+            }
+        }
+    }
+
+    // 菜单栏图标供应商
+    private var iconCard: some View {
+        CardBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("菜单栏图标").font(Typo.section).foregroundStyle(Palette.ink)
+                Text("图标显示哪家的已用百分比；「全部」取各家最高值。")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+                Picker("图标供应商", selection: iconBinding) {
+                    Text("全部（取最高）").tag("")
+                    ForEach(model.allAccounts.filter(\.enabled)) { r in
+                        Text(r.name).tag(r.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+            }
+        }
+    }
+
+    private var iconBinding: Binding<String> {
+        Binding(get: { engine.iconProviderSlug ?? "" },
+                set: { engine.setIconProvider($0.isEmpty ? nil : $0) })
+    }
+
+    // 诊断信息 (只展示真实存在的)
+    private var diagnosticsCard: some View {
+        CardBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("诊断").font(Typo.section).foregroundStyle(Palette.ink)
+                VStack(spacing: 0) {
+                    KeyValueRow("版本") {
+                        Text(Self.appVersion)
+                    }
+                    KeyValueRow("node") {
+                        if let p = engine.nodePathForUI {
+                            Text(p).font(Typo.mono)
+                        } else {
+                            Text("未找到 — 菜单栏会提示").foregroundStyle(Palette.warn)
+                        }
+                    }
+                    KeyValueRow("HUD 目录") {
+                        Text(model.hudDir.path).font(Typo.mono)
+                    }
+                    KeyValueRow("账号目录") {
+                        Text(model.userDir.path).font(Typo.mono)
+                    }
+                }
+            }
+        }
+    }
+
+    static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
 }

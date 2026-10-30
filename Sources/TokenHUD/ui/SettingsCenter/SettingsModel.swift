@@ -267,6 +267,37 @@ enum AddressPresentation {
     }
 }
 
+// MARK: - 删除范围
+
+/// 只允许清理本应用为该账号创建的固定路径, 不跟随 manifest 指向外部文件。
+enum AccountFileOwnership {
+    enum HUDFile: Equatable { case auth, cache }
+
+    static func canRemoveHUDFile(_ candidate: URL, slug: String, kind: HUDFile,
+                                 hudDir: URL) -> Bool {
+        let suffix = kind == .auth ? "usage-auth.json" : "usage-cache.json"
+        return matchesOwnedPath(candidate, slug: slug, name: ".\(slug)-\(suffix)",
+                                root: hudDir, directory: false)
+    }
+
+    static func canRemovePluginDirectory(_ candidate: URL, slug: String,
+                                         userDir: URL) -> Bool {
+        matchesOwnedPath(candidate, slug: slug, name: slug, root: userDir, directory: true)
+    }
+
+    private static func matchesOwnedPath(_ candidate: URL, slug: String, name: String,
+                                         root: URL, directory: Bool) -> Bool {
+        guard ProviderRegistry.isValidSlug(slug) else { return false }
+        let expected = root.standardizedFileURL.appendingPathComponent(name).standardizedFileURL
+        guard candidate.standardizedFileURL == expected,
+              candidate.resolvingSymlinksInPath().standardizedFileURL
+                == root.resolvingSymlinksInPath().appendingPathComponent(name).standardizedFileURL,
+              let values = try? candidate.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey]),
+              values.isSymbolicLink != true else { return false }
+        return directory ? values.isDirectory == true : values.isRegularFile == true
+    }
+}
+
 // MARK: - 模型
 
 @MainActor
@@ -294,6 +325,9 @@ final class SettingsModel: ObservableObject {
     let settingsURL: URL
     let bundleDir: URL?
     private let defaults: UserDefaults
+    private let confirmDiscardChanges: (() -> Bool)?
+    private let confirmResumePlan: (() -> Bool)?
+    private var templatesReturn: (page: NavPage, selected: String?, tab: Tab)?
 
     @Published var search = ""
     /// v0.2 总览筛选: 全部 / API Key / 授权登录 / 已启用 / 已停用
@@ -312,6 +346,9 @@ final class SettingsModel: ObservableObject {
     }
 
     @Published var scope: ScopeFilter = .all
+    /// v0.2 左栏当前页: 总览 / 调用计划 / 全局设置 / 账号详情 (selected != nil 或模板/草稿)
+    enum NavPage: Equatable { case overview, plan, settings, detail }
+    @Published var navPage: NavPage = .overview
     @Published var selected: String? { didSet { persistSelection() } }
     @Published var tab: Tab = .quota { didSet { defaults.set(tab.rawValue, forKey: SettingsPersist.tabKey) } }
     @Published var showingTemplates = false
@@ -331,13 +368,16 @@ final class SettingsModel: ObservableObject {
     lazy var importer = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
 
     init(engine: DataEngine, hudDir: URL, userDir: URL, settingsURL: URL, bundleDir: URL?,
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard, confirmDiscardChanges: (() -> Bool)? = nil,
+         confirmResumePlan: (() -> Bool)? = nil) {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
         self.settingsURL = settingsURL
         self.bundleDir = bundleDir
         self.defaults = defaults
+        self.confirmDiscardChanges = confirmDiscardChanges
+        self.confirmResumePlan = confirmResumePlan
         // 恢上次的账号与 tab; 账号已不存在则回落第一个
         let slugs = engine.allPlugins.map(\.slug)
         self.selected = SettingsPersist.resumeSlug(
@@ -358,20 +398,23 @@ final class SettingsModel: ObservableObject {
 
     // MARK: 派生
 
+    /// 全部账号独立于总览搜索, 供计划页和全局设置使用。
+    var allAccounts: [AccountRow] {
+        engine.allPlugins.map { p in
+            AccountRow(plugin: p,
+                       state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
+                       autoQuery: !engine.disabledSlugs.contains(p.slug),
+                       enabled: !engine.disabledSlugs.contains(p.slug),
+                       isConfigured: Self.configured(p, readConfig: readConfig))
+        }
+    }
+
     var accounts: [AccountRow] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return engine.allPlugins
-            .filter { p in
-                q.isEmpty || p.manifest.fullName.lowercased().contains(q)
-                    || p.manifest.label.lowercased().contains(q)
-            }
-            .map { p in
-                AccountRow(plugin: p,
-                           state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
-                           autoQuery: !engine.disabledSlugs.contains(p.slug),
-                           enabled: !engine.disabledSlugs.contains(p.slug),
-                           isConfigured: Self.configured(p, readConfig: readConfig))
-            }
+        guard !q.isEmpty else { return allAccounts }
+        return allAccounts.filter {
+            $0.name.lowercased().contains(q) || $0.plugin.manifest.label.lowercased().contains(q)
+        }
     }
 
     /// 总览按供应商分组 (manifest.label 分组键, fullName 组头; v0.2 受 scope 筛选)
@@ -482,18 +525,49 @@ final class SettingsModel: ObservableObject {
 
     // MARK: 草稿动作
 
-    func selectAccount(_ slug: String) {
-        guard leaveGuard() else { return }
-        draft = nil; errors = [:]; topError = ""
+    @discardableResult
+    func selectAccount(_ slug: String, tab targetTab: Tab = .quota) -> Bool {
+        guard engine.allPlugins.contains(where: { $0.slug == slug }), leaveGuard() else { return false }
+        clearDraft()
+        templatesReturn = nil
         selected = slug
         showingTemplates = false
-        tab = .quota
+        tab = targetTab
+        navPage = .detail
+        return true
+    }
+
+    /// 导航切页先处理草稿; 拒绝离开时不改变页面、账号或 tab。
+    func navigate(to page: NavPage) {
+        guard page != navPage else { return }
+        guard leaveGuard() else { return }
+        if page != .detail {
+            showingTemplates = false
+            clearDraft()
+            templatesReturn = nil
+        }
+        navPage = page
     }
 
     func openTemplates() {
         guard leaveGuard() else { return }
+        if !showingTemplates { templatesReturn = (navPage, selected, tab) }
         clearDraft()
         showingTemplates = true
+        navPage = .detail
+    }
+
+    /// 取消添加后返回原页面, 不选择其它账号。
+    func closeTemplates() {
+        showingTemplates = false
+        if let destination = templatesReturn {
+            selected = destination.selected
+            tab = destination.tab
+            navPage = destination.page
+        } else {
+            navPage = .overview
+        }
+        templatesReturn = nil
     }
 
     /// P2-1 导入入口同走草稿 guard (与 selectAccount/openTemplates 同一保护规则)
@@ -637,8 +711,10 @@ final class SettingsModel: ObservableObject {
             engine.reloadRegistry()
             clearDraft()
             showingTemplates = false
+            templatesReturn = nil
             selected = slug
             tab = .quota
+            navPage = .detail
             flash(incomplete
                   ? "已保存（未配置：凭证或地址缺失，自动查询与定时调用已关闭）"
                   : "已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
@@ -893,68 +969,105 @@ final class SettingsModel: ObservableObject {
         guard let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return }
         let alert = NSAlert()
         alert.messageText = "删除 \(p.manifest.fullName)?"
-        alert.informativeText = "将移除插件目录, 不可撤销"
+        alert.informativeText = "将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。"
         alert.addButton(withTitle: "删除")
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard AccountFileOwnership.canRemovePluginDirectory(p.dir, slug: slug, userDir: userDir) else {
+            flash("无法删除：账号目录不属于本应用，已保留外部文件。", error: true)
+            return
+        }
+        do {
+            try PluginGenerator.removePlugin(slug: slug, in: userDir)
+        } catch {
+            flash("删除账号失败：\(error.localizedDescription)", error: true)
+            return
+        }
         if p.manifest.template != nil { engine.markTemplateDeleted(slug) }
-        try? PluginGenerator.removePlugin(slug: slug, in: userDir)
-        if let af = authURL(p) { try? FileManager.default.trashItem(at: af, resultingItemURL: nil) }
-        // 清理残留: cache 文件 (HUD 不再显示已删账号旧值) + envs.json 摘除该账号条目 + 三个开关存储
-        try? FileManager.default.removeItem(at: DataEngine.cachePath(for: p, hudDir: hudDir))
-        removeEnvsEntry(name: p.manifest.name)
-        engine.setTracking(slug, enabled: true)                 // 从 disabled 摘除 (防残条目)
-        engine.setFloatingHidden(slug, hidden: false)
-        engine.setHudHidden(slug, hidden: false)
-        draft = nil
-        selected = engine.allPlugins.first { $0.slug != slug }?.slug
+        var cleanupFailures: [String] = []
+        var preservedSources = false
+        let fm = FileManager.default
+        if let af = authURL(p) {
+            if AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
+                do { try fm.removeItem(at: af) }
+                catch { cleanupFailures.append("凭证文件未移除") }
+            } else if fm.fileExists(atPath: af.path) {
+                preservedSources = true
+            }
+        }
+        let cache = DataEngine.cachePath(for: p, hudDir: hudDir)
+        if AccountFileOwnership.canRemoveHUDFile(cache, slug: slug, kind: .cache, hudDir: hudDir) {
+            do { try fm.removeItem(at: cache) }
+            catch { cleanupFailures.append("额度缓存未移除") }
+        } else if fm.fileExists(atPath: cache.path) {
+            preservedSources = true
+        }
+        engine.forgetAccountSettings(slug)
+        clearDraft()
+        selected = nil
+        navPage = .overview
         engine.reloadRegistry()
-        flash("已删除 \(p.manifest.fullName)", error: false)
-    }
-
-    /// envs.json 摘除已删账号条目 (statusline 不再读它的 cache)
-    private func removeEnvsEntry(name: String) {
-        let envsURL = hudDir.appendingPathComponent("envs.json")
-        guard let existing = (try? Data(contentsOf: envsURL))
-            .flatMap({ try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) }),
-              existing.keys.contains(name) else { return }
-        var merged = existing
-        merged.removeValue(forKey: name)
-        try? HUDSync.writeEnvs(merged, to: envsURL)
+        let hasSameName = engine.allPlugins.contains { $0.manifest.name == p.manifest.name }
+        let removed = hasSameName ? Set<String>() : Set([p.manifest.name])
+        if case .failure(let error) = engine.writeEnvsForHudSync(removingManagedNames: removed) {
+            cleanupFailures.append("HUD 未更新：\(error.localizedDescription)")
+        }
+        if cleanupFailures.isEmpty {
+            flash("已删除 \(p.manifest.fullName)" + (preservedSources ? "，外部来源文件已保留" : ""), error: false)
+        } else {
+            flash("已移除 \(p.manifest.fullName)，但\(cleanupFailures.joined(separator: "；"))", error: true)
+        }
     }
 
     func syncHUD() {
-        do {
-            engine.installScripts()
-            let plugins = engine.allPlugins
-            let builtin = Set(plugins.filter { $0.manifest.template != nil }.map { $0.manifest.name })
-            // v0.2: 按「同步 HUD」开关 + 启用态过滤 (hudSyncNames), 关闭的账号不入 envs
-            let new = HUDSync.envsDict(plugins: plugins.filter { engine.hudSyncNames.contains($0.manifest.name) },
-                                       hudDir: hudDir, builtinNames: builtin)
-            let envsURL = hudDir.appendingPathComponent("envs.json")
-            let existing = (try? Data(contentsOf: envsURL))
-                .flatMap { try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) } ?? [:]
-            try HUDSync.writeEnvs(HUDSync.mergeEnvs(existing: existing, new: new, builtinNames: builtin),
-                                  to: envsURL)
-            try HUDSync.patchSettings(settingsURL: settingsURL,
-                                      accountEnvs: HUDSync.mergeAccountEnvs(current: nil, keys: engine.hudSyncNames),
-                                      statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)
+        engine.installScripts()
+        switch engine.writeEnvsForHudSync() {
+        case .success:
             flash("已写入 Claude Code HUD（下次渲染生效）", error: false)
-        } catch {
+        case .failure(let error):
             flash("写入 HUD 失败：\(error.localizedDescription)", error: true)
         }
     }
 
     // MARK: v0.2 总览三开关 (即时生效, 不走草稿)
 
-    /// 主开关「启用监控」: 停用 = 不查询不调度不出现在菜单栏/HUD; 即时落盘 + envs 重写
+    /// 停用暂停后台工作但保留计划; 重新启用已配置的调用计划前确认消费。
     func toggleMonitoring(_ slug: String, enabled: Bool) {
+        guard let account = row(slug) else {
+            flash("账号不存在，无法修改启用状态", error: true)
+            return
+        }
+        if enabled && !account.enabled && account.canCall
+            && !engine.triggerDisabledSlugs.contains(slug) {
+            let times = readConfig(account.plugin).scheduleTimes
+            if !times.isEmpty {
+                let confirmed: Bool
+                if let confirmResumePlan {
+                    confirmed = confirmResumePlan()
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "启用账号并恢复定时调用？"
+                    alert.informativeText = "\(account.name) 已设置 \(times.joined(separator: "、")) 定时调用。启用后计划将恢复，每次调用会消耗额度。"
+                    alert.addButton(withTitle: "启用并恢复")
+                    alert.addButton(withTitle: "取消")
+                    alert.alertStyle = .warning
+                    confirmed = alert.runModal() == .alertFirstButtonReturn
+                }
+                guard confirmed else { return }
+            }
+        }
         engine.setTracking(slug, enabled: enabled)
-        engine.writeEnvsForHudSync()
-        let name = row(slug)?.name ?? slug
-        flash(enabled ? "已启用 \(name) 的监控" : "已停用 \(name)：不再查询、不调度、不出现在菜单栏与 HUD",
-              error: false)
+        let sync = engine.writeEnvsForHudSync()
+        let name = account.name
+        switch sync {
+        case .success:
+            flash(enabled ? "已启用 \(name)" : "已停用 \(name)，后台查询和定时调用已暂停",
+                  error: false)
+        case .failure(let error):
+            flash("\(name) 已\(enabled ? "启用" : "停用")，但 HUD 未更新：\(error.localizedDescription)",
+                  error: true)
+        }
     }
 
     /// 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示
@@ -966,8 +1079,76 @@ final class SettingsModel: ObservableObject {
 
     /// 「同步 HUD」: 关闭即时从 envs.json / ACCOUNT_ENVS 摘除
     func toggleHudSync(_ slug: String, synced: Bool) {
-        engine.setHudHidden(slug, hidden: !synced)
-        flash(synced ? "已同步该账号到 Claude Code HUD" : "已从 Claude Code HUD 摘除该账号", error: false)
+        switch engine.setHudHidden(slug, hidden: !synced) {
+        case .success:
+            flash(synced ? "已同步该账号到 Claude Code HUD" : "已从 Claude Code HUD 摘除该账号",
+                  error: false)
+        case .failure(let error):
+            flash("HUD 同步失败：\(error.localizedDescription)", error: true)
+        }
+    }
+
+    // MARK: v0.2 调用计划页数据 (全部账号的定时计划 + 最近执行结果)
+
+    struct PlanRow: Identifiable {
+        let slug: String
+        var id: String { slug }
+        let name: String
+        let providerName: String
+        let accent: String?
+        let icon: String?
+        let canCall: Bool
+        let enabled: Bool                 // 账号与已配置计划均启用
+        let pausedByAccount: Bool
+        let times: [String]
+        /// 今日最新登记的状态; nil 表示今日无记录, 不推断是否已执行。
+        let lastOutcome: String?
+    }
+
+    /// 调度记录 → 每账号 HH:MM → 结果 ("fired" / "skipped:<reason>"), 只看今天
+    func scheduleOutcomes() -> [String: [String: String]] {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let prefix = f.string(from: Date()) + "|"
+        let all = Self.loadFiredSchedulesForUI(defaults: defaults)
+        return all.filter { $0.key.hasPrefix(prefix) }
+    }
+
+    nonisolated private static func loadFiredSchedulesForUI(defaults: UserDefaults) -> [String: [String: String]] {
+        guard let raw = defaults.string(forKey: DataEngine.defaultsScheduleFiredKey),
+              let data = raw.data(using: .utf8) else { return [:] }
+        return (try? JSONDecoder().decode([String: [String: String]].self, from: data)) ?? [:]
+    }
+
+    var planRows: [PlanRow] {
+        let outcomes = scheduleOutcomes()
+        return allAccounts.map { r in
+            let cfg = readConfig(r.plugin)
+            let canCall = r.canCall
+            let trigEnabled = r.enabled && canCall && !cfg.scheduleTimes.isEmpty
+                && !engine.triggerDisabledSlugs.contains(r.id)
+            var outcome: String?
+            if let dict = outcomes["\(dayKey())|\(r.id)"],
+               let last = dict.max(by: { $0.key < $1.key }) {
+                switch last.value {
+                case "fired": outcome = "\(last.key) 已登记，调用结果未知"
+                case "skipped:busy": outcome = "\(last.key) 跳过：调用繁忙"
+                default: outcome = "\(last.key) 调用结果未知"
+                }
+            }
+            let pausedByAccount = !r.enabled && canCall && !cfg.scheduleTimes.isEmpty
+                && !engine.triggerDisabledSlugs.contains(r.id)
+            return PlanRow(slug: r.id, name: r.name, providerName: r.plugin.manifest.fullName,
+                           accent: r.plugin.manifest.accent, icon: r.plugin.manifest.icon,
+                           canCall: canCall, enabled: trigEnabled, pausedByAccount: pausedByAccount,
+                           times: cfg.scheduleTimes, lastOutcome: outcome)
+        }
+    }
+
+    private func dayKey() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
     }
 
     // MARK: 草稿守卫
@@ -979,6 +1160,7 @@ final class SettingsModel: ObservableObject {
     /// dirty 则弹确认; 返回 true = 可继续
     func leaveGuard() -> Bool {
         guard let d = draft, d.dirty || d.isNew else { return true }
+        if let confirmDiscardChanges { return confirmDiscardChanges() }
         let alert = NSAlert()
         alert.messageText = "放弃未保存的修改？"
         alert.informativeText = "当前草稿尚未保存，离开后变更将丢失。"

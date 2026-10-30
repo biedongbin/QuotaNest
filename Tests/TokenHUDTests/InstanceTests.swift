@@ -90,9 +90,10 @@ struct InstanceTests {
         let defaults = UserDefaults(suiteName: "instance-tests")!
         defaults.removePersistentDomain(forName: "instance-tests")
         defaults.set(["glm"], forKey: "tokenhud.deletedTemplates")
-        let runner = ProviderRunner(nodePath: "/usr/bin/true")
+        let runner = ProviderRunner(nodePath: "/usr/bin/true", logDir: hudDir)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: bundleDir,
-                                userProvidersDir: userDir, runner: runner, defaults: defaults)
+                                userProvidersDir: userDir, runner: runner, defaults: defaults,
+                                settingsURL: tmp.appendingPathComponent("settings.json"))
         engine.migrateAccounts()
         let m = "glm/manifest.json"
         #expect(!FileManager.default.fileExists(atPath: userDir.appendingPathComponent(m).path),
@@ -160,9 +161,10 @@ struct InstanceTests {
         // 首次迁移生成实例
         let defaults = UserDefaults(suiteName: "instance-tests-merge")!
         defaults.removePersistentDomain(forName: "instance-tests-merge")
-        let runner = ProviderRunner(nodePath: "/usr/bin/true")
+        let runner = ProviderRunner(nodePath: "/usr/bin/true", logDir: hudDir)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: bundleDir,
-                                userProvidersDir: userDir, runner: runner, defaults: defaults)
+                                userProvidersDir: userDir, runner: runner, defaults: defaults,
+                                settingsURL: tmp.appendingPathComponent("settings.json"))
         engine.migrateAccounts()
         let manifestURL = userDir.appendingPathComponent("glm/manifest.json")
         #expect(FileManager.default.fileExists(atPath: manifestURL.path))

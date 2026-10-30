@@ -37,8 +37,12 @@ enum NodeLocator {
 
 final class ProviderRunner {
     let nodePath: String?
+    private let logDir: URL
 
-    init(nodePath: String?) { self.nodePath = nodePath }
+    init(nodePath: String?, logDir: URL? = nil) {
+        self.nodePath = nodePath
+        self.logDir = logDir ?? URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud", isDirectory: true)
+    }
 
     /// spawn: zsh <script> (cwd=插件目录, env 注入 TOKENHUD_NODE)
     /// 以 zsh 直呼脚本路径而非 exec, 免依赖执行位 (测试/打包资源均无 x 位)
@@ -90,14 +94,13 @@ final class ProviderRunner {
         return cache
     }
 
-    /// stderr 尾部 4KB 写 .{slug}-usage-stderr.log (hudDir 由调用环境共享, 固定 ~/.claude/hud)
-    /// P2-4 落盘前脱敏: Authorization/api key/sk_ 票据替换 [REDACTED] (NFR-03)
+    /// stderr 尾部 4KB 写到注入的日志目录，落盘前过滤凭证。
     private func dumpStderr(_ pipe: Pipe, plugin: PluginProvider) {
         let data = Self.readAllBounded(pipe.fileHandleForReading, within: 1)
         guard !data.isEmpty else { return }
         let tail = data.count > 4096 ? data.suffix(4096) : data[...]
         let text = String(data: tail, encoding: .utf8) ?? String(decoding: tail, as: UTF8.self)
-        let log = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud/.\(plugin.slug)-usage-stderr.log")
+        let log = logDir.appendingPathComponent(".\(plugin.slug)-usage-stderr.log")
         try? Data(Self.redact(text).utf8).write(to: log, options: .atomic)
     }
 

@@ -364,10 +364,12 @@ struct RefreshTriggerTests {
         try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
-                                runner: ProviderRunner(nodePath: nil),
-                                defaults: UserDefaults(suiteName: "th-inc-\(UUID().uuidString)")!)
+                                runner: ProviderRunner(nodePath: nil, logDir: hudDir),
+                                defaults: UserDefaults(suiteName: "th-inc-\(UUID().uuidString)")!,
+                                settingsURL: tmp.appendingPathComponent("settings.json"))
         let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
-                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
+                                  defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
         // 缺 key 的通用自定义账号 (url 合法) → 可保存, autoQuery 被强制 off
         var v = DraftValues()
         v.name = "半配置号"
@@ -429,8 +431,9 @@ struct RefreshTriggerTests {
         try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
-                                runner: ProviderRunner(nodePath: nil),
-                                defaults: UserDefaults(suiteName: "th-key-\(UUID().uuidString)")!)
+                                runner: ProviderRunner(nodePath: nil, logDir: hudDir),
+                                defaults: UserDefaults(suiteName: "th-key-\(UUID().uuidString)")!,
+                                settingsURL: tmp.appendingPathComponent("settings.json"))
         let authFile = hudDir.appendingPathComponent(".kacct-usage-auth.json")
         try JSONSerialization.data(withJSONObject: ["refreshApiKey": "old-key", "headers": [:]])
             .write(to: authFile)
@@ -443,7 +446,8 @@ struct RefreshTriggerTests {
                                            atomically: true, encoding: .utf8)
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
-                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil)
+                                  settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
+                                  defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
         model.selected = "kacct"
 
         func runUpdate(key: String, clear: Bool) -> String {

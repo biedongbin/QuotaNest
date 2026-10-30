@@ -196,7 +196,8 @@ struct ImportTests {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
-                                runner: ProviderRunner(nodePath: nil), defaults: defaults)
+                                runner: ProviderRunner(nodePath: nil, logDir: hudDir), defaults: defaults,
+                                settingsURL: home.appendingPathComponent("settings.json"))
         let im = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
         let c1 = ImportCandidate(source: "t", name: "Keep Me", template: nil, apiKey: "k",
                                  baseURL: "https://a.example", proto: "openai", note: "")

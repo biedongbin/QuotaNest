@@ -84,12 +84,15 @@ struct HUDSyncTests {
     }
 
     @Test func patchSettingsBacksUp() throws {
-        // 写前备份 settings.json.bak: 手改炸文件时的救命稻草
+        // 已有备份不得被后续同步覆盖。
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("s-\(UUID()).json")
-        defer { try? FileManager.default.removeItem(at: tmp) }
+        let backup = tmp.appendingPathExtension("bak")
+        defer { try? FileManager.default.removeItem(at: tmp); try? FileManager.default.removeItem(at: backup) }
         try #"{"env":{"ACCOUNT_ENVS":"CC-GLM"}}"#.write(to: tmp, atomically: true, encoding: .utf8)
         try HUDSync.patchSettings(settingsURL: tmp, accountEnvs: "Ollama", statuslinePath: "/tmp/s.mjs")
-        #expect(FileManager.default.fileExists(atPath: tmp.appendingPathExtension("bak").path))
+        let first = try Data(contentsOf: backup)
+        try HUDSync.patchSettings(settingsURL: tmp, accountEnvs: "GPT", statuslinePath: "/tmp/s.mjs")
+        #expect(try Data(contentsOf: backup) == first)
     }
     // MARK: P2-3 envs.json 版本化: 顶层 _schemaVersion 元数据, 读端过滤
 

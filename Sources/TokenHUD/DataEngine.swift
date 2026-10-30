@@ -166,6 +166,7 @@ final class DataEngine: ObservableObject {
     private let userDir: URL
     private let runner: ProviderRunner
     private let defaults: UserDefaults
+    private let settingsURL: URL
     private var timer: Timer?
     /// P1-4 模型调用并发位 (每账号 1 / 全局 2): 计划触发与测试调用共用
     let callSlots = CallSlots()
@@ -182,12 +183,14 @@ final class DataEngine: ObservableObject {
     static let defaultsHudHiddenKey = "tokenhud.hudHidden.slugs"
 
     init(hudDir: URL, bundleProvidersDir: URL?, userProvidersDir: URL,
-         runner: ProviderRunner, defaults: UserDefaults = .standard) {
+         runner: ProviderRunner, defaults: UserDefaults = .standard, settingsURL: URL? = nil) {
         self.hudDir = hudDir
         self.bundleDir = bundleProvidersDir
         self.userDir = userProvidersDir
         self.runner = runner
         self.defaults = defaults
+        self.settingsURL = settingsURL ?? URL(fileURLWithPath:
+            (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/settings.json")
         try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
     }
 
@@ -326,9 +329,11 @@ final class DataEngine: ObservableObject {
         defaults.set(raw, forKey: defaultsScheduleFiredKey)
     }
 
-    private func checkSchedules() {
+    func checkSchedules(now: Date = Date(),
+                        trigger: @escaping (ProviderManifest, URL) async -> String? = { manifest, authFile in
+                            await RefreshTrigger.trigger(manifest: manifest, authFile: authFile)
+                        }) {
         let cal = Calendar.current
-        let now = Date()
         let hhmm = String(format: "%02d:%02d", cal.component(.hour, from: now), cal.component(.minute, from: now))
         var fired = loadFiredSchedules()
         // 只保留今天与昨天的键 (防字典无限增长; 昨天保留兜 DST 深夜场景)
@@ -336,7 +341,8 @@ final class DataEngine: ObservableObject {
         fired = fired.filter { k, _ in k.hasPrefix(todayPrefix) || k.hasPrefix(yesterdayPrefix) }
         for sch in cachedSchedules {
             guard sch.times.contains(hhmm) else { continue }
-            guard !triggerDisabledSlugs.contains(sch.slug) else { continue } // 定时触发已关 (与跟踪开关独立)
+            guard !disabledSlugs.contains(sch.slug),
+                  !triggerDisabledSlugs.contains(sch.slug) else { continue } // 停用账号不触发，保留计划偏好
             // 持久去重: 同 slug 同本地日 同 HH:MM 只触发一次 (跨重启/跨天均正确, 键含日期)
             let before = fired
             guard Self.markScheduleFired(fired: &fired, slug: sch.slug, hhmm: hhmm, date: now) else { continue }
@@ -352,7 +358,19 @@ final class DataEngine: ObservableObject {
                     return
                 }
                 defer { Task { await slots.release(sch.slug) } }
-                _ = await RefreshTrigger.trigger(manifest: sch.manifest, authFile: sch.authFile)
+                guard !disabledSlugs.contains(sch.slug),
+                      !triggerDisabledSlugs.contains(sch.slug),
+                      cachedSchedules.contains(where: {
+                          $0.slug == sch.slug && $0.times.contains(hhmm)
+                              && $0.manifest.refreshUrl == sch.manifest.refreshUrl
+                              && $0.authFile == sch.authFile
+                      }) else {
+                    var f = Self.loadSkipped(defaults: defaults)
+                    f[Self.scheduleDedupKey(slug: sch.slug, date: now), default: [:]][hhmm] = "skipped:disabled"
+                    Self.saveSkipped(f, defaults: defaults)
+                    return
+                }
+                _ = await trigger(sch.manifest, sch.authFile)
             }
         }
     }
@@ -436,16 +454,42 @@ final class DataEngine: ObservableObject {
         defaults.set(Array(floatingHiddenSlugs), forKey: Self.defaultsFloatingHiddenKey)
     }
 
-    /// v0.2 「同步 HUD」: 只影响 envs.json/ACCOUNT_ENVS 写入, 不影响查询; 关闭即时从 envs 摘除
-    func setHudHidden(_ slug: String, hidden: Bool) {
+    /// 「同步 HUD」不影响查询；同步失败时保留原开关状态并返回错误。
+    @discardableResult
+    func setHudHidden(_ slug: String, hidden: Bool) -> Result<Void, Error> {
+        let previous = hudHiddenSlugs
         if hidden { hudHiddenSlugs.insert(slug) } else { hudHiddenSlugs.remove(slug) }
+        let result = writeEnvsForHudSync()
+        switch result {
+        case .success:
+            defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
+        case .failure:
+            hudHiddenSlugs = previous
+        }
+        return result
+    }
+
+    /// 清理已删除账号的开关偏好，不修改 HUD；调用方在刷新账号列表后另行同步。
+    func forgetAccountSettings(_ slug: String) {
+        disabledSlugs.remove(slug)
+        floatingHiddenSlugs.remove(slug)
+        hudHiddenSlugs.remove(slug)
+        triggerDisabledSlugs.remove(slug)
+        defaults.set(Array(disabledSlugs), forKey: Self.defaultsDisabledKey)
+        defaults.set(Array(floatingHiddenSlugs), forKey: Self.defaultsFloatingHiddenKey)
         defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
-        writeEnvsForHudSync()
+        defaults.set(Array(triggerDisabledSlugs), forKey: Self.defaultsTriggerDisabledKey)
+        defaults.removeObject(forKey: Self.intervalKey(slug))
     }
 
     // MARK: v0.2 每账号查询间隔覆盖 (UserDefaults; 缺省用 manifest.interval)
 
     nonisolated static func intervalKey(_ slug: String) -> String { "tokenhud.interval.\(slug)" }
+
+    /// 是否为该账号设置了独立的查询间隔。
+    func hasIntervalOverride(_ slug: String) -> Bool {
+        defaults.object(forKey: Self.intervalKey(slug)) != nil
+    }
 
     /// 有效间隔 (分钟): 覆盖值优先, 否则 manifest (秒→分)
     func effectiveIntervalMinutes(_ slug: String, manifest: ProviderManifest) -> Int {
@@ -464,32 +508,31 @@ final class DataEngine: ObservableObject {
         reloadRegistry()
     }
 
-    /// 当前 HUD 同步键: manifest.name 列表 (envs.json 键), 排除已停用 + 已关同步的
+    /// v0.2 ACCOUNT_ENVS 键 = 全部启用且未停用且未关同步的账号 (**含内置**: registry 硬编码靠它取键)
     var hudSyncNames: [String] {
         allPlugins
             .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hudHiddenSlugs.contains($0.slug) }
             .map(\.manifest.name)
     }
 
-    /// 现写 envs.json + settings.json ACCOUNT_ENVS (按 hudHidden/disabled 过滤); 失败仅打印 (后台静默重写)
-    func writeEnvsForHudSync() {
-        let settingsURL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/settings.json")
-        let builtin = Set(allPlugins.filter { $0.manifest.template != nil }.map(\.manifest.name))
-        let new = HUDSync.envsDict(plugins: allPlugins.filter { hudSyncNames.contains($0.manifest.name) },
-                                   hudDir: hudDir, builtinNames: builtin)
-        let envsURL = hudDir.appendingPathComponent("envs.json")
-        let existing = (try? Data(contentsOf: envsURL))
-            .flatMap { try? JSONDecoder().decode([String: EnvsEntry].self, from: $0) } ?? [:]
+    /// envs.json 动态 entry 仅自定义账号 (内置走 statusline ENV_REGISTRY 硬编码, 不重复写)
+    var envsEntryNames: [String] {
+        allPlugins
+            .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hudHiddenSlugs.contains($0.slug) }
+            .filter { $0.manifest.template == nil }
+            .map(\.manifest.name)
+    }
+
+    /// 同步账号投影到 HUD，保留不属于本应用的条目；失败反馈给用户界面。
+    @discardableResult
+    func writeEnvsForHudSync(removingManagedNames: Set<String> = []) -> Result<Void, Error> {
         do {
-            try HUDSync.writeEnvs(HUDSync.mergeEnvs(existing: existing, new: new, builtinNames: builtin),
-                                  to: envsURL)
-            let settings = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL))) as? [String: Any]
-            let current = (settings?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String
-            try HUDSync.patchSettings(settingsURL: settingsURL,
-                                      accountEnvs: HUDSync.mergeAccountEnvs(current: current, keys: hudSyncNames),
-                                      statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)
+            try HUDSync.sync(plugins: allPlugins, hiddenSlugs: hudHiddenSlugs,
+                             disabledSlugs: disabledSlugs, removingManagedNames: removingManagedNames,
+                             hudDir: hudDir, settingsURL: settingsURL)
+            return .success(())
         } catch {
-            print("[DataEngine] envs resync failed: \(error.localizedDescription)")
+            return .failure(error)
         }
     }
 
@@ -715,6 +758,8 @@ final class DataEngine: ObservableObject {
 
     /// 测试注入口 (private 逻辑的薄封装)
     var runnerForTest: ProviderRunner { runner }
+    /// v0.2 全局设置页诊断: node 路径 (nil = 未找到)
+    var nodePathForUI: String? { runner.nodePath }
     func applyForTest(slug: String, fetched: UsageCache?, now: Double, checkRevision: Bool) {
         guard let p = checkRevision ? allPlugins.first(where: { $0.slug == slug }) : nil else {
             return // 版本核对失败 = 丢弃 (与 fetch 内联逻辑同判定)

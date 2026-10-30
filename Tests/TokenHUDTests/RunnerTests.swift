@@ -48,7 +48,7 @@ final class RunnerTests {
         try "#!/bin/zsh\necho '{\"seven_day\":{\"used_percentage\":42}}'"
             .write(to: d.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
         let m = ProviderManifest(name: "Fake", label: "F", buckets: ["seven_day": "周"])
-        let runner = ProviderRunner(nodePath: "/usr/bin/true") // 假 node, 脚本没用它
+        let runner = ProviderRunner(nodePath: "/usr/bin/true", logDir: tmp) // 假 node, 脚本没用它
         let cache = await runner.run(PluginProvider(slug: "fake", manifest: m, dir: d), timeout: 10)
         #expect(cache?.sevenDay?.usedPercentage == 42)
         #expect(cache?.generatedAt != nil)
@@ -59,7 +59,7 @@ final class RunnerTests {
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         try "#!/bin/zsh\nsleep 30".write(to: d.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
         let m = ProviderManifest(name: "Slow", label: "S")
-        let runner = ProviderRunner(nodePath: nil)
+        let runner = ProviderRunner(nodePath: nil, logDir: tmp)
         let t0 = Date()
         let cache = await runner.run(PluginProvider(slug: "slow", manifest: m, dir: d), timeout: 1)
         #expect(cache == nil)
@@ -71,7 +71,7 @@ final class RunnerTests {
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         try "#!/bin/zsh\nexit 3".write(to: d.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
         let m = ProviderManifest(name: "Bad", label: "B")
-        let runner = ProviderRunner(nodePath: nil)
+        let runner = ProviderRunner(nodePath: nil, logDir: tmp)
         let cache = await runner.run(PluginProvider(slug: "bad", manifest: m, dir: d), timeout: 5)
         #expect(cache == nil)
     }
@@ -82,7 +82,7 @@ final class RunnerTests {
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         try "#!/bin/zsh\ntrap '' TERM\nsleep 30".write(to: d.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
         let m = ProviderManifest(name: "Stubborn", label: "T")
-        let runner = ProviderRunner(nodePath: nil)
+        let runner = ProviderRunner(nodePath: nil, logDir: tmp)
         let t0 = Date()
         let cache = await runner.run(PluginProvider(slug: "stubborn", manifest: m, dir: d), timeout: 1)
         #expect(cache == nil)

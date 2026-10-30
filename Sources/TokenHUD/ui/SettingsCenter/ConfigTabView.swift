@@ -8,7 +8,7 @@ struct ConfigTabView: View {
 
     private var m: ProviderManifest { row.plugin.manifest }
     private var cfg: ProviderConfig { model.readConfig(row.plugin) }
-    /// P1-8 四态: 模型调用能力 (模板无 refreshUrl = 不支持; 通用未填地址 = 未配置)
+    /// 当前账号的模型调用配置状态
     private var callStatus: CapabilityStatus { .call(manifest: m, configUrl: cfg.queryUrl) }
 
     private var addressRows: [AddressRow] {
@@ -34,7 +34,9 @@ struct ConfigTabView: View {
                             }
                             Text(row.isConfigured
                                  ? "默认只读；点「编辑」进入草稿，保存前不会影响当前账号。"
-                                 : "凭证或地址缺失：账号已保存但查询与定时调用不可用，点「编辑」补齐。")
+                                 : (row.authStyle == "apikey"
+                                    ? "凭证或地址不完整，请点「编辑」检查账号配置。"
+                                    : "凭证或地址不完整，请检查本机登录状态。"))
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                         }
                         Spacer()
@@ -63,16 +65,11 @@ struct ConfigTabView: View {
                             }
                         }
                         KeyValueRow("调用协议") {
-                            // P1-8: 端点缺失按四态给文案 — 通用未填 = 「未配置调用端点」(可补), 不写「未提供」
                             switch callStatus {
                             case .configured:
                                 Text(cfg.refreshProtocol == "anthropic" ? "Anthropic 兼容 · messages" : "OpenAI 兼容 · chat/completions")
-                            case .notConfigured:
-                                Text("未配置调用端点（填入服务地址后可调用）")
-                            case .notSupported:
-                                Text("该供应商不支持模型调用")
-                            case .notIntegrated:
-                                Text("未接入")
+                            case .notConfigured, .notSupported, .notIntegrated:
+                                Text("当前尚未配置或接入模型调用")
                             case .unverified:
                                 Text("待核实")
                             }
@@ -100,7 +97,7 @@ struct ConfigTabView: View {
             CardBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Claude Code HUD").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("把当前账号写入 envs.json 与 settings.json，下次渲染生效。")
+                    Text("将已启用同步的账号写入 Claude Code 状态栏配置。")
                         .font(Typo.small).foregroundStyle(Palette.muted)
                     Button("写入 Claude Code HUD") { model.syncHUD() }.barButton()
                 }
@@ -138,8 +135,8 @@ struct TriggerTabView: View {
                     VStack(spacing: 10) {
                         Toggle(isOn: monitorBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("启用监控").font(Typo.body).foregroundStyle(Palette.ink)
-                                Text("关闭后不查询、不调度，不出现在菜单栏与 HUD。")
+                                Text("启用额度监控").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("停用后暂停后台查询和定时调用，保留账号和计划配置。")
                                     .font(Typo.small).foregroundStyle(Palette.muted)
                             }
                         }
@@ -147,8 +144,8 @@ struct TriggerTabView: View {
 
                         Toggle(isOn: floatingBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("悬浮窗显示").font(Typo.body).foregroundStyle(Palette.ink)
-                                Text("在悬浮窗与菜单栏显示该账号余额；不影响查询。")
+                                Text("悬浮窗和菜单栏显示").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("账号启用时控制其在悬浮窗和菜单栏面板中的显示；不影响查询。")
                                     .font(Typo.small).foregroundStyle(Palette.muted)
                             }
                         }
@@ -156,8 +153,8 @@ struct TriggerTabView: View {
 
                         Toggle(isOn: hudBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("同步 HUD").font(Typo.body).foregroundStyle(Palette.ink)
-                                Text("写入 envs.json 与 ACCOUNT_ENVS；关闭即时摘除。")
+                                Text("同步 Claude Code HUD").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("账号启用时控制其是否同步到 Claude Code 状态栏。")
                                     .font(Typo.small).foregroundStyle(Palette.muted)
                             }
                         }
@@ -190,7 +187,7 @@ struct TriggerTabView: View {
                     if row.canCall {
                         VStack(spacing: 0) {
                             KeyValueRow("模型定时调用") {
-                                Text(triggerEnabled ? "已开启" : "已关闭")
+                                Text(triggerStatus)
                             }
                             KeyValueRow("执行时间") {
                                 if cfg.scheduleTimes.isEmpty {
@@ -212,17 +209,11 @@ struct TriggerTabView: View {
                             .disabled(model.running.contains(row.id))
                             .padding(.top, 4)
                     } else {
-                        // P1-8 四态区分: 通用未填地址 = 未配置 (可补); 模板无端点 = 不支持 (不可补)
-                        switch callStatus {
-                        case .notConfigured:
-                            UnsupportedBox(
-                                title: "未配置调用端点",
-                                detail: "在配置中填入服务地址与模型即可启用定时调用。")
-                        default:
-                            UnsupportedBox(
-                                title: "该供应商不支持模型调用",
-                                detail: "此账号的供应商端没有模型调用接口，无法定时调用。")
-                        }
+                        UnsupportedBox(
+                            title: "当前尚未配置或接入模型调用",
+                            detail: row.builtin
+                                ? "此账号暂无可用的调用配置，模型调用计划不可用。"
+                                : "请在账号配置中检查服务地址与模型。")
                     }
                 }
             }
@@ -246,7 +237,7 @@ struct TriggerTabView: View {
         model.engine.effectiveIntervalMinutes(row.id, manifest: row.plugin.manifest)
     }
     private var hasOverride: Bool {
-        UserDefaults.standard.integer(forKey: DataEngine.intervalKey(row.id)) > 0
+        model.engine.hasIntervalOverride(row.id)
     }
     private var intervalBinding: Binding<Int> {
         Binding(get: { intervalMin },
@@ -256,8 +247,10 @@ struct TriggerTabView: View {
         hasOverride ? "已覆盖默认间隔，立即生效。" : "未设置时使用供应商默认（\(max(1, row.plugin.manifest.interval / 60)) 分钟）。"
     }
 
-    private var triggerEnabled: Bool {
-        !model.engine.triggerDisabledSlugs.contains(row.id) && row.canCall
+    private var triggerStatus: String {
+        guard !model.engine.triggerDisabledSlugs.contains(row.id) else { return "已关闭" }
+        guard !cfg.scheduleTimes.isEmpty else { return "未设置时间" }
+        return row.enabled ? "已开启" : "已配置，随供应商停用暂停"
     }
 }
 
