@@ -227,6 +227,38 @@ struct RefreshTriggerTests {
         #expect(await RefreshTrigger.testQuery(config: c) == "查询 url 非法")
     }
 
+    // MARK: P1-5 调用结果不确定: 网络类错误 → "结果不确定，可能已消费"; 200 空 body → 响应异常
+
+    @Test func networkErrorsClassifiedAsUncertain() {
+        #expect(RefreshTrigger.isNetworkUncertain(URLError(.timedOut)))
+        #expect(RefreshTrigger.isNetworkUncertain(URLError(.networkConnectionLost)))
+        #expect(RefreshTrigger.isNetworkUncertain(URLError(.cannotConnectToHost)))
+        #expect(RefreshTrigger.isNetworkUncertain(URLError(.dnsLookupFailed)))
+        #expect(RefreshTrigger.isNetworkUncertain(URLError(.notConnectedToInternet)))
+        // 非网络类 (请求确定未达业务端 / 本地取消) 不标不确定
+        #expect(!RefreshTrigger.isNetworkUncertain(URLError(.cancelled)))
+        #expect(!RefreshTrigger.isNetworkUncertain(URLError(.badURL)))
+        #expect(!RefreshTrigger.isNetworkUncertain(NSError(domain: "x", code: 1)))
+    }
+
+    @Test func timeoutInjectedYieldsUncertainMessage() {
+        // 注入超时错误 → describe 产出不确定文案 (SettingsModel.testCall 直接展示该串)
+        let msg = RefreshTrigger.describe(error: URLError(.timedOut))
+        #expect(msg.hasPrefix("结果不确定，可能已消费"))
+        #expect(msg.contains("请求可能已送达"))
+        // 非网络类照常展示 localizedDescription, 不加不确定前缀
+        let plain = RefreshTrigger.describe(error: URLError(.cancelled))
+        #expect(!plain.hasPrefix("结果不确定"))
+        #expect(plain == URLError(.cancelled).localizedDescription)
+    }
+
+    @Test func emptyBodyIsNotSuccess() {
+        // P1-5 成功判定 (SettingsModel.testCall 同一约定): "✓ " 前缀 = HTTP 200 且 body 非空
+        #expect("✓ {\"id\":\"x\"}".hasPrefix("✓"))
+        #expect(!RefreshTrigger.emptyBodyMessage.hasPrefix("✓"))
+        #expect(!RefreshTrigger.describe(error: URLError(.timedOut)).hasPrefix("✓"))
+    }
+
     @Test func scheduleTimeFormat() {
         // 与 SettingsValidation.isValidTime 一致: HH:MM 24h 制
         #expect(SettingsValidation.isValidTime("09:00"))

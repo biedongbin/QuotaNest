@@ -640,8 +640,10 @@ final class SettingsModel: ObservableObject {
             }
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             running.remove(slug)
-            lastRun[slug] = (err == nil, ms, Date())
-            flash(err == nil ? "测试调用成功（\(ms) ms）" : "测试调用失败：\(err ?? "")", error: err != nil)
+            // P1-5: send() 成功返回 "✓ …" 前缀; 其他 (含网络不确定/HTTP 错/空 body) 均按失败/异常展示
+            let ok = err?.hasPrefix("✓") == true
+            lastRun[slug] = (ok, ms, Date())
+            flash(ok ? "测试调用成功（\(ms) ms）" : "测试调用失败：\(err ?? "")", error: !ok)
         }
     }
 

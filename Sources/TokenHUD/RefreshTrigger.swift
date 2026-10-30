@@ -63,17 +63,43 @@ enum RefreshTrigger {
     }
 
     private static func send(_ req: URLRequest) async -> String? {
+        var r = req
+        r.timeoutInterval = 20  // P1-5: 显式超时 (默认 60s 太久, 请求可能已发出但回包迟到)
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await URLSession.shared.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "无响应" }
             if http.statusCode == 200 {
                 let body = String(data: data, encoding: .utf8) ?? ""
-                return body.isEmpty ? nil : "✓ \(body.prefix(120))"
+                // P1-5: 200 且 body 非空才算成功; 空 body → 响应异常 (不能当成功)
+                return body.isEmpty ? Self.emptyBodyMessage : "✓ \(body.prefix(120))"
             }
             let body = String(data: data, encoding: .utf8) ?? ""
             return "HTTP \(http.statusCode): \(body.prefix(120))"
         } catch {
-            return error.localizedDescription
+            return Self.describe(error: error)  // 网络类 → 结果不确定 (可能已消费)
+        }
+    }
+
+    static let emptyBodyMessage = "响应异常：HTTP 200 但响应体为空"
+
+    /// 错误 → 展示文案 (纯函数, 可测): 网络类 = 请求可能已达服务端 → 结果不确定, 可能已消费
+    static func describe(error: Error) -> String {
+        if isNetworkUncertain(error) {
+            return "结果不确定，可能已消费：\(error.localizedDescription)（请求可能已送达，请稍后查询额度确认）"
+        }
+        return error.localizedDescription
+    }
+
+    /// 网络类错误分类 (纯函数, 可测): 超时/断连/连不上/DNS 等 — 请求发出但回包未达, 结果不确定
+    static func isNetworkUncertain(_ error: Error) -> Bool {
+        guard let ur = error as? URLError else { return false }
+        switch ur.code {
+        case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,
+             .dnsLookupFailed, .notConnectedToInternet,
+             .dataNotAllowed, .internationalRoamingOff:
+            return true
+        default:
+            return false
         }
     }
 }
