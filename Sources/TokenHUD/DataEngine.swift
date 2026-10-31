@@ -511,7 +511,10 @@ final class DataEngine: ObservableObject {
             }
         }
         registryErrors = errors
-        allPlugins = plugins
+        allPlugins = plugins.sorted {
+            let left = orderIndex($0.slug), right = orderIndex($1.slug)
+            return left == right ? $0.slug < $1.slug : left < right
+        }
         // 类型模板 = bundle 里的只读定义 (添加供应商选类型/编辑能力判定用)
         templates = bundleDir.map { ProviderRegistry.scan(dir: $0) } ?? []
         // scheduleTimes 缓存重建 (编辑保存后 reload 即刷新)

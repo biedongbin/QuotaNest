@@ -205,11 +205,13 @@ private struct AccountSidebar: View {
 struct OverviewPage: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
+    @State private var draggedProvider: String?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("额度与账号").foregroundStyle(Palette.muted)
+                    Text("拖动卡片调整顺序").font(Typo.small).foregroundStyle(Palette.muted)
                     Spacer()
                     Button("查询全部额度", systemImage: "arrow.clockwise") {
                         for row in model.allAccounts where row.enabled && row.canQuery && model.quotaConfigured(row) {
@@ -248,6 +250,18 @@ struct OverviewPage: View {
                                 }
                             }
                         }
+                        .onDrag {
+                            draggedProvider = group.label
+                            let provider = NSItemProvider()
+                            let data = Data(group.label.utf8)
+                            provider.registerDataRepresentation(forTypeIdentifier: "com.tokenhud.provider-card", visibility: .ownProcess) { completion in
+                                completion(data, nil)
+                                return nil
+                            }
+                            return provider
+                        }
+                        .onDrop(of: ["com.tokenhud.provider-card"], delegate: ProviderCardDropDelegate(
+                            target: group.label, dragged: $draggedProvider, model: model))
                     }
                 }
             }
@@ -326,4 +340,33 @@ struct RenderScript {
     var slug: String?
     var templateID: String?
     var importModel: ImportCenterModel? = nil
+}
+
+private struct ProviderCardDropDelegate: DropDelegate {
+    let target: String
+    @Binding var dragged: String?
+    let model: SettingsModel
+    func validateDrop(info: DropInfo) -> Bool { dragged != nil }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        MainActor.assumeIsolated {
+            guard let source = dragged else { return false }
+            defer { dragged = nil }
+            var labels: [String] = []
+            var accounts: [String: [String]] = [:]
+            for provider in model.engine.allPlugins {
+                let type = provider.manifest.template.flatMap { model.engine.template(bySlug: $0)?.manifest }
+                    ?? provider.manifest
+                if accounts[type.label] == nil { labels.append(type.label) }
+                accounts[type.label, default: []].append(provider.slug)
+            }
+            guard let from = labels.firstIndex(of: source), let to = labels.firstIndex(of: target) else { return false }
+            if from != to {
+                let moved = labels.remove(at: from)
+                labels.insert(moved, at: to)
+                model.engine.setProviderOrder(labels.flatMap { accounts[$0] ?? [] })
+            }
+            return true
+        }
+    }
 }

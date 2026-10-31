@@ -128,6 +128,11 @@ private struct PanelAppearanceSettings: View {
                 Toggle("显示悬浮速览", isOn: Binding(get: { controller.isVisible }, set: {
                     if $0 { controller.show() } else { controller.hide() }
                 })).toggleStyle(.switch).controlSize(.small)
+                Picker("显示样式", selection: Binding(get: { controller.style }, set: { controller.setStyle($0) })) {
+                    ForEach(PanelStyle.allCases) { style in Text(style.label).tag(style) }
+                }.pickerStyle(.menu)
+                Text(controller.style == .compact ? "紧凑：每个账号一行，同时显示多个额度窗口。" : "样式切换立即生效并保存。")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
                 HStack(spacing: 16) {
                     Text("背景不透明度")
                     Slider(value: Binding(get: { controller.bgOpacity }, set: { controller.setBgOpacity($0) }), in: 0.45...1)

@@ -126,6 +126,7 @@ enum PanelStyle: String, CaseIterable, Identifiable {
     case compact   // 紧凑单行 (横排多桶)
     case list      // 列表: 每行只显示一个用量桶
     var id: String { rawValue }
+    var preferredWidth: CGFloat { self == .compact ? 300 : 340 }
     var label: String {
         switch self {
         case .card: return "卡片"
@@ -179,6 +180,7 @@ final class PanelController: ObservableObject {
 
     func setStyle(_ s: PanelStyle) {
         style = s
+        expanded = false
         defaults.set(s.rawValue, forKey: Self.defaultsStyleKey)
         rebuild() // 布局结构变, 需重建
     }
@@ -253,7 +255,7 @@ final class PanelController: ObservableObject {
         guard abs(panel.frame.height - targetHeight) > 0.5 else { return }
         var frame = panel.frame
         let top = frame.maxY
-        frame.size = NSSize(width: 340, height: targetHeight)
+        frame.size = NSSize(width: style.preferredWidth, height: targetHeight)
         frame.origin.y = top - targetHeight
         panel.setFrame(frame, display: panel.isVisible)
         if panel.isVisible { panel.recoverPosition() }

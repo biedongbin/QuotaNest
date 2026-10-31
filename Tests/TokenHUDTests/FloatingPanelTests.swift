@@ -191,6 +191,17 @@ struct FloatingPanelTests {
         #expect(panel.frame.height > 350)
         #expect(panel.frame.height <= controller.maximumPanelHeight + 1)
         #expect(engine.states.count == 7)
+        let cardHeight = panel.frame.height
+        controller.toggleExpanded()
+        controller.setStyle(.compact)
+        for _ in 0..<30 where panel.frame.height >= cardHeight {
+            panel.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(!controller.expanded)
+        #expect(panel.frame.width == PanelStyle.compact.preferredWidth)
+        #expect(panel.frame.height < cardHeight)
+        #expect(defaults.string(forKey: PanelController.defaultsStyleKey) == "compact")
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("logs").path))
     }
 }

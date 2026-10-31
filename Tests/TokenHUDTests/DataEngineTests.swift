@@ -13,6 +13,7 @@ struct DataEngineTests {
         engine.reloadRegistry()
         engine.setProviderOrder(["charlie", "alpha", "beta"])
         #expect(engine.states.map(\.slug) == ["charlie", "alpha", "beta"])
+        #expect(engine.allPlugins.map(\.slug) == ["charlie", "alpha", "beta"])
         #expect(defaults.stringArray(forKey: DataEngine.defaultsOrderKey) == ["charlie", "alpha", "beta"])
         engine.reloadRegistry()
         #expect(engine.states.map(\.slug) == ["charlie", "alpha", "beta"])

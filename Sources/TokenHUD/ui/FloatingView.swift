@@ -21,7 +21,10 @@ struct FloatingView: View {
         if states.isEmpty { return expanded ? 104 : 36 }
         return states.reduce(CGFloat(16)) { height, state in
             let count = max(1, QuotaPresentation(state: state).metrics.count)
-            return height + (expanded ? 84 + CGFloat((count + 1) / 2) * 56 : 29 + CGFloat(count) * 20)
+            if expanded || controller.style == .glass { return height + 84 + CGFloat((count + 1) / 2) * 56 }
+            if controller.style == .compact { return height + 32 }
+            if controller.style == .list { return height + CGFloat(count) * 24 + 9 }
+            return height + 29 + CGFloat(count) * 20
         }
     }
     private var viewportHeight: CGFloat {
@@ -37,7 +40,14 @@ struct FloatingView: View {
                     if states.isEmpty { emptyState }
                     ForEach(states) { state in
                         if expanded { floatingAccount(state) }
-                        else { compactAccount(state) }
+                        else {
+                            switch controller.style {
+                            case .compact: inlineAccount(state)
+                            case .list: listAccount(state)
+                            case .glass: floatingAccount(state)
+                            case .card: compactAccount(state)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, expanded ? 10 : 13)
@@ -65,18 +75,24 @@ struct FloatingView: View {
                 .padding(.horizontal, 8).frame(height: 32)
             }
         }
-        .frame(width: 340)
+        .frame(width: controller.style.preferredWidth)
         .onAppear { onHeightChange?(min(maximumHeight, chromeHeight + viewportHeight)) }
         .foregroundStyle(Palette.ink)
         .background {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Palette.canvas.opacity(reduceTransparency ? 1 : min(1, max(0.45, controller.bgOpacity))))
+            if controller.style == .glass && !reduceTransparency {
+                RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: 12).fill(Palette.canvas.opacity(controller.bgOpacity * 0.22)))
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Palette.canvas.opacity(reduceTransparency ? 1 : min(1, max(0.45, controller.bgOpacity))))
+            }
         }
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.border, lineWidth: 0.8))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contextMenu {
             Button(expanded ? "收起明细" : "展开明细", action: onToggle)
             Button("关闭悬浮速览") { controller.hide() }
+            displayControls
             Divider()
             Button("刷新额度", action: onRefreshAll)
             Button("管理账号…", action: onOpenSettings)
@@ -89,6 +105,13 @@ struct FloatingView: View {
             Circle().fill(Palette.accent).frame(width: 5, height: 5).accessibilityHidden(true)
             Text("额度速览").font(.system(size: 11.5, weight: .medium))
             Spacer(minLength: 0)
+            Menu {
+                styleChoices
+                Divider()
+                opacityChoices
+            } label: { Image(systemName: "square.grid.2x2") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .frame(width: 23, height: 23).accessibilityLabel("切换悬浮窗样式").help("显示样式")
             if engine.isRefreshingAll {
                 ProgressView().controlSize(.mini).frame(width: 23, height: 23)
                     .accessibilityLabel("正在刷新额度")
@@ -108,6 +131,78 @@ struct FloatingView: View {
         .padding(.leading, 13).padding(.trailing, 7).padding(.vertical, 7)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onToggle)
+    }
+    @ViewBuilder private var displayControls: some View {
+        Menu("显示样式") { styleChoices }
+        opacityChoices
+    }
+    private var opacityChoices: some View {
+        Menu("背景透明度") {
+            ForEach([45, 60, 75, 85, 100], id: \.self) { percent in
+                Button("不透明度 \(percent)%") { controller.setBgOpacity(Double(percent) / 100) }
+            }
+        }
+    }
+    private var styleChoices: some View {
+        Picker("显示样式", selection: Binding(get: { controller.style }, set: { controller.setStyle($0) })) {
+            ForEach(PanelStyle.allCases) { style in Text(style.label).tag(style) }
+        }
+    }
+    private func inlineAccount(_ state: ProviderState) -> some View {
+        let snapshot = QuotaPresentation(state: state)
+        return HStack(spacing: 9) {
+            HStack(spacing: 3) {
+                Text(state.manifest.fullName).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                if snapshot.isOld {
+                    Text("旧值").font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
+                }
+            }.frame(width: 72, alignment: .leading)
+                .help(snapshot.isOld ? state.manifest.fullName + " · " + snapshot.status : state.manifest.fullName)
+            if snapshot.metrics.isEmpty {
+                Text(state.manifest.supportsQuota ? snapshot.status : "仅 API")
+                    .font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                ForEach(snapshot.metrics) { metric in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 2) {
+                            Text(compactLabel(metric.label)).foregroundStyle(Palette.muted)
+                            Spacer(minLength: 0)
+                            Text(metric.value).monospacedDigit().foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
+                                .lineLimit(2).minimumScaleFactor(0.85)
+                        }.font(.system(size: 10))
+                        if let percentage = metric.percentage {
+                            ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+                        }
+                    }.frame(maxWidth: .infinity).help(metric.label + " · " + metric.value + (snapshot.isOld ? " · 旧值" : ""))
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .contextMenu { accountMenu(state) }
+    }
+    private func listAccount(_ state: ProviderState) -> some View {
+        let snapshot = QuotaPresentation(state: state)
+        return VStack(alignment: .leading, spacing: 7) {
+            if snapshot.metrics.isEmpty { inlineAccount(state) }
+            ForEach(snapshot.metrics) { metric in
+                HStack(spacing: 8) {
+                    Text(state.manifest.fullName + " · " + compactLabel(metric.label))
+                        .font(.system(size: 10.5)).lineLimit(1).frame(width: 102, alignment: .leading)
+                    if snapshot.isOld {
+                        Text("旧值").font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
+                    }
+                    if let percentage = metric.percentage {
+                        ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+                    }
+                    Text(metric.value).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
+                        .frame(minWidth: 38, alignment: .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.help(metric.label + " · " + metric.value + (snapshot.isOld ? " · 旧值" : ""))
+            }
+        }.contextMenu { accountMenu(state) }
     }
     private func compactAccount(_ state: ProviderState) -> some View {
         let snapshot = QuotaPresentation(state: state)
@@ -197,7 +292,7 @@ struct FloatingView: View {
             }
         }
         .padding(11)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+        .background(Palette.surface.opacity(controller.style == .glass && !reduceTransparency ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.border.opacity(0.8), lineWidth: 0.6))
         .contextMenu { accountMenu(state) }
     }
@@ -205,6 +300,8 @@ struct FloatingView: View {
         Button("打开账号") { SettingsWindowManager.shared.showAccount(state.slug) }
         Button("查询额度") { SettingsWindowManager.shared.modelForQuery()?.query(state.slug) }
             .disabled(queryUnavailable(state))
+        Divider()
+        displayControls
         Divider()
         Button("关闭悬浮速览") { controller.hide() }
         Button("管理账号…", action: onOpenSettings)
