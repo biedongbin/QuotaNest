@@ -51,6 +51,7 @@ final class FloatingPanel: NSPanel {
     static let defaultsFrameKey = "floatingFrame"
     private let defaults: UserDefaults
     var onHide: (() -> Void)?
+    var onScreenChange: (() -> Void)?
 
     init(contentView: NSView, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -107,6 +108,10 @@ extension FloatingPanel: NSWindowDelegate {
         persistFrame()
     }
 
+    func windowDidChangeScreen(_ notification: Notification) {
+        onScreenChange?()
+    }
+
     func windowWillClose(_ notification: Notification) {
         onHide?()
     }
@@ -142,6 +147,10 @@ final class PanelController: ObservableObject {
     private let engine: DataEngine
     private let defaults: UserDefaults
     private var screenObserver: NSObjectProtocol?
+    private var layoutRevision = 0
+    var maximumPanelHeight: CGFloat {
+        max(80, (panel?.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 800) - 24)
+    }
 
     static let defaultsStyleKey = "tokenhud.panelStyle"
     static let defaultsBgOpacityKey = "tokenhud.panelBgOpacity"
@@ -159,6 +168,7 @@ final class PanelController: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, let panel = self.panel, panel.isVisible else { return }
                 panel.recoverPosition()
+                self.rebuild()
             }
         }
     }
@@ -195,11 +205,15 @@ final class PanelController: ObservableObject {
             hosting.layoutSubtreeIfNeeded()
             let p = FloatingPanel(contentView: hosting, defaults: defaults)
             p.onHide = { [weak self] in self?.isVisible = false }
+            p.onScreenChange = { [weak self] in
+                Task { @MainActor [weak self] in self?.refreshScreenLimit() }
+            }
             p.setContentSize(hosting.fittingSize)
             panel = p
         }
         guard let panel else { return }
         panel.recoverPosition()
+        refreshScreenLimit()
         panel.orderFrontRegardless()
         isVisible = panel.isVisible
     }
@@ -227,8 +241,28 @@ final class PanelController: ObservableObject {
         rebuild()
     }
 
+    private func refreshScreenLimit() {
+        guard let hosting = panel?.contentView as? NSHostingView<FloatingView>,
+              abs(hosting.rootView.maximumHeight - maximumPanelHeight) > 0.5 else { return }
+        rebuild()
+    }
+
+    private func resizeToContent(_ height: CGFloat) {
+        guard let panel, height.isFinite, height > 0 else { return }
+        let targetHeight = min(height, maximumPanelHeight)
+        guard abs(panel.frame.height - targetHeight) > 0.5 else { return }
+        var frame = panel.frame
+        let top = frame.maxY
+        frame.size = NSSize(width: 340, height: targetHeight)
+        frame.origin.y = top - targetHeight
+        panel.setFrame(frame, display: panel.isVisible)
+        if panel.isVisible { panel.recoverPosition() }
+    }
+
     private func makeHosting() -> NSHostingView<FloatingView> {
-        NSHostingView(rootView: FloatingView(
+        layoutRevision += 1
+        let revision = layoutRevision
+        return NSHostingView(rootView: FloatingView(
             engine: engine, controller: self, expanded: expanded,
             onToggle: { [weak self] in self?.toggleExpanded() },
             onQuit: { NSApplication.shared.terminate(nil) },
@@ -238,7 +272,14 @@ final class PanelController: ObservableObject {
                 Task { await self.engine.refreshBalancesOnly() }
             },
             onOpenSettings: { [weak self] in self?.openSettings() },
-            operationModel: SettingsWindowManager.shared.modelForQuery()
+            operationModel: SettingsWindowManager.shared.modelForQuery(),
+            maximumHeight: maximumPanelHeight,
+            onHeightChange: { [weak self] height in
+                Task { @MainActor [weak self] in
+                    guard let self, self.layoutRevision == revision else { return }
+                    self.resizeToContent(height)
+                }
+            }
         ))
     }
 }

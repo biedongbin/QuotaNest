@@ -15,7 +15,7 @@ enum RefreshTrigger {
         var req = URLRequest(url: u)
         req.httpMethod = "GET"
         applyHeaders(&req, config.queryHeader, key: key, protocol: config.refreshProtocol)
-        return await send(req)
+        return await send(req, redacting: [config.queryKey, config.queryToken, config.queryCookie])
     }
 
     /// 下栏测试/触发刷新: 发 chat 请求 (POST url + header + model + prompt)
@@ -34,7 +34,7 @@ enum RefreshTrigger {
             "messages": [["role": "user", "content": config.testPrompt]],
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        return await send(req)
+        return await send(req, redacting: [config.refreshKey])
     }
 
     /// 触发额度刷新 (兼容旧调用: 用 auth 文件读配置)
@@ -65,22 +65,33 @@ enum RefreshTrigger {
         }
     }
 
-    private static func send(_ req: URLRequest) async -> String? {
+    private static func send(_ req: URLRequest, redacting credentials: [String]) async -> String? {
         var r = req
         r.timeoutInterval = 20  // P1-5: 显式超时 (默认 60s 太久, 请求可能已发出但回包迟到)
         do {
             let (data, resp) = try await URLSession.shared.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "无响应" }
-            if http.statusCode == 200 {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                // P1-5: 200 且 body 非空才算成功; 空 body → 响应异常 (不能当成功)
-                return body.isEmpty ? Self.emptyBodyMessage : "✓ \(body.prefix(120))"
-            }
-            let body = String(data: data, encoding: .utf8) ?? ""
-            return "HTTP \(http.statusCode): \(body.prefix(120))"
+            return responseMessage(statusCode: http.statusCode, body: data, redacting: credentials)
         } catch {
             return Self.describe(error: error)  // 网络类 → 结果不确定 (可能已消费)
         }
+    }
+
+    /// Display up to 1 MiB of response text; make the bound explicit when exceeded.
+    static let maximumResponseBodyBytes = 1_048_576
+
+    static func responseMessage(statusCode: Int, body: Data, redacting credentials: [String] = []) -> String {
+        if statusCode == 200 && body.isEmpty { return emptyBodyMessage }
+        var safeText = String(decoding: body, as: UTF8.self)
+        for credential in credentials where !credential.isEmpty {
+            safeText = safeText.replacingOccurrences(of: credential, with: "[已隐藏]")
+        }
+        safeText = ProviderRunner.redact(safeText)
+        let safeData = Data(safeText.utf8)
+        let text = String(decoding: safeData.prefix(maximumResponseBodyBytes), as: UTF8.self)
+        let notice = safeData.count > maximumResponseBodyBytes
+            ? "\n\n[响应超过显示上限：保留前 \(maximumResponseBodyBytes) 字节，原始响应 \(body.count) 字节；后续内容未显示。]" : ""
+        return (statusCode == 200 ? "✓ " : "HTTP \(statusCode): ") + text + notice
     }
 
     static let emptyBodyMessage = "响应异常：HTTP 200 但响应体为空"

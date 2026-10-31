@@ -54,6 +54,7 @@ struct GlobalSettingsPage: View {
                 if let controller = StatusItemController.shared?.panelController {
                     PanelAppearanceSettings(controller: controller)
                 }
+                AccountDisplayOrderSettings(engine: engine)
                 GroupBox("Claude Code HUD") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
@@ -82,6 +83,41 @@ struct GlobalSettingsPage: View {
         }
     }
     static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
+}
+
+private struct AccountDisplayOrderSettings: View {
+    @ObservedObject var engine: DataEngine
+    private var ordered: [PluginProvider] {
+        let byID = Dictionary(uniqueKeysWithValues: engine.allPlugins.map { ($0.slug, $0) })
+        let saved = engine.providerOrder.compactMap { byID[$0] }
+        let known = Set(saved.map(\.slug))
+        return saved + engine.allPlugins.filter { !known.contains($0.slug) }
+    }
+    var body: some View {
+        GroupBox("悬浮窗显示顺序") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(ordered.enumerated()), id: \.element.slug) { index, provider in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)").monospacedDigit().foregroundStyle(Palette.muted).frame(width: 20)
+                        Text(provider.manifest.fullName).lineLimit(1)
+                        Spacer()
+                        Button { move(provider.slug, by: -1) } label: { Image(systemName: "chevron.up") }
+                            .barButton().disabled(index == 0).accessibilityLabel("上移 \(provider.manifest.fullName)")
+                        Button { move(provider.slug, by: 1) } label: { Image(systemName: "chevron.down") }
+                            .barButton().disabled(index == ordered.count - 1).accessibilityLabel("下移 \(provider.manifest.fullName)")
+                    }.font(Typo.body)
+                }
+                Text("用上下箭头调整，立即生效并保存；未显示的账号保留位置。菜单快览仍按供应商分组。")
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+            }
+        }
+    }
+    private func move(_ slug: String, by offset: Int) {
+        var ids = ordered.map(\.slug)
+        guard let index = ids.firstIndex(of: slug), ids.indices.contains(index + offset) else { return }
+        ids.swapAt(index, index + offset)
+        engine.setProviderOrder(ids)
+    }
 }
 
 private struct PanelAppearanceSettings: View {

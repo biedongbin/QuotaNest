@@ -51,6 +51,14 @@ struct SettingsCenterView: View {
         .tint(Palette.ink)
         .accentColor(Palette.ink)
         .groupBoxStyle(QuietGroupBoxStyle())
+        .sheet(item: Binding(get: { model.pendingTestConfirmation }, set: { value in
+            if value == nil { model.cancelPendingTestCall() }
+        }), onDismiss: { model.cancelPendingTestCall() }) { confirmation in
+            CallTestConfirmationSheet(confirmation: confirmation,
+                                      onSend: { model.confirmPendingTestCall() },
+                                      onCancel: { model.cancelPendingTestCall() })
+                .onDisappear { model.cancelPendingTestCall() }
+        }
         .onAppear { applyRenderScript() }
         .onExitCommand {
             if model.draft != nil { model.cancelEdit() }

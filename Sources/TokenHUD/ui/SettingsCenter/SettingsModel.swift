@@ -365,9 +365,18 @@ final class SettingsModel: ObservableObject {
     @Published var running: Set<String> = []
     @Published private(set) var callRunning: Set<String> = []
     @Published private(set) var callTestResults: [String: CallTestResult] = [:]
+    @Published private(set) var pendingTestConfirmation: CallTestConfirmation?
+    private struct PendingTestCall {
+        let config: ProviderConfig
+        let key: String
+        let source: String
+    }
+    private var pendingTestCall: PendingTestCall?
     private var newDraftTestKey = "new-draft-\(UUID().uuidString)"
     var callTestResultKey: String { draft?.isNew == true ? newDraftTestKey : (draft?.slug ?? selected ?? newDraftTestKey) }
-    var isTestingCurrentConfig: Bool { callRunning.contains(callTestResultKey) }
+    var isTestingCurrentConfig: Bool {
+        callRunning.contains(callTestResultKey) || pendingTestCall?.key == callTestResultKey
+    }
     func callTestResult(for slug: String?) -> CallTestResult? { callTestResults[slug ?? callTestResultKey] }
 
     @Published var toast: Toast?
@@ -980,11 +989,16 @@ final class SettingsModel: ObservableObject {
         performTestCall(config: config, key: slug, source: "已保存配置", providerName: row.name)
     }
 
+    /// 供测试与模型目录共用点击时的配置快照，不保存、不发请求。
+    func callConfigForDraft(_ values: DraftValues) -> ProviderConfig {
+        let existing = draft?.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
+        return draftConfig(values, existing: existing)
+    }
+
     /// 使用点击时的当前输入，不保存凭证、配置或计划。
     func testCallDraft(values: DraftValues) {
-        guard let draft else { flash("请先打开账号配置", error: true); return }
-        let existing = draft.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
-        let config = draftConfig(values, existing: existing)
+        guard draft != nil else { flash("请先打开账号配置", error: true); return }
+        let config = callConfigForDraft(values)
         performTestCall(config: config, key: callTestResultKey, source: "当前输入",
                         providerName: values.name.isEmpty ? "新账号" : values.name)
     }
@@ -1006,20 +1020,39 @@ final class SettingsModel: ObservableObject {
             flash(invalid, error: true)
             return
         }
+        guard pendingTestCall == nil else { flash("请先发送或取消当前待确认的测试", error: false); return }
         let confirmation = CallTestConfirmation(sourceLabel: source, model: config.testModel,
                                                 target: target, providerName: providerName)
-        let confirmed: Bool
-        if let confirmTestCall { confirmed = confirmTestCall(confirmation) }
-        else {
-            let alert = NSAlert()
-            alert.messageText = "发送一次测试调用？"
-            alert.informativeText = "\(providerName) · \(source)\n模型：\(config.testModel)\n目标：\(target)\n将消耗该账号额度；不会保存配置或开启定时任务，也不保证额度窗口重置。"
-            alert.addButton(withTitle: "发送测试")
-            alert.addButton(withTitle: "取消")
-            alert.alertStyle = .informational
-            confirmed = alert.runModal() == .alertFirstButtonReturn
+        if let confirmTestCall {
+            guard confirmTestCall(confirmation) else { flash("已取消测试，未发送请求", error: false); return }
+            executeConfirmedTestCall(config: config, key: key, source: source)
+        } else {
+            pendingTestCall = PendingTestCall(config: config, key: key, source: source)
+            pendingTestConfirmation = confirmation
         }
-        guard confirmed else { flash("已取消测试，未发送请求", error: false); return }
+    }
+
+    func cancelPendingTestCall() {
+        guard pendingTestCall != nil else { return }
+        pendingTestCall = nil
+        pendingTestConfirmation = nil
+        flash("已取消测试，未发送请求", error: false)
+    }
+
+    func confirmPendingTestCall() {
+        guard let pending = pendingTestCall else { return }
+        pendingTestCall = nil
+        pendingTestConfirmation = nil
+        executeConfirmedTestCall(config: pending.config, key: pending.key, source: pending.source)
+    }
+
+    private func executeConfirmedTestCall(config: ProviderConfig, key: String, source: String) {
+        guard !callRunning.contains(key) else { flash("该账号已有测试进行中", error: true); return }
+        let target = CallTestResult.targetDescription(config.refreshUrl)
+        func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
+            CallTestResult(phase: phase, model: config.testModel, target: target,
+                           sourceLabel: source, message: message, date: Date())
+        }
         callRunning.insert(key)
         callTestResults[key] = result(.running, "正在发送一次测试调用…")
         let execute = executeTestCall
@@ -1045,7 +1078,9 @@ final class SettingsModel: ObservableObject {
                     .replacingOccurrences(of: config.refreshUrl, with: target)
             }
             callTestResults[key] = result(phase, message)
-            flash(message, error: phase != .success)
+            let summary = phase == .success ? message
+                : (phase == .uncertain ? "测试结果不确定，可能已消费；请查看下方完整详情" : "测试调用未成功，请查看下方完整详情")
+            flash(summary, error: phase != .success)
         }
     }
 

@@ -140,16 +140,3 @@ struct TemplateCatalogView: View {
         }
     }
 }
-
-struct CallTestResultView: View {
-    let result: CallTestResult
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ResultBox(kind: result.phase == .success ? .ok : (result.phase == .running ? .info : .error),
-                      title: result.title, detail: result.message)
-            Text("\(result.sourceLabel) · \(result.model)").font(.caption).foregroundStyle(.secondary)
-            Text(result.target).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
-            Text(result.date, style: .time).font(.caption).foregroundStyle(.secondary)
-        }.accessibilityElement(children: .combine)
-    }
-}

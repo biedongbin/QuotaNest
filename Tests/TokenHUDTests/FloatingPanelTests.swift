@@ -145,6 +145,54 @@ struct FloatingPanelTests {
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("logs").path))
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("hud/envs.json").path))
     }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOKENHUD_FLOATING_PANEL_TESTS"] == "1"))
+    @MainActor func panelGrowsWhenAllQuotaRowsAppear() async throws {
+        let app = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-panel-content-\(UUID())")
+        let hud = root.appendingPathComponent("hud")
+        let providers = root.appendingPathComponent("providers")
+        try FileManager.default.createDirectory(at: hud, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: providers, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = root.appendingPathComponent("settings.json")
+        try Data("{}".utf8).write(to: settings)
+        func addAccount(_ index: Int) throws {
+            let slug = "account-\(index)"
+            let cache = hud.appendingPathComponent(".\(slug)-usage-cache.json")
+            let manifest = ProviderManifest(name: slug, label: slug,
+                buckets: ["five_hour": "5h", "seven_day": "周", "monthly": "月"], cacheFile: cache.path)
+            try PluginGenerator.writePlugin(slug: slug, manifest: manifest, script: "exit 1", into: providers)
+            let body: [String: Any] = ["generatedAt": Date().timeIntervalSince1970 * 1000,
+                "five_hour": ["used_percentage": 10], "seven_day": ["used_percentage": 20],
+                "monthly": ["used_percentage": 30]]
+            try JSONSerialization.data(withJSONObject: body).write(to: cache)
+        }
+        try addAccount(0)
+        let defaults = FloatingPanelTestDefaults()
+        let engine = DataEngine(hudDir: hud, bundleProvidersDir: nil, userProvidersDir: providers,
+            runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")),
+            defaults: defaults, settingsURL: settings)
+        engine.reloadRegistry()
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        let controller = PanelController(engine: engine, defaults: defaults)
+        controller.show()
+        let panel = try #require(NSApp.windows.compactMap { $0 as? FloatingPanel }
+            .first { !before.contains(ObjectIdentifier($0)) })
+        defer { controller.hide(); panel.close() }
+        for _ in 0..<10 { panel.contentView?.layoutSubtreeIfNeeded(); try await Task.sleep(nanoseconds: 20_000_000) }
+        let initial = panel.frame.height
+        for index in 1..<7 { try addAccount(index) }
+        engine.reloadRegistry()
+        for _ in 0..<50 where panel.frame.height <= 350 {
+            panel.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(panel.frame.height > initial)
+        #expect(panel.frame.height > 350)
+        #expect(panel.frame.height <= controller.maximumPanelHeight + 1)
+        #expect(engine.states.count == 7)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("logs").path))
+    }
 }
 
 /// 测试偏好只存在于内存，不写入 App 或其他持久化域。

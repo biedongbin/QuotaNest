@@ -9,31 +9,52 @@ struct FloatingView: View {
     var onRefreshAll: () -> Void = {}
     var onOpenSettings: () -> Void = {}
     var operationModel: SettingsModel? = nil
+    var maximumHeight: CGFloat = .greatestFiniteMagnitude
+    var onHeightChange: ((CGFloat) -> Void)? = nil
+    @State private var measuredContentHeight: CGFloat = 0
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     private var states: [ProviderState] {
         engine.states.filter { !engine.floatingHiddenSlugs.contains($0.slug) }
     }
-    private var expandedHeight: CGFloat {
-        let content = states.reduce(CGFloat(0)) { height, state in
-            let metrics = QuotaPresentation(state: state).metrics
-            let rows = max(1, Int(ceil(Double(metrics.count) / 2)))
-            return height + 66 + CGFloat(rows) * 55
+    private var chromeHeight: CGFloat { expanded ? 71 : 37 }
+    private var estimatedContentHeight: CGFloat {
+        if states.isEmpty { return expanded ? 104 : 36 }
+        return states.reduce(CGFloat(16)) { height, state in
+            let count = max(1, QuotaPresentation(state: state).metrics.count)
+            return height + (expanded ? 84 + CGFloat((count + 1) / 2) * 56 : 29 + CGFloat(count) * 20)
         }
-        return min(350, max(104, content + 16))
+    }
+    private var viewportHeight: CGFloat {
+        min(max(1, measuredContentHeight > 0 ? measuredContentHeight : estimatedContentHeight),
+            max(1, maximumHeight - chromeHeight))
     }
     var body: some View {
         VStack(spacing: 0) {
-            header
-            if expanded {
-                Rectangle().fill(Palette.border).frame(height: 1)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 9) {
-                        if states.isEmpty { emptyState }
-                        ForEach(states) { state in floatingAccount(state) }
+            header.frame(height: 37)
+            if expanded { Rectangle().fill(Palette.border).frame(height: 1) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: expanded ? 9 : 12) {
+                    if states.isEmpty { emptyState }
+                    ForEach(states) { state in
+                        if expanded { floatingAccount(state) }
+                        else { compactAccount(state) }
                     }
-                    .padding(10)
                 }
-                .frame(height: expandedHeight)
+                .padding(.horizontal, expanded ? 10 : 13)
+                .padding(.top, expanded ? 10 : 1)
+                .padding(.bottom, expanded ? 10 : 12)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: FloatingContentHeightKey.self, value: geometry.size.height)
+                })
+                .contentShape(Rectangle()).onTapGesture(count: 2, perform: onToggle)
+            }
+            .frame(height: viewportHeight)
+            .onPreferenceChange(FloatingContentHeightKey.self) { height in
+                guard height.isFinite && height > 0 else { return }
+                if abs(measuredContentHeight - height) > 0.5 { measuredContentHeight = height }
+                onHeightChange?(min(maximumHeight, chromeHeight + height))
+            }
+            if expanded {
                 Rectangle().fill(Palette.border).frame(height: 1)
                 HStack {
                     Button(action: onOpenSettings) { Label("管理账号", systemImage: "slider.horizontal.3") }
@@ -41,25 +62,11 @@ struct FloatingView: View {
                     Spacer()
                     Text("\(states.count) 个账号").font(.system(size: 10.5)).foregroundStyle(Palette.muted)
                 }
-                .padding(.horizontal, 8).padding(.vertical, 5)
-            } else {
-                VStack(spacing: 9) {
-                    if states.isEmpty {
-                        Text("暂无显示中的账号").font(.system(size: 11.5)).foregroundStyle(Palette.muted)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
-                    }
-                    ForEach(Array(states.prefix(3))) { state in compactAccount(state) }
-                    if states.count > 3 {
-                        Button("另外 \(states.count - 3) 个账号") { onToggle() }
-                            .font(.system(size: 10.5)).foregroundStyle(Palette.muted).buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .padding(.horizontal, 13).padding(.top, 1).padding(.bottom, 12)
-                .contentShape(Rectangle()).onTapGesture(count: 2, perform: onToggle)
+                .padding(.horizontal, 8).frame(height: 32)
             }
         }
         .frame(width: 340)
+        .onAppear { onHeightChange?(min(maximumHeight, chromeHeight + viewportHeight)) }
         .foregroundStyle(Palette.ink)
         .background {
             RoundedRectangle(cornerRadius: 12)
@@ -104,32 +111,53 @@ struct FloatingView: View {
     }
     private func compactAccount(_ state: ProviderState) -> some View {
         let snapshot = QuotaPresentation(state: state)
-        let metric = snapshot.metrics.first
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Text(state.manifest.fullName).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 5)
-                if state.manifest.supportsQuota {
-                    if let metric {
-                        Text(metric.label).font(.system(size: 10.5)).foregroundStyle(Palette.muted).lineLimit(1)
-                        Text(metric.value).font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
-                            .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
-                    } else {
-                        Text(snapshot.status).font(.system(size: 10.5)).foregroundStyle(Palette.muted).lineLimit(1)
-                    }
-                    if snapshot.isOld {
-                        Text("旧值").font(.system(size: 9.5)).foregroundStyle(Palette.warn)
-                    }
-                } else {
+                if !state.manifest.supportsQuota {
                     Text("仅 API").font(.system(size: 10.5)).foregroundStyle(Palette.muted)
+                } else if snapshot.isOld {
+                    Text("旧值").font(.system(size: 10.5)).foregroundStyle(Palette.warn)
                 }
             }
-            if let percentage = metric?.percentage {
-                ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+            if state.manifest.supportsQuota {
+                if snapshot.metrics.isEmpty {
+                    Text(snapshot.status).font(.system(size: 10.5)).foregroundStyle(Palette.muted)
+                }
+                ForEach(snapshot.metrics) { metric in
+                    HStack(spacing: 8) {
+                        Text(compactLabel(metric.label)).font(.system(size: 10.5))
+                            .foregroundStyle(Palette.muted).frame(width: 40, alignment: .leading)
+                            .lineLimit(1).help(metric.label)
+                        if let percentage = metric.percentage {
+                            ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+                            Text(metric.value).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                                .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
+                                .frame(minWidth: 38, alignment: .trailing)
+                        } else {
+                            Text(metric.value).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                                .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                if snapshot.isOld && !snapshot.metrics.isEmpty {
+                    Text(snapshot.status).font(.system(size: 10)).foregroundStyle(Palette.warn).lineLimit(2)
+                }
             }
         }
         .accessibilityElement(children: .combine)
         .contextMenu { accountMenu(state) }
+    }
+    private func compactLabel(_ label: String) -> String {
+        switch label {
+        case "5小时": return "5h"
+        case "本周": return "周"
+        case "本月": return "月"
+        default: return label
+        }
     }
     private func floatingAccount(_ state: ProviderState) -> some View {
         let snapshot = QuotaPresentation(state: state)
@@ -214,4 +242,9 @@ private struct FloatingQueryAction: View {
             }
         }
     }
+}
+
+private struct FloatingContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

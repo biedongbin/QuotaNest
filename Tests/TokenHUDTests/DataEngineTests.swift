@@ -4,6 +4,24 @@ import Testing
 
 @Suite
 struct DataEngineTests {
+    @Test @MainActor func displayOrderPersistsAndSurvivesAccountVisibilityChanges() {
+        let (engine, root, _, defaults) = makeEngine("display-order")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for slug in ["alpha", "beta", "charlie"] {
+            addPlugin(slug, stdout: #"{"seven_day":{"used_percentage":5}}"#, to: root)
+        }
+        engine.reloadRegistry()
+        engine.setProviderOrder(["charlie", "alpha", "beta"])
+        #expect(engine.states.map(\.slug) == ["charlie", "alpha", "beta"])
+        #expect(defaults.stringArray(forKey: DataEngine.defaultsOrderKey) == ["charlie", "alpha", "beta"])
+        engine.reloadRegistry()
+        #expect(engine.states.map(\.slug) == ["charlie", "alpha", "beta"])
+        engine.setTracking("alpha", enabled: false)
+        #expect(engine.states.map(\.slug) == ["charlie", "beta"])
+        engine.setTracking("alpha", enabled: true)
+        #expect(engine.states.map(\.slug) == ["charlie", "alpha", "beta"])
+    }
+
     @Test func colorThresholds() {
         #expect(HUDFmt.pctColor(95) == .red)
         #expect(HUDFmt.pctColor(90) == .red)

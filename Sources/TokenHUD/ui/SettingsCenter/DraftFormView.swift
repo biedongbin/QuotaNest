@@ -77,8 +77,11 @@ struct DraftFormView: View {
                 secret("API Key", value: bind(\.key), revealed: $revealCallKey)
                 credentialActions(query: false)
                 labeled("模型") {
-                    TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
-                        .fieldBox().accessibilityLabel("调用模型")
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
+                            .fieldBox().accessibilityLabel("调用模型")
+                        ModelCatalogControls(model: model)
+                    }
                 }
                 DisclosureGroup("测试选项") {
                     labeled("测试提示词") {
