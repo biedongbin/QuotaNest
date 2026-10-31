@@ -1,10 +1,10 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 草稿表单 (配置 / 自动触发 共用, 单页三个分区)
+// MARK: - 草稿表单 (配置 / 自动任务 共用, 单页三个分区)
 
 struct DraftFormView: View {
-    /// 按 tab 分段: .config = 基本信息 + 查询与凭证, .trigger = 自动触发, .all = 全部
+    /// 按 tab 分段: .config = 基本信息 + 查询与凭证, .trigger = 自动任务, .all = 全部
     enum Section { case config, trigger, all }
 
     @ObservedObject var model: SettingsModel
@@ -30,7 +30,7 @@ struct DraftFormView: View {
         } else {
             let alert = NSAlert()
             alert.messageText = "清除该账号的 API Key？"
-            alert.informativeText = "保存后凭证将被清空，额度查询与测试调用都会失效，需重新填入。"
+            alert.informativeText = "保存后清除当前密钥，依赖该密钥的操作将不可用；独立的调用凭证会保留。"
             alert.addButton(withTitle: "清除")
             alert.addButton(withTitle: "取消")
             alert.alertStyle = .warning
@@ -53,6 +53,7 @@ struct DraftFormView: View {
             if section != .trigger {
                 basicGroup
                 credentialGroup
+                callGroup
             }
             if section != .config {
                 if canCall { triggerGroup } else { unsupportedTrigger }
@@ -67,7 +68,7 @@ struct DraftFormView: View {
     private var notice: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "pencil.circle").font(.system(size: 11))
-            Text(isNew ? "新账号保存后加入左侧列表；草稿仅在本机内存，未保存前不会写盘。"
+            Text(isNew ? "新账号保存后加入总览；修改保留在当前草稿，测试不会自动保存。"
                        : "草稿仅在本机内存，未保存；切换 tab 不丢失，关窗/切换账号会确认。")
                 .font(Typo.small)
             Spacer(minLength: 0)
@@ -84,9 +85,9 @@ struct DraftFormView: View {
         CardBox {
             VStack(alignment: .leading, spacing: 12) {
                 Text("基本信息").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("名称用于左侧列表与状态栏展示。").font(Typo.small).foregroundStyle(Palette.muted)
+                Text("名称用于总览、悬浮窗和菜单栏展示。").font(Typo.small).foregroundStyle(Palette.muted)
 
-                HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
                     field("账号名称", required: true, error: model.errors["name"]) {
                         TextField("例如 GLM 工作号", text: bind(\.name))
                             .textFieldStyle(.plain)
@@ -95,7 +96,7 @@ struct DraftFormView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("供应商 / 授权方式").font(Typo.small).foregroundStyle(Palette.muted)
                         HStack(spacing: 6) {
-                            BadgeText(text: m?.fullName ?? "通用兼容")
+                            BadgeText(text: model.current.map { model.providerName(for: $0) } ?? m?.label ?? "通用兼容")
                             BadgeText(text: isAPIKey ? "API Key" : "授权登录", locked: !isAPIKey)
                         }
                         Text(builtin ? "内置供应商：协议与地址由模板提供，只有密钥/模型/时间可改。"
@@ -189,31 +190,60 @@ struct DraftFormView: View {
                     }
                 }
 
-                if canCall {
-                    HStack(alignment: .top, spacing: 12) {
-                        field("测试模型", required: false, error: nil) {
-                            TextField("glm-4.7", text: bind(\.model))
-                                .textFieldStyle(.plain).font(Typo.mono)
-                                .fieldBox()
-                        }
-                        field("测试提示词", required: false, error: nil) {
-                            TextField("回复 OK 即视为连通。", text: bind(\.prompt))
-                                .textFieldStyle(.plain)
-                                .fieldBox()
-                        }
-                    }
+                if let slug = draft.slug {
+                    Text("额度查询使用已保存配置；修改凭证后请先保存，再查询额度。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    Button(model.running.contains(slug) ? "查询中…" : "查询已保存账号额度") { model.query(slug) }
+                        .barButton()
+                        .disabled(model.running.contains(slug) || model.current?.canQuery != true || model.current?.isConfigured != true)
+                        .help(model.current?.isConfigured == true ? "查询已保存配置；不会启用后台任务或保存当前输入" : "请先补全并保存账号配置，再查询额度")
+                } else {
+                    Text("新账号保存后可查询额度；下方模型测试可直接使用当前输入。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
                 }
             }
         }
     }
 
-    // MARK: 自动触发
+    private var callGroup: some View {
+        CardBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("模型调用与测试").font(Typo.section).foregroundStyle(Palette.ink)
+                if canCall {
+                    VStack(alignment: .leading, spacing: 12) {
+                        field("模型", required: false, error: nil) {
+                            TextField("填写模型名称", text: bind(\.model))
+                                .textFieldStyle(.plain).font(Typo.mono).fieldBox()
+                        }
+                        field("提示词", required: false, error: nil) {
+                            TextField("只回复 OK", text: bind(\.prompt))
+                                .textFieldStyle(.plain).fieldBox()
+                        }
+                    }
+                    Text("使用当前输入，测试不会保存配置或启用计划；发送一次模型调用会消耗额度。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    Button(model.isTestingCurrentConfig ? "测试中…" : "发送测试调用") {
+                        model.testCallDraft(values: draft.values)
+                    }
+                    .barButton(.primary)
+                    .disabled(model.isTestingCurrentConfig)
+                    .help("用当前未保存的模型与凭证发送一次测试调用")
+                } else {
+                    Text("此账号尚未配置或接入模型调用。通用账号请先填写有效服务地址；供应商模板缺少调用接入时，额度查询仍可独立使用。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                }
+                if let result = model.callTestResult(for: nil) { CallTestResultView(result: result) }
+            }
+        }
+    }
+
+    // MARK: 自动任务
 
     private var triggerGroup: some View {
         CardBox {
             VStack(alignment: .leading, spacing: 12) {
-                Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("保存不发起任何请求；定时按本机时区 24 小时制执行，会消耗额度。自动查询开关与间隔在保存后的「自动触发」页直接操作。")
+                Text("自动任务").font(Typo.section).foregroundStyle(Palette.ink)
+                Text("保存不发起任何请求；定时按本机时区 24 小时制执行，会消耗额度。自动查询开关与间隔在保存后的「自动任务」页直接操作。")
                     .font(Typo.small).foregroundStyle(Palette.muted)
 
                 Toggle(isOn: bind(\.autoTrigger)) {
@@ -250,23 +280,7 @@ struct DraftFormView: View {
                     Text(e).font(Typo.small).foregroundStyle(Palette.danger)
                 }
 
-                HStack(spacing: 8) {
-                    Button("保存并发送一次测试调用") {
-                        guard let slug = model.draft?.slug else {
-                            model.flash("请先保存草稿，再发送测试调用", error: true); return
-                        }
-                        model.testCall(slug)
-                    }
-                        .barButton()
-                        .disabled(draft.slug == nil)
-                        .help("草稿未保存前无法调用；先保存再测试")
-                    // P1-6: 显式用草稿当前配置发测试调用, 不落盘 (盘上配置不变)
-                    Button("用当前草稿发送测试调用") {
-                        model.testCallDraft(values: draft.values)
-                    }
-                        .barButton()
-                        .help("使用草稿配置（未保存，盘上账号配置不受影响）发送一次测试调用")
-                }
+
             }
         }
     }
@@ -274,11 +288,12 @@ struct DraftFormView: View {
     private var unsupportedTrigger: some View {
         CardBox {
             VStack(alignment: .leading, spacing: 12) {
-                Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("自动查询开关与间隔在保存后的「自动触发」页直接操作。")
+                Text("自动任务").font(Typo.section).foregroundStyle(Palette.ink)
+                Text("自动查询开关与间隔在保存后的「自动任务」页直接操作。")
                     .font(Typo.small).foregroundStyle(Palette.muted)
-                UnsupportedBox(title: "未配置调用端点",
-                               detail: "填入服务地址与模型后即可启用定时调用；当前草稿尚未填写服务地址。")
+                UnsupportedBox(title: builtin ? "尚未接入模型调用" : "尚未配置模型调用",
+                               detail: builtin ? "此模板当前可独立查询额度；尚无可用的模型调用接入。"
+                                               : "请在配置页填写有效调用地址与模型，再设置调用计划。")
             }
         }
     }

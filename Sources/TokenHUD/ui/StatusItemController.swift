@@ -147,38 +147,76 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowManager()
     private var window: NSWindow?
     private weak var model: SettingsModel?
+    private let defaults: UserDefaults
+    private let autosaveName: String
     /// App init 时注入 (engine / 路径在 App 侧)
     var makeModel: (() -> SettingsModel)?
 
+    init(defaults: UserDefaults = .standard, autosaveName: String = WindowFrameMemory.autosaveName) {
+        self.defaults = defaults
+        self.autosaveName = autosaveName
+        super.init()
+    }
+
     func show() {
-        NSApp.activate(ignoringOtherApps: true)
         if let window {
+            NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .show))
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            restoreVisiblePosition(window)
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
         }
         guard let model = makeModel?() else { return }
         self.model = model
         let host = NSHostingController(rootView: SettingsCenterView(model: model, engine: model.engine))
-        let w = NSWindow(contentViewController: host)
-        w.title = "TokenHUD 设置中心"
-        w.styleMask.insert(.closable)
-        w.styleMask.insert(.miniaturizable)
-        w.styleMask.insert(.resizable)
-        w.minSize = NSSize(width: 820, height: 560)  // P2-5: 主窗最小尺寸 (FR-08.6)
-        let restored = WindowFrameMemory.hasSavedFrame()
-        w.setFrameAutosaveName(WindowFrameMemory.autosaveName)
+        let w = SettingsMainWindow(contentViewController: host)
+        w.title = "TokenHUD"
+        w.styleMask.insert([.closable, .miniaturizable, .resizable])
+        w.minSize = NSSize(width: 640, height: 560)
         w.delegate = self
         w.isReleasedWhenClosed = false
-        // 首次显示后才套记忆 (此时才有屏幕坐标系), 且不覆盖已恢复的原点
-        w.makeKeyAndOrderFront(nil)
-        if restored { w.setFrameUsingName(WindowFrameMemory.autosaveName) } else { w.center() }
+        if defaults === UserDefaults.standard {
+            w.setFrameAutosaveName(autosaveName)
+        } else if let saved = defaults.string(forKey: "NSWindow Frame \(autosaveName)") {
+            let numbers = saved.split(separator: " ").compactMap { Double($0) }
+            if numbers.count >= 4 {
+                w.setFrame(NSRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]), display: false)
+            }
+        }
         window = w
+        restoreVisiblePosition(w)
+        NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .show))
+        NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil)
+    }
+
+    private func restoreVisiblePosition(_ window: NSWindow) {
+        let frames = NSScreen.screens.map(\.visibleFrame)
+        var frame = window.frame
+        frame.size.width = max(frame.width, window.minSize.width)
+        frame.size.height = max(frame.height, window.minSize.height)
+        let preferred = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+        let resolved = FloatingPanelPlacement.resolve(frame, visibleFrames: frames, preferredScreen: preferred)
+        if resolved != window.frame { window.setFrame(resolved, display: window.isVisible) }
     }
 
     /// 关窗: 有未保存草稿先确认 (返回 false 阻止关闭)
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard let model, model.draft != nil else { return true }
-        return model.leaveGuard()
+        let accepted = model?.leaveGuard() ?? true
+        if !accepted {
+            NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .closeCancelled))
+        }
+        return accepted
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .closeAccepted))
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .minimize))
     }
 
     /// 菜单栏点单条查询: 复用设置中心模型 (未开窗时懒建, 不 show)

@@ -216,18 +216,21 @@ struct UsageCache: Codable {
     var lastAttemptAt: Double?
     /// P1-11 动态窗口列表: provider 按各自真实窗口上报 (可缺); 旧三桶保留做投影, 旧读端不破坏
     var windows: [WindowBucket]?
+    /// 供应商用于判断缓存归属的标识；不参与展示或日志。
+    var accountId: String?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion, generatedAt, lastAttemptAt, windows
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
+        case accountId = "account_id"
         case monthly
         case error, stale
     }
 
     init(schemaVersion: Int? = nil, generatedAt: Double? = nil, fiveHour: Bucket? = nil, sevenDay: Bucket? = nil,
          monthly: Bucket? = nil, error: String? = nil, stale: Bool? = nil,
-         lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil) {
+         lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil, accountId: String? = nil) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
         self.fiveHour = fiveHour
@@ -237,6 +240,7 @@ struct UsageCache: Codable {
         self.stale = stale
         self.lastAttemptAt = lastAttemptAt
         self.windows = windows
+        self.accountId = accountId
     }
 
     init(from decoder: Decoder) throws {
@@ -251,6 +255,7 @@ struct UsageCache: Codable {
         stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
         lastAttemptAt = try c.decodeIfPresent(Double.self, forKey: .lastAttemptAt)
         windows = try c.decodeIfPresent([WindowBucket].self, forKey: .windows)
+        accountId = try c.decodeIfPresent(String.self, forKey: .accountId)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -264,6 +269,7 @@ struct UsageCache: Codable {
         try c.encodeIfPresent(stale, forKey: .stale)
         try c.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
         try c.encodeIfPresent(windows, forKey: .windows)
+        try c.encodeIfPresent(accountId, forKey: .accountId)
     }
 
     /// 解析 fetch.sh stdout（可缺 generatedAt/ttlMs 等字段），统一盖上框架字段

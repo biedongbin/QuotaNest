@@ -82,10 +82,9 @@ enum SettingsValidation {
         return e
     }
 
-    /// P1-6 开关确认判定 (纯函数): off→on 且确认未给 → 需要弹消费确认
-    /// (on→on / off→off / on→off / 新建草稿直接 on 不算 — 新建时 pickTemplate 已默认 off)
+    /// 新账号或既有账号从关闭转为开启时，都必须确认定时调用的消费。
     static func needsTriggerConfirm(base: Bool, current: Bool, isNew: Bool) -> Bool {
-        !isNew && !base && current
+        current && (isNew || !base)
     }
 }
 
@@ -119,11 +118,11 @@ enum CapabilityStatus: Equatable {
     }
 
     /// 模型调用能力: manifest 有 refreshUrl (模板锁定) = configured;
-    /// 模板实例无 refreshUrl = notSupported (供应商声明层面就没有该端点);
+    /// 模板实例无 refreshUrl = notIntegrated (App 尚未接入，不能推断服务不支持);
     /// 通用自定义 = notConfigured (服务地址未填时可补)
     static func call(manifest: ProviderManifest, configUrl: String) -> CapabilityStatus {
         if let r = manifest.refreshUrl, !r.isEmpty { return .configured }
-        if manifest.template != nil { return .notSupported }
+        if manifest.template != nil { return .notIntegrated }
         return configUrl.trimmingCharacters(in: .whitespaces).isEmpty ? .notConfigured : .configured
     }
 }
@@ -156,7 +155,7 @@ struct Draft: Equatable {
     var base: DraftValues
     var timeInput = ""
 
-    var dirty: Bool { values != base }
+    var dirty: Bool { values != base || !timeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     /// P1-9: 编辑态盘上已有 Key (空输入保存 = 保持原值的判据)
     var hasExistingKey: Bool = false
 
@@ -309,7 +308,7 @@ final class SettingsModel: ObservableObject {
             switch self {
             case .quota: return "额度"
             case .config: return "配置"
-            case .trigger: return "自动触发"
+            case .trigger: return "自动任务"
             }
         }
     }
@@ -327,6 +326,8 @@ final class SettingsModel: ObservableObject {
     private let defaults: UserDefaults
     private let confirmDiscardChanges: (() -> Bool)?
     private let confirmResumePlan: (() -> Bool)?
+    private let confirmTestCall: ((CallTestConfirmation) -> Bool)?
+    private let executeTestCall: (ProviderConfig) async -> String?
     private var templatesReturn: (page: NavPage, selected: String?, tab: Tab)?
 
     @Published var search = ""
@@ -356,6 +357,13 @@ final class SettingsModel: ObservableObject {
     @Published var errors: [String: String] = [:]
     @Published var topError = ""
     @Published var running: Set<String> = []
+    @Published private(set) var callRunning: Set<String> = []
+    @Published private(set) var callTestResults: [String: CallTestResult] = [:]
+    private var newDraftTestKey = "new-draft-\(UUID().uuidString)"
+    var callTestResultKey: String { draft?.isNew == true ? newDraftTestKey : (draft?.slug ?? selected ?? newDraftTestKey) }
+    var isTestingCurrentConfig: Bool { callRunning.contains(callTestResultKey) }
+    func callTestResult(for slug: String?) -> CallTestResult? { callTestResults[slug ?? callTestResultKey] }
+
     @Published var toast: Toast?
     @Published var importOpen = false
     /// 每账号最近一次手动操作结果 (耗时/结果)
@@ -369,7 +377,9 @@ final class SettingsModel: ObservableObject {
 
     init(engine: DataEngine, hudDir: URL, userDir: URL, settingsURL: URL, bundleDir: URL?,
          defaults: UserDefaults = .standard, confirmDiscardChanges: (() -> Bool)? = nil,
-         confirmResumePlan: (() -> Bool)? = nil) {
+         confirmResumePlan: (() -> Bool)? = nil,
+         confirmTestCall: ((CallTestConfirmation) -> Bool)? = nil,
+         executeTestCall: ((ProviderConfig) async -> String?)? = nil) {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
@@ -378,6 +388,8 @@ final class SettingsModel: ObservableObject {
         self.defaults = defaults
         self.confirmDiscardChanges = confirmDiscardChanges
         self.confirmResumePlan = confirmResumePlan
+        self.confirmTestCall = confirmTestCall
+        self.executeTestCall = executeTestCall ?? { config in await RefreshTrigger.testRefresh(config: config) }
         // 恢上次的账号与 tab; 账号已不存在则回落第一个
         let slugs = engine.allPlugins.map(\.slug)
         self.selected = SettingsPersist.resumeSlug(
@@ -432,11 +444,13 @@ final class SettingsModel: ObservableObject {
         var byLabel: [String: [AccountRow]] = [:]
         var info: [String: (String, String?, String?)] = [:]
         for r in scoped {
-            let key = r.plugin.manifest.label
+            let template = r.plugin.manifest.template.flatMap { engine.template(bySlug: $0)?.manifest }
+            let provider = template ?? r.plugin.manifest
+            let key = provider.label
             if byLabel[key] == nil {
                 byLabel[key] = []
                 order.append(key)
-                info[key] = (r.plugin.manifest.fullName, r.plugin.manifest.accent, r.plugin.manifest.icon)
+                info[key] = (providerName(for: r), provider.accent, provider.icon)
             }
             byLabel[key]?.append(r)
         }
@@ -506,11 +520,25 @@ final class SettingsModel: ObservableObject {
     /// 当前草稿的能力来源 manifest
     func draftManifest() -> ProviderManifest? {
         guard let d = draft else { return nil }
+        if let slug = d.slug, let provider = engine.allPlugins.first(where: { $0.slug == slug }) {
+            return provider.manifest
+        }
         if let t = d.template { return engine.template(bySlug: t)?.manifest }
         return nil
     }
 
-    func draftCanCall() -> Bool { draftManifest()?.refreshUrl != nil }
+    func draftCanCall() -> Bool {
+        if draftBuiltin() { return draftManifest()?.refreshUrl?.isEmpty == false }
+        return draft != nil
+    }
+
+    func providerName(for row: AccountRow) -> String {
+        if let template = row.plugin.manifest.template,
+           let base = engine.template(bySlug: template)?.manifest {
+            return base.fullName
+        }
+        return row.plugin.manifest.label
+    }
     func draftBuiltin() -> Bool { draft?.template != nil }
     func draftAuthStyle() -> String { draftManifest()?.authStyle ?? "apikey" }
 
@@ -580,7 +608,8 @@ final class SettingsModel: ObservableObject {
         guard let row = current else { return }
         let p = row.plugin
         let cfg = readConfig(p)
-        let existingKey = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
+        let independentCallKey = hasIndependentCallKey(config: cfg, provider: p)
+        let existingKey = independentCallKey ? cfg.queryKey : (cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey)
         let v = DraftValues(name: p.manifest.fullName,
                             url: p.manifest.queryUrl ?? cfg.queryUrl,
                             key: existingKey.isEmpty ? "" : existingKey,
@@ -599,6 +628,7 @@ final class SettingsModel: ObservableObject {
     func pickTemplate(_ choice: TemplateChoice) {
         guard leaveGuard() else { return }
         let m = choice.manifest
+        newDraftTestKey = "new-draft-\(UUID().uuidString)"
         // 脚本型模板的查询地址在 auth 模板的 apiUrl 里, 只读展示用
         let urlHint = m?.queryUrl ?? templateAuthURL(choice.id)
         let v = DraftValues(name: (m?.fullName ?? choice.label) + " 新账号",
@@ -661,6 +691,12 @@ final class SettingsModel: ObservableObject {
 
     func save() {
         guard let d = draft else { return }
+        guard !isTestingCurrentConfig else {
+            topError = "测试调用进行中，请等待结果后再保存；当前输入已保留。"
+            flash(topError, error: true)
+            return
+        }
+        let testResultKey = callTestResultKey
         var errs = SettingsValidation.configErrors(
             name: d.values.name, key: d.values.key, url: d.values.url,
             authStyle: draftAuthStyle(), builtin: draftBuiltin(),
@@ -685,15 +721,22 @@ final class SettingsModel: ObservableObject {
         // P1-6: autoTrigger off→on 保存前需消费确认; 拒绝则保持 off (该开关不保存, 其余照常)
         if SettingsValidation.needsTriggerConfirm(base: d.base.autoTrigger, current: values.autoTrigger,
                                                   isNew: d.isNew) {
-            let alert = NSAlert()
-            alert.messageText = "开启模型定时调用？"
-            let name = values.name.trimmingCharacters(in: .whitespaces)
-            alert.informativeText = "开启后 \(name) 将在设定时间点自动发送一次模型调用以刷新额度窗口，每次都会消耗该账号额度。确定开启？"
-            alert.addButton(withTitle: "开启")
-            alert.addButton(withTitle: "保持关闭")
-            alert.alertStyle = .warning
-            if alert.runModal() != .alertFirstButtonReturn {
-                values.autoTrigger = false
+            let confirmed: Bool
+            if let confirmResumePlan { confirmed = confirmResumePlan() }
+            else {
+                let alert = NSAlert()
+                alert.messageText = "开启模型定时调用？"
+                let name = values.name.trimmingCharacters(in: .whitespaces)
+                alert.informativeText = "开启后 \(name) 将在设定时间点自动发送一次模型调用，每次都会消耗该账号额度。确定开启？"
+                alert.addButton(withTitle: "开启")
+                alert.addButton(withTitle: "取消保存")
+                alert.alertStyle = .warning
+                confirmed = alert.runModal() == .alertFirstButtonReturn
+            }
+            guard confirmed else {
+                topError = "已取消保存，模型定时调用未启用；当前输入已保留。"
+                flash(topError, error: true)
+                return
             }
         }
         do {
@@ -709,11 +752,14 @@ final class SettingsModel: ObservableObject {
             let slug = d.isNew ? try create(values: values, draft: d)
                                : try update(values: values, draft: d)
             engine.reloadRegistry()
+            if d.isNew, let result = callTestResults.removeValue(forKey: testResultKey) {
+                callTestResults[slug] = result
+            }
             clearDraft()
             showingTemplates = false
             templatesReturn = nil
             selected = slug
-            tab = .quota
+            if d.isNew { tab = .config }
             navPage = .detail
             flash(incomplete
                   ? "已保存（未配置：凭证或地址缺失，自动查询与定时调用已关闭）"
@@ -755,6 +801,8 @@ final class SettingsModel: ObservableObject {
         cfg.testModel = values.model
         cfg.testPrompt = values.prompt
         cfg.refreshProtocol = values.proto
+        cfg.refreshUrl = ProviderImporter.triggerURLForTest(values.url, values.proto)
+        cfg.refreshHeader = genericCallHeader(manifest: nil)
         cfg.scheduleTimes = values.times
         if let tslug = d.template, let tmpl = engine.template(bySlug: tslug) {
             let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: name,
@@ -791,28 +839,35 @@ final class SettingsModel: ObservableObject {
         guard let slug = d.slug,
               let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return d.slug ?? "" }
         let name = values.name.trimmingCharacters(in: .whitespaces)
+        guard let af = authURL(p) else { throw NSError(domain: "TokenHUD", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "凭证文件路径缺失"]) }
+        if p.manifest.authStyle != "apikey",
+           !AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
+            throw NSError(domain: "TokenHUD", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "凭证来自外部只读文件，不能在此保存；请使用本应用的账号配置记录。"])
+        }
         var cfg = readConfig(p)
         // P1-9: Key 三态落盘 — clear→清空, 空+已有→保持原值 (nil 不动), 有值→替换
-        let existingKey = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
+        let independentCallKey = hasIndependentCallKey(config: cfg, provider: p)
+        let existingKey = independentCallKey ? cfg.queryKey : (cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey)
         let intent: SettingsValidation.KeyIntent = values.clearKeyIntent ? .clear : .replace
         if let resolved = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingKey,
                                                         intent: intent) {
             cfg.queryKey = resolved
-            cfg.refreshKey = resolved
+            if !independentCallKey { cfg.refreshKey = resolved }
+        } else if !independentCallKey, cfg.queryKey.isEmpty {
+            // 旧共享凭证只有 refreshApiKey 时，保持原值也要同步已有查询凭证槽。
+            cfg.queryKey = existingKey
         }
         cfg.queryUrl = values.url
         cfg.testModel = values.model
         cfg.testPrompt = values.prompt
         cfg.scheduleTimes = values.times
-        guard let af = authURL(p) else { throw NSError(domain: "TokenHUD", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "凭证文件路径缺失"]) }
         if p.manifest.template == nil {
             // 通用: name/address/protocol 进 manifest, 同步脚本
             cfg.refreshProtocol = values.proto
             cfg.refreshUrl = ImportCandidateTriggerURL(values.url, proto: values.proto)
-            cfg.refreshHeader = values.proto == "anthropic"
-                ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
-                : "Authorization: Bearer <key>"
+            cfg.refreshHeader = genericCallHeader(manifest: p.manifest)
             let manifest = PluginGenerator.customManifest(
                 name: name, config: cfg,
                 authFile: PluginGenerator.authPath(slug: slug, hudDir: hudDir))
@@ -851,6 +906,20 @@ final class SettingsModel: ObservableObject {
         return b.hasSuffix("/v1") ? b + "/chat/completions" : b + "/v1/chat/completions"
     }
 
+    private func hasIndependentCallKey(config: ProviderConfig, provider: PluginProvider) -> Bool {
+        guard !config.refreshKey.isEmpty, config.refreshKey != config.queryKey else { return false }
+        if !config.queryKey.isEmpty { return true }
+        guard let file = authURL(provider), let data = try? Data(contentsOf: file),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        if let field = provider.manifest.queryKeyField { return object[field] != nil }
+        let headers = object["headers"] as? [String: Any] ?? [:]
+        return headers["Authorization"] != nil
+    }
+
+    private func genericCallHeader(manifest: ProviderManifest?) -> String {
+        manifest?.refreshHeader.flatMap { $0.isEmpty ? nil : $0 } ?? "Authorization: Bearer <key>"
+    }
+
     // MARK: 动作
 
     func query(_ slug: String) {
@@ -874,94 +943,110 @@ final class SettingsModel: ObservableObject {
 
     func testCall(_ slug: String) {
         guard let row = row(slug), row.canCall else {
-            flash("未配置调用端点，无法发送测试调用", error: true)
+            flash("该账号尚未接入模型调用", error: true)
             return
         }
-        let alert = NSAlert()
-        alert.messageText = "发送一次测试调用？"
-        alert.informativeText = "将消耗 \(row.plugin.manifest.fullName) 的额度，使用 \(row.plugin.manifest.refreshProtocol ?? "openai") 协议；调用结果不代表 5 小时窗口会重置。"
-        alert.addButton(withTitle: "发送测试")
-        alert.addButton(withTitle: "取消")
-        alert.alertStyle = .informational
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard !running.contains(slug) else { return }
-        running.insert(slug)
-        flash("测试调用已发送…", error: false)
-        let started = Date()
-        Task {
-            // P1-4 并发位: 同账号已有调用在飞 → busy 提示 (不排队)
-            guard await engine.callSlots.acquire(slug) else {
-                running.remove(slug)
-                flash("该账号已有调用进行中，请稍候再试", error: true)
-                return
-            }
-            var err: String?
-            if let af = authURL(row.plugin), let m = engine.allPlugins.first(where: { $0.slug == slug })?.manifest {
-                err = await RefreshTrigger.trigger(manifest: m, authFile: af)
-            } else {
-                err = "凭证文件缺失"
-            }
-            await engine.callSlots.release(slug)
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            running.remove(slug)
-            // P1-5: send() 成功返回 "✓ …" 前缀; 其他 (含网络不确定/HTTP 错/空 body) 均按失败/异常展示
-            let ok = err?.hasPrefix("✓") == true
-            lastRun[slug] = (ok, ms, Date())
-            flash(ok ? "测试调用成功（\(ms) ms）" : "测试调用失败：\(err ?? "")", error: !ok)
-        }
+        var config = readConfig(row.plugin)
+        if config.testModel.isEmpty { config.testModel = row.plugin.manifest.refreshModel }
+        if config.testPrompt.isEmpty, let prompt = row.plugin.manifest.testPrompt { config.testPrompt = prompt }
+        performTestCall(config: config, key: slug, source: "已保存配置", providerName: row.name)
     }
 
-    /// P1-6 草稿测试调用: 用草稿当前配置显式发送, 不落盘 (盘上配置不变)
+    /// 使用点击时的当前输入，不保存凭证、配置或计划。
     func testCallDraft(values: DraftValues) {
-        var cfg = ProviderConfig()
-        cfg.refreshProtocol = values.proto
-        // 目标端点: 模板实例用 manifest.refreshUrl (锁定); 通用草稿由服务地址按协议推导
-        if let r = draftManifest()?.refreshUrl {
-            cfg.refreshUrl = r
-        } else if !values.url.trimmingCharacters(in: .whitespaces).isEmpty {
-            cfg.refreshUrl = ProviderImporter.triggerURLForTest(
-                values.url.trimmingCharacters(in: .whitespaces), values.proto)
+        guard let draft else { flash("请先打开账号配置", error: true); return }
+        let manifest = draftManifest()
+        var config = draft.slug.flatMap { slug in
+            engine.allPlugins.first(where: { $0.slug == slug }).map(readConfig)
+        } ?? ProviderConfig()
+        let oldQueryKey = config.queryKey
+        let oldCallKey = config.refreshKey
+        let provider = draft.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug } }
+        let hasIndependentCallKey = provider.map { self.hasIndependentCallKey(config: config, provider: $0) } ?? false
+        let enteredKey = values.key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !hasIndependentCallKey {
+            let intent: SettingsValidation.KeyIntent = values.clearKeyIntent ? .clear : .replace
+            if let key = SettingsValidation.resolveKey(draftKey: enteredKey,
+                                                       existingKey: oldCallKey.isEmpty ? oldQueryKey : oldCallKey,
+                                                       intent: intent) {
+                config.refreshKey = key
+            }
         }
-        cfg.refreshHeader = values.proto == "anthropic"
-            ? "Authorization: Bearer <key>\nanthropic-version: 2023-06-01"
-            : "Authorization: Bearer <key>"
-        cfg.testModel = values.model
-        cfg.testPrompt = values.prompt
-        // 凭证: 优先草稿输入框 (空 = 已有账号沿用盘上 Key)
-        let draftKey = values.key.trimmingCharacters(in: .whitespaces)
-        if !draftKey.isEmpty {
-            cfg.refreshKey = draftKey
-        } else if let d = draft, let slug = d.slug,
-                  let p = engine.allPlugins.first(where: { $0.slug == slug }) {
-            let disk = readConfig(p)
-            cfg.refreshKey = disk.refreshKey.isEmpty ? disk.queryKey : disk.refreshKey
+        if draft.template != nil {
+            config.refreshUrl = manifest?.refreshUrl ?? ""
+            config.refreshProtocol = manifest?.refreshProtocol ?? config.refreshProtocol
+            config.refreshHeader = manifest?.refreshHeader
+                ?? (manifest?.refreshAuth == "cookie" ? "Cookie: <key>" : "Authorization: Bearer <key>")
+        } else {
+            config.refreshUrl = ProviderImporter.triggerURLForTest(
+                values.url.trimmingCharacters(in: .whitespacesAndNewlines), values.proto)
+            config.refreshProtocol = values.proto
+            config.refreshHeader = genericCallHeader(manifest: manifest)
         }
-        let label = draftManifest()?.fullName ?? "草稿配置"
-        let alert = NSAlert()
-        alert.messageText = "用当前草稿发送测试调用？"
-        alert.informativeText = "使用草稿配置（未保存，盘上账号配置不受影响），将消耗 \(label) 的额度，使用 \(values.proto) 协议。"
-        alert.addButton(withTitle: "发送测试")
-        alert.addButton(withTitle: "取消")
-        alert.alertStyle = .informational
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let slug = draft?.slug ?? "draft"
-        guard !running.contains(slug) else { flash("已有调用进行中，请稍候", error: true); return }
-        running.insert(slug)
-        flash("草稿测试调用已发送…", error: false)
-        let started = Date()
+        config.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.testPrompt = values.prompt
+        let source = hasIndependentCallKey ? "当前输入（使用独立调用凭证）" : "当前输入"
+        performTestCall(config: config, key: callTestResultKey, source: source,
+                        providerName: values.name.isEmpty ? "新账号" : values.name)
+    }
+
+    private func performTestCall(config: ProviderConfig, key: String, source: String, providerName: String) {
+        let target = CallTestResult.targetDescription(config.refreshUrl)
+        func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
+            CallTestResult(phase: phase, model: config.testModel, target: target,
+                           sourceLabel: source, message: message, date: Date())
+        }
+        guard !callRunning.contains(key) else { flash("该账号已有测试进行中", error: true); return }
+        let invalid: String?
+        if !SettingsValidation.isValidURL(config.refreshUrl) { invalid = "请先填写有效的调用地址" }
+        else if config.refreshKey.isEmpty { invalid = "请先填写调用凭证；已清除的凭证不会用于测试" }
+        else if config.testModel.isEmpty { invalid = "请先填写测试模型" }
+        else { invalid = nil }
+        if let invalid {
+            callTestResults[key] = result(.failure, invalid)
+            flash(invalid, error: true)
+            return
+        }
+        let confirmation = CallTestConfirmation(sourceLabel: source, model: config.testModel,
+                                                target: target, providerName: providerName)
+        let confirmed: Bool
+        if let confirmTestCall { confirmed = confirmTestCall(confirmation) }
+        else {
+            let alert = NSAlert()
+            alert.messageText = "发送一次测试调用？"
+            alert.informativeText = "\(providerName) · \(source)\n模型：\(config.testModel)\n目标：\(target)\n将消耗该账号额度；不会保存配置或开启定时任务，也不保证额度窗口重置。"
+            alert.addButton(withTitle: "发送测试")
+            alert.addButton(withTitle: "取消")
+            alert.alertStyle = .informational
+            confirmed = alert.runModal() == .alertFirstButtonReturn
+        }
+        guard confirmed else { flash("已取消测试，未发送请求", error: false); return }
+        callRunning.insert(key)
+        callTestResults[key] = result(.running, "正在发送一次测试调用…")
+        let execute = executeTestCall
         Task {
-            // P1-4 并发位: 同账号 (或草稿目标账号) 已占用 → busy 提示
-            guard await engine.callSlots.acquire(slug) else {
-                running.remove(slug)
-                flash("该账号已有调用进行中，请稍候再试", error: true)
+            guard await engine.callSlots.acquire(key) else {
+                callRunning.remove(key)
+                callTestResults[key] = result(.failure, "调用繁忙：已有调用进行中，本次未发送")
+                flash("调用繁忙，本次未发送", error: true)
                 return
             }
-            let err = await RefreshTrigger.testRefresh(config: cfg)
-            await engine.callSlots.release(slug)
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            running.remove(slug)
-            let ok = err?.hasPrefix("✓") == true
-            flash(ok ? "草稿测试调用成功（\(ms) ms）" : "草稿测试调用失败：\(err ?? "")", error: !ok)
+            let started = Date()
+            let response = await execute(config)
+            await engine.callSlots.release(key)
+            callRunning.remove(key)
+            let milliseconds = Int(Date().timeIntervalSince(started) * 1000)
+            let phase: CallTestResult.Phase = response?.hasPrefix("✓") == true ? .success
+                : (response?.contains("结果不确定") == true ? .uncertain : .failure)
+            let message: String
+            if phase == .success { message = "调用成功（\(milliseconds) ms）" }
+            else {
+                message = ProviderRunner.redact(response ?? "调用未返回可验证的结果")
+                    .replacingOccurrences(of: config.refreshKey, with: "[已隐藏]")
+                    .replacingOccurrences(of: config.refreshUrl, with: target)
+            }
+            callTestResults[key] = result(phase, message)
+            flash(message, error: phase != .success)
         }
     }
 
@@ -1058,6 +1143,11 @@ final class SettingsModel: ObservableObject {
             }
         }
         engine.setTracking(slug, enabled: enabled)
+        if var currentDraft = draft, currentDraft.slug == slug {
+            currentDraft.values.autoQuery = enabled
+            currentDraft.base.autoQuery = enabled
+            draft = currentDraft
+        }
         let sync = engine.writeEnvsForHudSync()
         let name = account.name
         switch sync {
@@ -1138,7 +1228,7 @@ final class SettingsModel: ObservableObject {
             }
             let pausedByAccount = !r.enabled && canCall && !cfg.scheduleTimes.isEmpty
                 && !engine.triggerDisabledSlugs.contains(r.id)
-            return PlanRow(slug: r.id, name: r.name, providerName: r.plugin.manifest.fullName,
+            return PlanRow(slug: r.id, name: r.name, providerName: providerName(for: r),
                            accent: r.plugin.manifest.accent, icon: r.plugin.manifest.icon,
                            canCall: canCall, enabled: trigEnabled, pausedByAccount: pausedByAccount,
                            times: cfg.scheduleTimes, lastOutcome: outcome)

@@ -69,6 +69,25 @@ struct ModelTests {
         #expect(!(c.stale ?? true))
     }
 
+    @Test func providerAccountIdentitySurvivesNormalizedCacheRoundTrip() throws {
+        let body = Data("""
+        {"account_id":"fixture-account","generatedAt":1234,
+         "seven_day":{"used_percentage":18,"resets_at":1793776498},
+         "windows":[{"label":"本周","period":"7天","used_percentage":18,"resets_at":1793776498}]}
+        """.utf8)
+        let cache = try #require(UsageCache.make(body: body, now: 5678))
+        let encoded = try JSONEncoder().encode(cache)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(object["account_id"] as? String == "fixture-account")
+        let restored = try JSONDecoder().decode(UsageCache.self, from: encoded)
+        #expect(restored.fiveHour == nil)
+        #expect(restored.sevenDay?.usedPercentage == 18)
+        #expect(restored.sevenDay?.resetsAt == 1793776498)
+        #expect(restored.windows?.first?.period == "7天")
+        #expect(restored.generatedAt == 5678)
+        #expect(restored.lastAttemptAt == 5678)
+    }
+
     @Test func makeRejectsGarbage() {
         let bad = "not json".data(using: .utf8)!
         #expect(UsageCache.make(body: bad, now: 0) == nil)

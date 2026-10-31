@@ -24,7 +24,7 @@ struct SettingsCenterView: View {
     private var mainBody: some View {
         HStack(spacing: 0) {
             NavColumn(model: model, engine: engine)
-                .frame(width: 200)
+                .frame(width: 184)
             Divider().overlay(Palette.border)
             VStack(spacing: 0) {
                 switch model.navPage {
@@ -151,15 +151,19 @@ struct NavColumn: View {
                     model.openTemplates()
                 } label: {
                     Label("添加账号", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
                 }
-                .barButton().frame(maxWidth: .infinity)
+                .barButton()
+                .help("添加供应商账号")
 
                 Button {
                     model.openImport()
                 } label: {
-                    Label("导入…", systemImage: "square.and.arrow.down.on.square")
+                    Label("导入账号…", systemImage: "square.and.arrow.down.on.square")
+                        .frame(maxWidth: .infinity)
                 }
-                .barButton().frame(maxWidth: .infinity)
+                .barButton()
+                .help("从本机配置导入账号")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
@@ -192,8 +196,6 @@ struct OverviewPage: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
 
-    private let columns = [GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 10)]
-
     var body: some View {
         VStack(spacing: 0) {
             overviewHeader.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
@@ -218,23 +220,51 @@ struct OverviewPage: View {
 
     private var overviewHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("额度总览").font(Typo.title).foregroundStyle(Palette.ink)
-                Spacer()
                 Text("\(engine.allPlugins.count) 个账号").font(Typo.small).foregroundStyle(Palette.muted)
-            }
-            HStack(spacing: 8) {
-                searchField
-                Picker("", selection: $model.scope) {
-                    ForEach(SettingsModel.ScopeFilter.allCases) { f in
-                        Text(f.label).tag(f)
+                Spacer(minLength: 0)
+                Button("查询全部") {
+                    for account in model.allAccounts where account.enabled && account.canQuery {
+                        model.query(account.id)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 360)
-                .labelsHidden()
+                .barButton()
+                .disabled(model.allAccounts.allSatisfy { !$0.enabled || !$0.canQuery })
+                .help("查询所有已启用账号的额度")
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    searchField
+                    scopeFilters
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    searchField
+                    scopeFilters
+                }
             }
         }
+    }
+
+    private var scopeFilters: some View {
+        HStack(spacing: 8) {
+            ForEach(SettingsModel.ScopeFilter.allCases) { filter in
+                Button { model.scope = filter } label: {
+                    Text(filter.label)
+                        .font(Typo.small)
+                        .foregroundStyle(model.scope == filter ? Palette.accent : Palette.muted)
+                        .frame(width: 72, height: 30)
+                        .background(RoundedRectangle(cornerRadius: 6)
+                            .fill(model.scope == filter ? Palette.accentSoft : Palette.surface))
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(model.scope == filter ? Palette.accent : Palette.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("筛选\(filter.label)")
+                .accessibilityValue(model.scope == filter ? "已选中" : "未选中")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var searchField: some View {
@@ -255,8 +285,7 @@ struct OverviewPage: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 30)
-        .frame(maxWidth: 320)
+        .frame(width: 280, height: 32)
         .background(RoundedRectangle(cornerRadius: 6).fill(Palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
     }
@@ -266,9 +295,12 @@ struct OverviewPage: View {
             Text(model.search.isEmpty && model.scope == .all ? "尚无账号" : "没有匹配的账号")
                 .font(Typo.section).foregroundStyle(Palette.ink)
             Text(model.search.isEmpty && model.scope == .all
-                 ? "点左下「添加账号」或「导入…」开始。"
-                 : "换个关键词或筛选条件试试。")
+                 ? "点左下「添加账号」或「导入账号…」开始。"
+                 : "当前搜索或筛选条件下没有账号。")
                 .font(Typo.small).foregroundStyle(Palette.muted)
+            if !model.search.isEmpty || model.scope != .all {
+                Button("清除搜索与筛选") { model.search = ""; model.scope = .all }.barButton()
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -280,30 +312,24 @@ struct OverviewPage: View {
                                   rows: [AccountRow])) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                ProviderBadge(icon: g.icon, label: g.label, accent: brandColor(g.accent), size: 28)
+                ProviderBadge(icon: g.icon, label: g.label, accent: brandColor(g.accent), size: 24)
                 Text(g.fullName).font(Typo.section).foregroundStyle(Palette.ink)
+                    .lineLimit(1)
                 Text("\(g.rows.count) 个账号").font(Typo.small).foregroundStyle(Palette.muted)
-                Spacer()
-                Button {
-                    for r in g.rows where r.enabled && r.canQuery {
-                        model.query(r.id)
-                    }
-                } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
-                }
-                .barButton()
+                Spacer(minLength: 0)
                 Button {
                     model.openTemplates()
                 } label: {
-                    Label("添加", systemImage: "plus")
+                    Label("添加账号", systemImage: "plus")
                 }
-                .barButton()
+                .barButton(.ghost)
             }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            VStack(spacing: 12) {
                 ForEach(g.rows) { row in
                     AccountCard(model: model, row: row)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -318,76 +344,77 @@ struct AccountCard: View {
                         unit: String?, period: String?, resetsAt: Int?)] {
         QuotaTabView.rows(from: row.state?.cache)
     }
+    private var isOldValue: Bool { !row.enabled || row.state?.cache?.stale == true || row.state?.cache?.error != nil }
+    @State private var hoveringDetails = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            cardHeader.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
-            Rectangle().fill(Palette.border).frame(height: 1)
-            cardBody.padding(12)
-            Rectangle().fill(Palette.border).frame(height: 1)
-            cardFooter.padding(.horizontal, 12).padding(.vertical, 8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(Palette.border, lineWidth: 1))
-        .opacity(row.enabled ? 1 : 0.55)   // 已停用: 降透明度
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) { openDetail() }
-        .contextMenu {
-            Button("查询额度") { model.query(row.id) }.disabled(!row.canQuery || !row.enabled)
-            Button("打开详情") { openDetail() }
-            Divider()
-            Button(row.enabled ? "停用监控" : "启用监控") { model.toggleMonitoring(row.id, enabled: !row.enabled) }
-            Button("编辑配置") {
-                if model.selectAccount(row.id, tab: .config) { model.startEdit() }
+        VStack(alignment: .leading, spacing: 16) {
+            ZStack(alignment: .topTrailing) {
+                Button(action: openDetail) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        accountIdentity.padding(.trailing, 148)
+                        cardBody
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(hoveringDetails ? Palette.accentSoft : Color.clear))
+                }
+                .buttonStyle(.plain)
+                .help("查看 \(row.name) 的额度详情")
+                .accessibilityLabel("查看 \(row.name) 的额度详情")
+                .onHover { hoveringDetails = $0 }
+                accountControls.padding(16)
             }
+            Divider().overlay(Palette.border)
+            displayPreferences.padding(.horizontal, 16)
+            cardFooter.padding(.horizontal, 16)
+        }
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+        .contextMenu {
+            Button("打开额度详情") { openDetail() }
+            Button("查询额度") { model.query(row.id) }.disabled(!row.canQuery || !row.isConfigured || model.running.contains(row.id))
+            Button("编辑配置") { openConfig() }
             Divider()
-            Button("删除…", role: .destructive) { model.delete(row.id) }
+            Button(row.enabled ? "停用账号" : "启用账号") { model.toggleMonitoring(row.id, enabled: !row.enabled) }
+            Divider()
+            Button("删除账号…", role: .destructive) { model.delete(row.id) }
         }
     }
 
-    private func openDetail() {
-        model.selectAccount(row.id)   // 内部 leaveGuard; 双击进详情 (额度 tab)
-    }
+    private func openDetail() { _ = model.selectAccount(row.id, tab: .quota) }
+    private func openConfig() { _ = model.selectAccount(row.id, tab: .config) }
 
-    // 卡头: 账号名 + 套餐/模式徽章 + 状态点 + ⋯菜单
-    private var cardHeader: some View {
-        HStack(spacing: 6) {
-            Text(row.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
-                .lineLimit(1).truncationMode(.middle)
-            BadgeText(text: row.builtin ? "内置" : (row.authStyle == "apikey" ? "API Key" : "授权登录"),
-                      locked: row.builtin)
-            if !row.isConfigured { BadgeText(text: "未配置", locked: true) }
-            Spacer(minLength: 2)
-            HStack(spacing: 4) {
+    private var accountIdentity: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(row.name).font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
+            HStack(spacing: 6) {
+                BadgeText(text: row.authLabel)
                 let (color, word) = row.status
                 StatusDot(color: color)
                 Text(word).font(Typo.small).foregroundStyle(color)
             }
+        }
+    }
+
+    private var accountControls: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            Toggle("启用账号", isOn: monitorBinding)
+                .toggleStyle(.switch).fixedSize()
+                .help("停用后暂停该账号的后台查询与定时调用，保留配置")
+                .accessibilityLabel("启用 \(row.name)")
             Menu {
-                Button("查询额度") { model.query(row.id) }.disabled(!row.canQuery || !row.enabled)
-                Button("打开详情") { openDetail() }
-                Divider()
-                Toggle(isOn: monitorBinding) { Text("启用监控") }
-                Toggle(isOn: floatingBinding) { Text("悬浮窗显示") }
-                Toggle(isOn: hudBinding) { Text("同步 HUD") }
-                Divider()
-                Button("编辑配置") {
-                    if model.selectAccount(row.id, tab: .config) { model.startEdit() }
-                }
-                Button("删除…", role: .destructive) { model.delete(row.id) }
+                Button("删除账号…", role: .destructive) { model.delete(row.id) }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                Image(systemName: "ellipsis").frame(width: 24, height: 24)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel("\(row.name) 的更多操作")
         }
     }
 
@@ -403,85 +430,118 @@ struct AccountCard: View {
                 set: { model.toggleHudSync(row.id, synced: $0) })
     }
 
-    // 卡体: 每窗口一行 (标签 + 进度条已用% + 重置倒计时); 四态/未查询给对应文案
-    @ViewBuilder
-    private var cardBody: some View {
+    private var displayPreferences: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 20) { preferenceToggles }
+            VStack(alignment: .leading, spacing: 10) { preferenceToggles }
+        }
+        .font(Typo.small)
+    }
+
+    @ViewBuilder private var preferenceToggles: some View {
+        Toggle("悬浮窗与菜单栏", isOn: floatingBinding).toggleStyle(.checkbox)
+        Toggle("Claude Code HUD", isOn: hudBinding).toggleStyle(.checkbox)
+    }
+
+    @ViewBuilder private var cardBody: some View {
         if !row.enabled {
-            Text("已停用监控：不查询、不调度，不出现在菜单栏与 HUD。")
-                .font(Typo.small).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
+            VStack(alignment: .leading, spacing: 12) {
+                emptyMessage("账号已停用", detail: "后台查询与定时调用已暂停；仍可手动查询，不会启用后台任务。")
+                if !rows.isEmpty {
+                    Text("上次查询数据").font(Typo.small).foregroundStyle(Palette.muted)
+                    EqualWidthWindowLayout {
+                        ForEach(rows.indices, id: \.self) { index in windowRow(rows[index]) }
+                    }
+                }
+            }
         } else if !row.isConfigured {
-            Text("未配置：凭证或地址缺失，补齐后可查询（详情页可编辑）。")
-                .font(Typo.small).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
-        } else if let e = row.state?.cache?.error {
-            VStack(spacing: 6) {
-                Text("查询失败：\(DataEngine.reason(for: e))")
-                    .font(Typo.small).foregroundStyle(Palette.danger)
-                Text("上次成功查询时间未知；点「查询额度」重试。")
+            emptyMessage("需要完成配置", detail: "补全凭证或地址后，即可查询额度。")
+        } else if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                if let error = row.state?.cache?.error {
+                    Text("查询失败：\(QuotaErrorPresentation.message(for: error))；以下为上次数据。")
+                        .font(Typo.small).foregroundStyle(Palette.danger)
+                } else if isOldValue {
+                    Text("以下为旧值，查询成功后更新。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                }
+                EqualWidthWindowLayout {
+                    ForEach(rows.indices, id: \.self) { index in windowRow(rows[index]) }
+                }
+            }
+        } else if let error = row.state?.cache?.error {
+            emptyMessage("查询失败", detail: "\(QuotaErrorPresentation.message(for: error))。请检查配置后重试。")
+        } else {
+            emptyMessage("尚未查询", detail: "查询成功后显示服务实际返回的额度窗口。")
+        }
+    }
+
+    private func emptyMessage(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(Typo.body).foregroundStyle(Palette.ink)
+            Text(detail).font(Typo.small).foregroundStyle(Palette.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+
+    private func windowRow(_ value: (label: String, pct: Double?, amount: Double?, limit: Double?,
+                                    unit: String?, period: String?, resetsAt: Int?)) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(value.label).font(Typo.small).foregroundStyle(Palette.muted)
+                Spacer(minLength: 0)
+                Text(value.pct.map { "\(Int($0.rounded()))%" } ?? "—")
+                    .font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(isOldValue ? Palette.muted : pctColor(value.pct))
+            }
+            if !isOldValue { ProgressLine(pct: value.pct) }
+            if let amount = value.amount, let limit = value.limit {
+                Text(QuotaTabView.unitLabel(amount, limit, unit: value.unit))
                     .font(Typo.small).foregroundStyle(Palette.muted)
             }
-            .frame(maxWidth: .infinity, minHeight: 60)
-        } else if rows.isEmpty {
-            Text(row.state?.cache == nil ? "尚未查询 — 点「查询额度」获取窗口数据"
-                                       : "此账号额度解析待核实（无窗口数据）")
-                .font(Typo.small).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
-        } else {
-            VStack(spacing: 8) {
-                ForEach(rows.indices, id: \.self) { i in
-                    windowRow(rows[i])
-                }
+            if isOldValue {
+                Text("旧值").font(Typo.small).foregroundStyle(Palette.muted)
+            } else if let countdown = HUDFmt.resetCountdown(value.resetsAt, now: Date()) {
+                Text("\(countdown) 后重置").font(Typo.small).foregroundStyle(Palette.muted)
             }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.readonlyField))
     }
 
-    private func windowRow(_ r: (label: String, pct: Double?, amount: Double?, limit: Double?,
-                                 unit: String?, period: String?, resetsAt: Int?)) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Text(r.label).font(Typo.small).foregroundStyle(Palette.muted)
-                if let a = r.amount, let l = r.limit {
-                    Text(QuotaTabView.unitLabel(a, l, unit: r.unit))
-                        .font(Typo.small).foregroundStyle(Palette.muted).monospacedDigit()
-                }
-                Spacer()
-                if let cd = HUDFmt.resetCountdown(r.resetsAt, now: Date()) {
-                    Text(cd + " 重置").font(Typo.small).foregroundStyle(Palette.muted).monospacedDigit()
-                }
-                Text(r.pct != nil ? "\(Int(r.pct!.rounded()))%" : "—")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(pctColor(r.pct))
-                    .frame(width: 44, alignment: .trailing)
-            }
-            // 进度条方向 = 已用% (与 HUD/statusline 同口径)
-            ProgressLine(pct: r.pct)
-        }
+    private func pctColor(_ value: Double?) -> Color {
+        guard let value else { return Palette.muted }
+        return value >= 90 ? Palette.danger : (value >= 70 ? Palette.warn : Palette.ok)
     }
 
-    private func pctColor(_ p: Double?) -> Color {
-        guard let p else { return Palette.muted }
-        if p >= 90 { return Palette.danger }
-        if p >= 70 { return Palette.warn }
-        return Palette.ok
-    }
-
-    // 卡脚: 更新时间 + 查询按钮
     private var cardFooter: some View {
-        HStack(spacing: 8) {
-            Text(model.running.contains(row.id)
-                 ? "查询中…"
-                 : "更新于 \(formatCacheTime(row.state?.cache?.generatedAt))")
-                .font(Typo.small).foregroundStyle(Palette.muted)
-            Spacer()
-            if row.canQuery {
-                Button(model.running.contains(row.id) ? "查询中…" : "查询额度") {
-                    model.query(row.id)
-                }
-                .barButton()
-                .disabled(model.running.contains(row.id) || !row.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                updateLabel
+                Spacer(minLength: 4)
+                accountActions
             }
+            VStack(alignment: .leading, spacing: 10) {
+                updateLabel
+                accountActions
+            }
+        }
+    }
+
+    private var updateLabel: some View {
+        Text(model.running.contains(row.id) ? "查询中…" : "更新于 \(formatCacheTime(row.state?.cache?.generatedAt))")
+            .font(Typo.small).foregroundStyle(Palette.muted)
+    }
+
+    private var accountActions: some View {
+        HStack(spacing: 8) {
+            Button("配置") { openConfig() }.barButton()
+            Button(model.running.contains(row.id) ? "查询中…" : "查询额度") { model.query(row.id) }
+                .barButton(.primary)
+                .disabled(model.running.contains(row.id) || !row.canQuery || !row.isConfigured)
+                .help(!row.isConfigured ? "请先完成账号配置" : (!row.enabled ? "账号已停用，手动查询不会启用后台任务" : "查询该账号的额度"))
         }
     }
 }
@@ -503,17 +563,29 @@ struct DetailHeader: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(Typo.title).foregroundStyle(Palette.ink)
                         .lineLimit(1).truncationMode(.middle)
-                    HStack(spacing: 6) {
-                        ForEach(badges, id: \.self) { b in
-                            BadgeText(text: b, locked: lockedBadges.contains(b))
-                        }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { identityBadges }
+                        VStack(alignment: .leading, spacing: 6) { identityBadges }
                     }
                 }
                 Spacer(minLength: 8)
-                actions
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    accountGate
+                    Spacer(minLength: 0)
+                    actions
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    accountGate
+                    actions
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
 
             if model.showingTemplates {
                 EmptyView()
@@ -538,16 +610,33 @@ struct DetailHeader: View {
             return [label, "模板新建"]
         }
         guard let row = model.current else { return [] }
-        let m = row.plugin.manifest
-        var out = [m.fullName, row.authLabel, row.builtin ? "内置 · 地址由模板提供" : "自定义"]
-        if !row.enabled { out.append("已停用") }
+        let provider = model.providerName(for: row)
+        var out = provider == row.name ? [] : [provider]
+        out.append(row.authLabel)
+        out.append(row.enabled ? "已启用" : "已停用")
         return out
     }
 
     private var lockedBadges: Set<String> {
-        var s: Set<String> = ["内置 · 地址由模板提供", "模板新建", "授权登录", "已停用"]
-        if let row = model.current, row.builtin { s.insert(row.plugin.manifest.fullName) }
-        return s
+        ["模板新建", "授权登录", "已停用"]
+    }
+
+    private var identityBadges: some View {
+        ForEach(badges, id: \.self) { badge in
+            BadgeText(text: badge, locked: lockedBadges.contains(badge))
+        }
+    }
+
+    @ViewBuilder
+    private var accountGate: some View {
+        if !model.showingTemplates, model.draft?.isNew != true, let row = model.current {
+            Button(row.enabled ? "停用账号" : "启用账号") {
+                model.toggleMonitoring(row.id, enabled: !row.enabled)
+            }
+            .barButton(row.enabled ? .plain : .primary)
+            .help(row.enabled ? "暂停后台查询和定时调用，保留全部配置" : "启用此账号；恢复已有模型计划前会确认")
+            .accessibilityLabel(row.enabled ? "停用 \(row.name)" : "启用 \(row.name)")
+        }
     }
 
     @ViewBuilder
@@ -560,19 +649,27 @@ struct DetailHeader: View {
         } else if model.draft != nil {
             EmptyView()
         } else if let row = model.current {
-            HStack(spacing: 8) {
-                // 额度页的主操作才放这里; 编辑按钮贴近内容, 由各 tab 卡片头提供
+            VStack(alignment: .trailing, spacing: 8) {
                 if model.tab == .quota, row.canQuery {
                     Button(model.running.contains(row.id) ? "查询中…" : "查询额度") { model.query(row.id) }
                         .barButton(.primary)
-                        .disabled(model.running.contains(row.id))
+                        .disabled(model.running.contains(row.id) || !row.isConfigured)
+                        .help(row.enabled ? "查询该账号额度" : "账号已停用，手动查询不会启用后台任务")
+                } else if model.tab == .config {
+                    Button("编辑配置") { model.startEdit() }.barButton()
+                    if row.canCall {
+                        Button(model.callRunning.contains(row.id) ? "测试中…" : "发送测试调用") { model.testCall(row.id) }
+                            .barButton(.primary)
+                            .disabled(model.callRunning.contains(row.id))
+                            .help("使用已保存配置发送一次模型调用")
+                    }
                 }
             }
         }
     }
 
     private var visibleTabs: [SettingsModel.Tab] {
-        // 新建模式 (模板直入) 只有配置与自动触发
+        // 新建模式 (模板直入) 只有配置与自动任务
         model.draft?.isNew == true ? [.config, .trigger] : SettingsModel.Tab.allCases
     }
 
@@ -619,11 +716,10 @@ struct DetailPanel: View {
                     }
                     content
                 }
-                .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
             }
-            // 草稿底栏固定在滚动区外: 配置/自动触发两个 tab 都可见可用 (草稿整体保存)
+            // 草稿底栏固定在滚动区外: 配置/自动任务两个 tab 都可见可用 (草稿整体保存)
             if model.draft != nil && !model.showingTemplates {
                 draftActionBar
             }
@@ -633,20 +729,46 @@ struct DetailPanel: View {
     private var draftActionBar: some View {
         VStack(spacing: 0) {
             Rectangle().fill(Palette.border).frame(height: 1)
-            HStack(spacing: 8) {
-                Text(model.draft?.isNew == true ? "新账号保存后加入总览列表"
-                                                : "修改仅在保存后生效，保存不发起请求")
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-                Spacer()
-                Button("取消") { model.cancelEdit() }.barButton()
-                Button("保存") { model.save() }
-                    .barButton(.primary)
-                    .keyboardShortcut("s", modifiers: .command)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    draftActionNote
+                    Spacer(minLength: 8)
+                    draftActionButtons
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    draftActionNote
+                    HStack { Spacer(minLength: 0); draftActionButtons }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
         .background(Palette.surface)
+    }
+
+    private var draftActionNote: some View {
+        Text(model.tab == .config && model.draftCanCall()
+             ? "测试当前输入，不保存；发送调用会消耗额度。"
+             : "修改仅在保存后生效，保存不发起请求。")
+            .font(Typo.small).foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var draftActionButtons: some View {
+        HStack(spacing: 8) {
+            if model.tab == .config, model.draftCanCall(), let draft = model.draft {
+                Button(model.isTestingCurrentConfig ? "测试中…" : "发送测试调用") {
+                    model.testCallDraft(values: draft.values)
+                }
+                .barButton()
+                .disabled(model.isTestingCurrentConfig)
+            }
+            Button("取消") { model.cancelEdit() }.barButton()
+            Button("保存") { model.save() }
+                .barButton(.primary)
+                .keyboardShortcut("s", modifiers: .command)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var errorBanner: some View {
@@ -668,7 +790,7 @@ struct DetailPanel: View {
         if model.showingTemplates {
             TemplateCatalogView(model: model)
         } else if let row = model.current {
-            // 草稿态: 配置/自动触发 tab 各渲染对应段落; 额度 tab 仍看数据 (草稿不丢)
+            // 草稿态: 配置/自动任务 tab 各渲染对应段落; 额度 tab 仍看数据 (草稿不丢)
             if let d = model.draft {
                 if d.isNew || model.tab != .quota {
                     DraftFormView(model: model, draft: d,
@@ -720,7 +842,7 @@ struct PlanPage: View {
             Rectangle().fill(Palette.border).frame(height: 1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("各账号的模型定时调用计划；点行进入该账号的「自动触发」tab 编辑。到点调用会消耗额度。")
+                    Text("各账号的模型定时调用计划；点行进入该账号的「自动任务」tab 编辑。到点调用会消耗额度。")
                         .font(Typo.small).foregroundStyle(Palette.muted)
                     if model.planRows.isEmpty {
                         Text("暂无账号。可添加或导入账号后设置调用计划。")

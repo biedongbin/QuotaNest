@@ -320,12 +320,12 @@ struct DataEngineTests {
     // MARK: P1-6 启用确认 + 草稿测试: off→on 需确认 (纯函数); 草稿测试不改盘上配置
 
     @Test func triggerConfirmPredicate() {
-        // 仅编辑态 off→on 需要确认
+        // 既有账号 off→on 和新建账号启用都需要确认
         #expect(SettingsValidation.needsTriggerConfirm(base: false, current: true, isNew: false))
         #expect(!SettingsValidation.needsTriggerConfirm(base: true, current: true, isNew: false))   // 本来就开
         #expect(!SettingsValidation.needsTriggerConfirm(base: true, current: false, isNew: false))  // 关闭
         #expect(!SettingsValidation.needsTriggerConfirm(base: false, current: false, isNew: false)) // 不变
-        #expect(!SettingsValidation.needsTriggerConfirm(base: false, current: true, isNew: true))   // 新建草稿无原值
+        #expect(SettingsValidation.needsTriggerConfirm(base: false, current: true, isNew: true))   // 新建账号同样确认
     }
 
     @Test @MainActor func draftTestCallLeavesDiskConfigUntouched() async throws {
@@ -598,7 +598,7 @@ struct DataEngineTests {
     }
 
     @Test func quotaRowsSwitchesToWindowsWhenPresent() {
-        // windows 非空 → 动态行 (含 amount/limit/unit/period); windows 空 → 旧三卡回落
+        // windows 非空 → 动态行；缺少动态窗口时只保留有真实数值的旧桶。
         let withWindows = UsageCache(generatedAt: 1,
                                      sevenDay: Bucket(usedPercentage: 5, resetsAt: nil),
                                      windows: [WindowBucket(label: "5小时", usedPercentage: 12, resetsAt: 100),
@@ -609,18 +609,18 @@ struct DataEngineTests {
         #expect(rowsW[0].label == "5小时" && rowsW[0].pct == 12 && rowsW[0].resetsAt == 100)
         #expect(rowsW[1].label == "本月" && rowsW[1].amount == 8 && rowsW[1].limit == 20)
         #expect(rowsW[1].unit == "USD" && rowsW[1].period == "monthly")
-        // 旧缓存回落: 固定三行 (5 小时/本周/本月), 无 amount
+        // 旧缓存只回落有效的两行，不补造月额度卡片。
         let legacy = UsageCache(generatedAt: 1,
                                 fiveHour: Bucket(usedPercentage: 3, resetsAt: nil),
                                 sevenDay: Bucket(usedPercentage: 5, resetsAt: nil))
         let rowsL = QuotaTabView.rows(from: legacy)
-        #expect(rowsL.map(\.label) == ["5 小时", "本周", "本月"])
+        #expect(rowsL.map(\.label) == ["5 小时", "本周"])
         #expect(rowsL.allSatisfy { $0.amount == nil && $0.unit == nil })
         #expect(rowsL[1].pct == 5)
-        // nil cache / 空数组 → 回落
+        // nil cache / 无有效窗口或旧桶 → 空态，不伪造三个额度模块。
         #expect(QuotaTabView.rows(from: nil).isEmpty)
         let empty = UsageCache(generatedAt: 1, windows: [])
-        #expect(QuotaTabView.rows(from: empty).count == 3)   // windows 空 = 回落旧三卡
+        #expect(QuotaTabView.rows(from: empty).isEmpty)
         // 量化信息全无的窗口行 (仅 label) 不渲染
         let noisy = UsageCache(generatedAt: 1,
                                windows: [WindowBucket(label: "噪声", usedPercentage: nil, amount: nil, limit: nil),

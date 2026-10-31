@@ -249,7 +249,7 @@ function renderEnvQuota(envKey, stdin) {
     fiveHour = cache?.five_hour || null;
     sevenDay = cache?.seven_day || null;
     monthly = cache?.monthly || null;
-    stale = !usageFresh(cache);
+    stale = cache?.stale === true || !!cache?.error || !usageFresh(cache);
     maybeSpawnUsage(cache, cfg.auth, cfg.spawnEnv, cfg.provider || USAGE_PROVIDER);
   }
 

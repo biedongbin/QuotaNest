@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 配置 tab (只读) + 自动触发 tab (只读)
+// MARK: - 配置 tab (只读) + 自动任务 tab (只读)
 
 struct ConfigTabView: View {
     @ObservedObject var model: SettingsModel
@@ -40,17 +40,14 @@ struct ConfigTabView: View {
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                         }
                         Spacer()
-                        if row.authStyle == "apikey" {
-                            Button("编辑") { model.startEdit() }.barButton()
-                        } else {
-                            BadgeText(text: "只读 · 本机凭证", locked: true)
-                        }
+                        Button("编辑配置") { model.startEdit() }.barButton()
+                            .help("编辑账号名称和调用配置；本机凭证保持只读")
                     }
                     VStack(spacing: 0) {
                         KeyValueRow("显示名称") { Text(row.name) }
                         KeyValueRow("供应商") {
                             HStack(spacing: 6) {
-                                Text(m.fullName)
+                                Text(model.providerName(for: row))
                                 BadgeText(text: row.builtin ? "内置" : "自定义", locked: row.builtin)
                             }
                         }
@@ -79,63 +76,49 @@ struct ConfigTabView: View {
                                  ? maskKey(cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey)
                                  : (m.authFile ?? "本机 CLI"))
                         }
-                        KeyValueRow("测试模型") { Text(cfg.testModel.isEmpty ? "—" : cfg.testModel) }
-                        KeyValueRow("测试提示词") { Text(cfg.testPrompt.isEmpty ? "—" : cfg.testPrompt) }
                     }
                 }
             }
 
             CardBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("账号操作").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("删除会移除插件目录与凭证文件，不可撤销。")
+                    Text("额度查询").font(Typo.section).foregroundStyle(Palette.ink)
+                    Text("查询使用已保存的账号配置，不会发送模型调用。")
                         .font(Typo.small).foregroundStyle(Palette.muted)
-                    Button("删除账号") { model.delete(row.id) }.barButton(.danger)
+                    Button(model.running.contains(row.id) ? "查询中…" : "查询额度") { model.query(row.id) }
+                        .barButton()
+                        .disabled(model.running.contains(row.id) || !row.canQuery || !row.isConfigured)
+                        .help(row.enabled ? "查询已保存账号额度" : "账号已停用，手动查询不会启用后台任务")
                 }
             }
 
             CardBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Claude Code HUD").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("将已启用同步的账号写入 Claude Code 状态栏配置。")
-                        .font(Typo.small).foregroundStyle(Palette.muted)
-                    Button("写入 Claude Code HUD") { model.syncHUD() }.barButton()
-                }
-            }
-        }
-    }
-}
-
-struct TriggerTabView: View {
-    @ObservedObject var model: SettingsModel
-    let row: AccountRow
-
-    private var cfg: ProviderConfig { model.readConfig(row.plugin) }
-    /// P1-8 四态: 查询/调用能力判定集中引用
-    private var quotaStatus: CapabilityStatus { .quota(manifest: row.plugin.manifest) }
-    private var callStatus: CapabilityStatus { .call(manifest: row.plugin.manifest, configUrl: cfg.queryUrl) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            CardBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("自动触发").font(Typo.section).foregroundStyle(Palette.ink)
-                            Text("开关即时生效，无需保存；定时按本机时区执行，会消耗额度。")
-                                .font(Typo.small).foregroundStyle(Palette.muted)
+                    Text("模型调用与测试").font(Typo.section).foregroundStyle(Palette.ink)
+                    if row.canCall {
+                        KeyValueRow("模型") { Text(cfg.testModel.isEmpty ? "尚未配置" : cfg.testModel) }
+                        KeyValueRow("提示词") { Text(cfg.testPrompt.isEmpty ? "只回复 OK" : cfg.testPrompt) }
+                        Text("使用已保存配置发送一次模型调用，会消耗额度。修改模型、提示词或凭证，请点「编辑配置」。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
+                        Button(model.callRunning.contains(row.id) ? "测试中…" : "发送测试调用") {
+                            model.testCall(row.id)
                         }
-                        Spacer()
-                        if row.authStyle == "apikey" {
-                            Button("编辑调用配置") { model.startEdit() }.barButton()
-                        }
+                        .barButton(.primary)
+                        .disabled(model.callRunning.contains(row.id))
+                    } else {
+                        Text("此账号尚未配置或接入模型调用。额度查询仍可独立使用。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
                     }
+                    if let result = model.callTestResult(for: row.id) { CallTestResultView(result: result) }
+                }
+            }
 
-                    // v0.2 三开关 (即时生效): 启用监控 / 悬浮窗显示 / 同步 HUD
+            CardBox {
+                VStack(alignment: .leading, spacing: 12) {
                     VStack(spacing: 10) {
                         Toggle(isOn: monitorBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("启用额度监控").font(Typo.body).foregroundStyle(Palette.ink)
+                                Text("启用账号").font(Typo.body).foregroundStyle(Palette.ink)
                                 Text("停用后暂停后台查询和定时调用，保留账号和计划配置。")
                                     .font(Typo.small).foregroundStyle(Palette.muted)
                             }
@@ -162,6 +145,66 @@ struct TriggerTabView: View {
                     }
 
                     Divider().overlay(Palette.border)
+
+                    Text("账号与展示").font(Typo.section).foregroundStyle(Palette.ink)
+                    Text("删除此账号及其应用内配置；外部 CLI 凭证会保留。操作前会再次确认。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    Button("删除账号") { model.delete(row.id) }.barButton(.danger)
+                }
+            }
+
+            CardBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Claude Code HUD").font(Typo.section).foregroundStyle(Palette.ink)
+                    Text("将已启用同步的账号写入 Claude Code 状态栏配置。")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    Button("写入 Claude Code HUD") { model.syncHUD() }.barButton()
+                }
+            }
+        }
+    }
+    private var monitorBinding: Binding<Bool> {
+        Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) })
+    }
+    private var floatingBinding: Binding<Bool> {
+        Binding(get: { !model.engine.floatingHiddenSlugs.contains(row.id) },
+                set: { model.toggleFloating(row.id, shown: $0) })
+    }
+    private var hudBinding: Binding<Bool> {
+        Binding(get: { !model.engine.hudHiddenSlugs.contains(row.id) },
+                set: { model.toggleHudSync(row.id, synced: $0) })
+    }
+
+
+}
+
+struct TriggerTabView: View {
+    @ObservedObject var model: SettingsModel
+    let row: AccountRow
+
+    private var cfg: ProviderConfig { model.readConfig(row.plugin) }
+    /// P1-8 四态: 查询/调用能力判定集中引用
+    private var quotaStatus: CapabilityStatus { .quota(manifest: row.plugin.manifest) }
+    private var callStatus: CapabilityStatus { .call(manifest: row.plugin.manifest, configUrl: cfg.queryUrl) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            CardBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("自动任务").font(Typo.section).foregroundStyle(Palette.ink)
+                            Text("查询和模型计划分别设置；模型计划到点调用会消耗额度。")
+                                .font(Typo.small).foregroundStyle(Palette.muted)
+                        }
+                        Spacer()
+                        Button("编辑计划") { model.startEdit() }.barButton()
+                    }
+
+                    if !row.enabled {
+                        Text("账号已停用，自动查询与模型计划暂停；可在配置页或总览启用。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
+                    }
 
                     // v0.2 自动查询间隔 (即时生效 Stepper; 主开关开 = 按此间隔自动查)
                     HStack {
@@ -204,10 +247,6 @@ struct TriggerTabView: View {
                                 }
                             }
                         }
-                        Button("发送一次测试调用") { model.testCall(row.id) }
-                            .barButton()
-                            .disabled(model.running.contains(row.id))
-                            .padding(.top, 4)
                     } else {
                         UnsupportedBox(
                             title: "当前尚未配置或接入模型调用",
@@ -218,19 +257,6 @@ struct TriggerTabView: View {
                 }
             }
         }
-    }
-
-    // v0.2 即时开关绑定 (直落盘, 不进草稿)
-    private var monitorBinding: Binding<Bool> {
-        Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) })
-    }
-    private var floatingBinding: Binding<Bool> {
-        Binding(get: { !model.engine.floatingHiddenSlugs.contains(row.id) },
-                set: { model.toggleFloating(row.id, shown: $0) })
-    }
-    private var hudBinding: Binding<Bool> {
-        Binding(get: { !model.engine.hudHiddenSlugs.contains(row.id) },
-                set: { model.toggleHudSync(row.id, synced: $0) })
     }
 
     private var intervalMin: Int {
@@ -323,5 +349,33 @@ struct TemplateCatalogView: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(Palette.badgeBg))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
         }
+    }
+}
+
+
+struct CallTestResultView: View {
+    let result: CallTestResult
+
+    private var kind: ResultBox.Kind {
+        switch result.phase {
+        case .running: return .info
+        case .success: return .ok
+        case .failure, .uncertain: return .error
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("上次测试 · \(result.sourceLabel)")
+                .font(Typo.small).foregroundStyle(Palette.muted)
+            ResultBox(kind: kind, title: result.title, detail: result.message)
+            Text("模型：\(result.model)").font(Typo.small).foregroundStyle(Palette.muted)
+            Text("目标：\(result.target)").font(Typo.mono).foregroundStyle(Palette.muted)
+                .textSelection(.enabled)
+            Text(result.date, style: .time).font(Typo.small).foregroundStyle(Palette.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
     }
 }

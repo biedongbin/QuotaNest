@@ -1,40 +1,114 @@
 import AppKit
 import SwiftUI
 
+enum FloatingPanelPlacement {
+    private static let defaultSize = NSSize(width: 260, height: 40)
+
+    private static func isFinitePositive(_ frame: NSRect) -> Bool {
+        frame.origin.x.isFinite && frame.origin.y.isFinite &&
+        frame.size.width.isFinite && frame.size.height.isFinite &&
+        frame.size.width > 0 && frame.size.height > 0 &&
+        frame.maxX.isFinite && frame.maxY.isFinite
+    }
+
+    static func resolve(_ saved: NSRect?, visibleFrames: [NSRect],
+                        preferredScreen: NSRect? = nil) -> NSRect {
+        let screens = visibleFrames.filter(isFinitePositive)
+        let valid = saved.flatMap { frame in
+            isFinitePositive(frame) && frame.width >= 16 && frame.height >= 16 ? frame : nil
+        }
+        let defaultFrame = NSRect(origin: .zero, size: defaultSize)
+        guard let first = screens.first else { return valid ?? defaultFrame }
+
+        // 留有足够交集才保留所属屏幕；一像素细条不能成为无法拖回的窗口。
+        let candidates = screens.filter { screen in
+            guard let frame = valid else { return false }
+            let overlap = frame.intersection(screen)
+            return !overlap.isNull && overlap.width >= min(frame.width, 64) &&
+                overlap.height >= min(frame.height, 24)
+        }
+        let target = candidates.max { lhs, rhs in
+            let frame = valid ?? defaultFrame
+            let a = frame.intersection(lhs)
+            let b = frame.intersection(rhs)
+            return a.width * a.height < b.width * b.height
+        } ?? screens.first(where: { $0 == preferredScreen }) ?? first
+        var result = valid ?? defaultFrame
+        result.size.width = min(result.width, target.width)
+        result.size.height = min(result.height, target.height)
+        if valid == nil {
+            result.origin = NSPoint(x: target.midX - result.width / 2,
+                                    y: target.midY - result.height / 2)
+        } else {
+            result.origin.x = min(max(result.minX, target.minX), target.maxX - result.width)
+            result.origin.y = min(max(result.minY, target.minY), target.maxY - result.height)
+        }
+        return result
+    }
+}
+
 final class FloatingPanel: NSPanel {
-    init(contentView: NSView) {
+    static let defaultsFrameKey = "floatingFrame"
+    private let defaults: UserDefaults
+    var onHide: (() -> Void)?
+
+    init(contentView: NSView, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         super.init(contentRect: NSRect(x: 0, y: 0, width: 260, height: 40),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         self.contentView = contentView
         level = .floating
         isMovableByWindowBackground = true
+        isReleasedWhenClosed = false
         isOpaque = false
         backgroundColor = .clear
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         hasShadow = true
+        let saved = defaults.string(forKey: Self.defaultsFrameKey).map(NSRectFromString)
+        let screens = NSScreen.screens
+        let preferred = Self.preferredScreen(in: screens)
+        setFrame(FloatingPanelPlacement.resolve(saved, visibleFrames: screens.map(\.visibleFrame),
+                                                preferredScreen: preferred), display: false)
         delegate = self
-        // 恢复位置
-        if let s = UserDefaults.standard.string(forKey: "floatingFrame") {
-            let r = NSRectFromString(s)
-            if r != .zero { setFrame(r, display: false) } else { center() }
-        } else {
-            center()
-        }
     }
 
     override var canBecomeKey: Bool { false }
 
+    private static func preferredScreen(in screens: [NSScreen]) -> NSRect? {
+        screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+    }
+
+    func recoverPosition() {
+        let screens = NSScreen.screens
+        let resolved = FloatingPanelPlacement.resolve(frame, visibleFrames: screens.map(\.visibleFrame),
+                                                      preferredScreen: Self.preferredScreen(in: screens))
+        if frame != resolved { setFrame(resolved, display: isVisible) }
+        persistFrame()
+    }
+
     func persistFrame() {
-        UserDefaults.standard.set(NSStringFromRect(frame), forKey: "floatingFrame")
+        defaults.set(NSStringFromRect(frame), forKey: Self.defaultsFrameKey)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(sender)
+    }
+
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        onHide?()
     }
 }
 
 extension FloatingPanel: NSWindowDelegate {
-    // brief 的 `override func move(_ event: NSEvent)` 在 NSWindow 上不存在对应方法
-    // (只有 @IBAction move(_: Any?)) — 改用 didMove 委托回调, 拖动结束即落盘
     func windowDidMove(_ notification: Notification) {
         persistFrame()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onHide?()
     }
 }
 
@@ -66,35 +140,48 @@ final class PanelController: ObservableObject {
     @Published var textOpacity: Double
     private var panel: FloatingPanel?
     private let engine: DataEngine
-
+    private let defaults: UserDefaults
+    private var screenObserver: NSObjectProtocol?
 
     static let defaultsStyleKey = "tokenhud.panelStyle"
     static let defaultsBgOpacityKey = "tokenhud.panelBgOpacity"
     static let defaultsTextOpacityKey = "tokenhud.panelTextOpacity"
 
-    init(engine: DataEngine) {
+    init(engine: DataEngine, defaults: UserDefaults = .standard) {
         self.engine = engine
-        let d = UserDefaults.standard
-        self.style = PanelStyle(rawValue: d.string(forKey: Self.defaultsStyleKey) ?? "") ?? .card
-        self.bgOpacity = d.object(forKey: Self.defaultsBgOpacityKey) as? Double ?? 0.85
-        self.textOpacity = d.object(forKey: Self.defaultsTextOpacityKey) as? Double ?? 1.0
+        self.defaults = defaults
+        self.style = PanelStyle(rawValue: defaults.string(forKey: Self.defaultsStyleKey) ?? "") ?? .card
+        self.bgOpacity = defaults.object(forKey: Self.defaultsBgOpacityKey) as? Double ?? 0.85
+        self.textOpacity = defaults.object(forKey: Self.defaultsTextOpacityKey) as? Double ?? 1.0
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let panel = self.panel, panel.isVisible else { return }
+                panel.recoverPosition()
+            }
+        }
+    }
+
+    deinit {
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }
 
     func setStyle(_ s: PanelStyle) {
         style = s
-        UserDefaults.standard.set(s.rawValue, forKey: Self.defaultsStyleKey)
+        defaults.set(s.rawValue, forKey: Self.defaultsStyleKey)
         rebuild() // 布局结构变, 需重建
     }
 
     func setBgOpacity(_ v: Double) {
         bgOpacity = v
-        UserDefaults.standard.set(v, forKey: Self.defaultsBgOpacityKey)
+        defaults.set(v, forKey: Self.defaultsBgOpacityKey)
         // @Published 驱动 FloatingView 重渲染, 无需 rebuild (避免打断 Slider)
     }
 
     func setTextOpacity(_ v: Double) {
         textOpacity = v
-        UserDefaults.standard.set(v, forKey: Self.defaultsTextOpacityKey)
+        defaults.set(v, forKey: Self.defaultsTextOpacityKey)
     }
 
     /// 供应商管理窗 (单例 NSWindow, 全局唯一)
@@ -102,19 +189,28 @@ final class PanelController: ObservableObject {
         SettingsWindowManager.shared.show()
     }
 
-    func toggle() {
-        if let panel, panel.isVisible {
-            panel.orderOut(nil)
-            isVisible = false
-        } else {
+    func show() {
+        if panel == nil {
             let hosting = makeHosting()
             hosting.layoutSubtreeIfNeeded()
-            let p = FloatingPanel(contentView: hosting)
+            let p = FloatingPanel(contentView: hosting, defaults: defaults)
+            p.onHide = { [weak self] in self?.isVisible = false }
             p.setContentSize(hosting.fittingSize)
-            p.orderFrontRegardless()
             panel = p
-            isVisible = true
         }
+        guard let panel else { return }
+        panel.recoverPosition()
+        panel.orderFrontRegardless()
+        isVisible = panel.isVisible
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+        isVisible = false
+    }
+
+    func toggle() {
+        if panel?.isVisible == true { hide() } else { show() }
     }
 
     func rebuild() {
@@ -123,6 +219,7 @@ final class PanelController: ObservableObject {
         hosting.layoutSubtreeIfNeeded()
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
+        if panel.isVisible { panel.recoverPosition() }
     }
 
     func toggleExpanded() {
