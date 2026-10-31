@@ -8,11 +8,13 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { normalizeUsage, epochSeconds } from './usage-normalize.mjs';
+import { parseOllamaHTML } from './provider-web-parsing.mjs';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
-const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.ollama-usage-auth.json');
-const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.ollama-usage-cache.json');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
+const AUTH_FILE = process.env.TOKENHUD_AUTH_FILE || process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.ollama-usage-auth.json');
+const CACHE_FILE = process.env.TOKENHUD_CACHE_FILE || process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.ollama-usage-cache.json');
 const TTL_MS = 60_000;
 const verbose = !!process.env.USAGE_VERBOSE;
 const DEFAULT_URL = 'https://ollama.com/api/balance';
@@ -21,6 +23,10 @@ const readJson = (p, def) => {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return def; }
 };
 const writeCache = (obj) => {
+  if (process.env.TOKENHUD_STDOUT_ONLY === '1') {
+    process.stdout.write(JSON.stringify(obj) + '\n');
+    return;
+  }
   try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2)); } catch {}
 };
 // 失败通用出口: 旧缓存有数据则保留 (UI 用上一轮), 仅无旧数据才写错误态
@@ -28,7 +34,7 @@ const writeCache = (obj) => {
 const writeFailure = (kind, detail) => {
   const prev = readJson(CACHE_FILE, null);
   const now = Date.now();
-  if (prev && (prev.five_hour || prev.seven_day)) {
+  if (prev && (prev.five_hour || prev.seven_day || prev.monthly || prev.windows?.length)) {
     writeCache({ ...prev, error: kind, stale: true, lastAttemptAt: now });
   } else {
     writeCache({ error: kind, lastAttemptAt: now, ttlMs: TTL_MS, stale: true });
@@ -39,13 +45,15 @@ const writeFailure = (kind, detail) => {
 // 测试注入口: 正常路径恒为 /usr/bin/curl
 const CURL = process.env.TOKENHUD_CURL || '/usr/bin/curl';
 
-function curlJson(url, key) {
+function curlJson(url, credentialHeader, cookieMode = false) {
   const r = spawnSync(CURL, [
-    '-sS', '--connect-timeout', '8', '--max-time', '12',
-    '-H', `Authorization: Bearer ${key}`, '-H', 'Accept: application/json',
+    '-sS', '--connect-timeout', '8', '--max-time', '12', '--proto', '=https,http',
+    '-H', credentialHeader, '-H', cookieMode ? 'Accept: text/html,application/xhtml+xml' : 'Accept: application/json',
+    ...(cookieMode ? ['-H', 'Origin: https://ollama.com', '-H', 'Referer: https://ollama.com/settings',
+      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143.0.0.0 Safari/537.36'] : []),
     '-w', '\n%{http_code}',
-    url,
-  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    '--url', url,
+  ], { encoding: 'utf8', timeout: 15000, maxBuffer: 2_000_000, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error || r.status !== 0 || !r.stdout) {
     return { err: r.error?.message || ('exit ' + r.status) };
   }
@@ -55,32 +63,50 @@ function curlJson(url, key) {
 }
 
 async function main() {
-  const auth = readJson(AUTH_FILE, null);
-  const h = (auth && auth.headers) || {};
+  const auth = readJson(AUTH_FILE, null) || {};
+  const h = auth.headers || {};
   const bearer = String(h.Authorization || '').replace(/^Bearer\s+/i, '');
-  const key = bearer || String((auth && auth.refreshApiKey) || '');
-  if (!key) {
-    writeCache({ error: 'no-auth', generatedAt: Date.now(), ttlMs: TTL_MS });
-    if (verbose) console.error('[ollama-provider] missing Bearer key');
+  const key = String(auth.queryKey ?? (bearer || auth.refreshApiKey || '')).trim();
+  const cookie = String(auth.cookieAuth || '').trim();
+  if ((!cookie && !key) || /[\r\n]/.test(cookie || key)) {
+    writeFailure('no-auth', 'missing query credential');
     return;
   }
-  const url = (auth.apiUrl && auth.apiUrl.includes('/api/balance')) ? auth.apiUrl : DEFAULT_URL;
+  const configured = process.env.TOKENHUD_QUERY_URL || auth.queryUrl || auth.apiUrl;
+  // Keep the legacy /api/usage auth-template compatible with the known balance adapter.
+  const url = cookie ? 'https://ollama.com/settings'
+    : (configured && configured.includes('/api/balance') ? configured : DEFAULT_URL);
+  const header = cookie ? `Cookie: ${cookie}` : `Authorization: Bearer ${key}`;
 
   // 单次尝试: App 每 60s 一轮即天然重试; 内重试会与下一轮叠加致请求量超 10 req/min 限频
   let text = null, lastErr = 'unknown';
-  const { status, text: body, err } = curlJson(url, key);
+  const { status, text: body, err } = curlJson(url, header, !!cookie);
   if (err) { lastErr = err; }
   else if (status === 200 && body) { text = body; }
+  else if ((status === 401 || status === 403) || (cookie && [301, 302, 303, 307, 308].includes(status))) { writeFailure('auth', `HTTP ${status}`); return; }
   else if (status === 429) { writeFailure('ratelimit', 'HTTP 429'); return; }
-  else { lastErr = 'HTTP ' + status + ' ' + String(body).slice(0, 80); }
+  else { lastErr = 'HTTP ' + status; }
   if (!text) {
     writeFailure('network', lastErr);
     return;
   }
 
+  if (cookie) {
+    const usage = parseOllamaHTML(text);
+    if (usage?.error) { writeFailure(usage.error, 'signed-out settings page'); return; }
+    if (usage) {
+      writeCache({ ...usage, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
+      return;
+    }
+  }
   let data;
   try { data = JSON.parse(text); } catch {
-    writeFailure('parse', 'non-JSON: ' + text.slice(0, 120));
+    writeFailure('parse', cookie ? 'unrecognized usage page' : 'non-JSON response');
+    return;
+  }
+  const normalized = normalizeUsage(data);
+  if (normalized && !data.error) {
+    writeCache({ ...normalized, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
     return;
   }
   if (data && (data.error === 'too many requests' || data.error === 'invalid credentials')) {
@@ -89,13 +115,13 @@ async function main() {
   }
   const included = data && data.included;
   if (!included) {
-    writeFailure('parse', 'no included: ' + text.slice(0, 120));
+    writeFailure('parse', 'no included balance data');
     return;
   }
   // legacy plan: included.session/weekly.remaining_percent (0~100 剩余) -> used_percentage (已用)
   const pct = (b) => (b && typeof b.remaining_percent === 'number') ? {
     used_percentage: Math.round((100 - b.remaining_percent) * 10) / 10,
-    resets_at: b.resets_at || null,
+    resets_at: epochSeconds(b.resets_at),
   } : null;
   const legacy = pct(included.session) || pct(included.weekly);
   if (legacy) {
@@ -120,7 +146,7 @@ async function main() {
     const usedPct = included.allowance_usd > 0
       ? Math.round((1 - included.balance_usd / included.allowance_usd) * 1000) / 10
       : 0;
-    const resets = included.period?.until ? Math.floor(Date.parse(included.period.until) / 1000) : null;
+    const resets = epochSeconds(included.period?.until);
     // P1-11 动态窗口: 本月美元额度 (amount/limit/unit/period 按形态上报)
     const windows = [{
       label: '本月', used_percentage: usedPct, resets_at: resets || null,
@@ -138,7 +164,7 @@ async function main() {
     if (verbose) console.error(`[ollama-provider] ok (credit: $${included.balance_usd}/$${included.allowance_usd})`);
     return;
   }
-  writeFailure('parse', 'unknown plan shape: ' + text.slice(0, 120));
+  writeFailure('parse', 'unknown plan shape');
 }
 
 main().catch(e => writeFailure('network', String(e?.message || e)));

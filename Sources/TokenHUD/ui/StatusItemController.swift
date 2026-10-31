@@ -1,123 +1,99 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 自绘状态栏 (替代 MenuBarExtra: 右键菜单系统不透传, NSStatusItem 可拦截)
-
-/// 菜单栏图标: 左键弹供应商面板 (NSPopover), 右键弹菜单 (刷新余额/供应商管理/退出)
 @MainActor
 final class StatusItemController: ObservableObject {
     static var shared: StatusItemController?
-
     private let engine: DataEngine
-    private let panelCtrl: PanelController
+    let panelController: PanelController
     private let statusItem: NSStatusItem
     private var popover: NSPopover?
     private var cancellable: Any?
 
     init(engine: DataEngine, panelCtrl: PanelController) {
         self.engine = engine
-        self.panelCtrl = panelCtrl
+        panelController = panelCtrl
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.action = #selector(onClick(_:))
         statusItem.button?.target = self
         Self.shared = self
         updateTitle()
-        // states 变化 → 更新图标百分比
         cancellable = engine.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in self?.updateTitle() }
         }
     }
 
-    /// 图标百分比: 指定家则用该家, 否则全部取最高; 刷新中前缀 ⟳
     private func updateTitle() {
-        var pct: Double?
-        if let slug = engine.iconProviderSlug,
-           let st = engine.states.first(where: { $0.slug == slug }) {
-            pct = st.cache?.fiveHour?.usedPercentage ?? st.worstPct
-        } else {
-            pct = engine.states.compactMap(\.worstPct).max()
-        }
-        let text = pct.map { "\(Int($0.rounded()))%" } ?? "…"
-        statusItem.button?.title = engine.isRefreshingAll ? "⟳ \(text)" : text
-        statusItem.button?.toolTip = "TokenHUD — 左键明细, 右键菜单"
+        let eligible = engine.states.filter { $0.manifest.supportsQuota }
+        let chosen = engine.iconProviderSlug.flatMap { slug in eligible.first { $0.slug == slug } }
+        let states = chosen.map { [$0] } ?? eligible
+        let percentage = states.compactMap { state in
+            QuotaPresentation(state: state).metrics.compactMap(\.percentage).max()
+        }.max()
+        let old = states.contains { QuotaPresentation(state: $0).isOld }
+        let value = percentage.map { "\(Int($0.rounded()))%" } ?? "—"
+        statusItem.button?.title = (engine.isRefreshingAll ? "↻ " : "") + value + (old && percentage != nil ? " ·" : "")
+        statusItem.button?.toolTip = "TokenHUD · 单击快览，双击悬浮，右键操作" + (old ? " · 包含旧数据" : "")
+        statusItem.button?.setAccessibilityLabel("TokenHUD，\(value)" + (old ? "，包含旧数据" : ""))
     }
 
     @objc private func onClick(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
+            popover?.performClose(nil)
             showMenu()
-        } else {
+        } else if event.clickCount == 2 {
+            // The first click opens immediately; the second closes that transient
+            // preview and performs only the floating-panel command. No timer races.
+            popover?.performClose(nil)
+            panelController.toggle()
+        } else if event.clickCount == 1 {
             togglePopover()
         }
     }
 
-    // 右键菜单
     private func showMenu() {
         let menu = NSMenu()
-        let togglePanel = NSMenuItem(title: panelVisible ? "关闭悬浮窗" : "打开悬浮窗",
-                                     action: #selector(togglePanelAction), keyEquivalent: "")
-        togglePanel.target = self
-        let refresh = NSMenuItem(title: "刷新余额", action: #selector(refreshAll), keyEquivalent: "")
-        refresh.target = self
-        let settings = NSMenuItem(title: "设置中心…", action: #selector(openSettings), keyEquivalent: "")
-        settings.target = self
-        let quit = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(togglePanel)
+        add("\(panelController.isVisible ? "关闭" : "打开")悬浮速览", action: #selector(togglePanel), to: menu)
+        add("刷新可查询账号", action: #selector(refreshAll), key: "r", to: menu)
         menu.addItem(.separator())
-        menu.addItem(refresh)
-        menu.addItem(settings)
+        add("账号管理…", action: #selector(openAccounts), key: "0", to: menu)
+        add("设置与外观…", action: #selector(openSettings), key: ",", to: menu)
         menu.addItem(.separator())
-        menu.addItem(quit)
-        statusItem.menu = menu // 显示期间挂 menu, 结束后移除 (否则左键失效)
+        add("退出 TokenHUD", action: #selector(quit), key: "q", to: menu)
+        statusItem.menu = menu
         statusItem.button?.performClick(nil)
-        DispatchQueue.main.async { [weak self] in self?.statusItem.menu = nil }
+        statusItem.menu = nil
     }
-
-    private var panelVisible: Bool { panelCtrl.isVisible }
-
-    @objc private func togglePanelAction() {
-        panelCtrl.toggle()
+    private func add(_ title: String, action: Selector, key: String = "", to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        menu.addItem(item)
     }
+    @objc private func togglePanel() { panelController.toggle() }
+    @objc private func refreshAll() { Task { await engine.refreshBalancesOnly() } }
+    @objc private func openAccounts() { SettingsWindowManager.shared.show() }
+    @objc private func openSettings() { SettingsWindowManager.shared.showSettings() }
+    @objc private func quit() { NSApplication.shared.terminate(nil) }
 
-    @objc private func refreshAll() {
-        // 快捷入口只查余额, 不发模型调用 (不隐式消费额度)
-        Task { await engine.refreshBalancesOnly() }
-    }
-
-    @objc private func openSettings() {
-        SettingsWindowManager.shared.show()
-    }
-
-    @objc private func quit() {
-        NSApplication.shared.terminate(nil)
-    }
-
-    // 左键: 弹/收供应商面板
     private func togglePopover() {
-        if let popover, popover.isShown {
-            popover.performClose(nil)
-        } else {
-            let content = MenuBarView(engine: engine, panelCtrl: panelCtrl,
-                                      onOpenSettings: { SettingsWindowManager.shared.show() },
-                                      onTogglePanel: { [weak self] in self?.panelCtrl.toggle() },
-                                      onRefresh: { [weak self] in
-                                          guard let self else { return }
-                                          Task { await self.engine.refreshBalancesOnly() }
-                                      },
-                                      onQueryAccount: { [weak self] slug in
-                                          guard let self else { return }
-                                          guard let model = SettingsWindowManager.shared.modelForQuery() else { return }
-                                          model.query(slug)
-                                      })
-            let p = NSPopover()
-            p.contentViewController = NSHostingController(rootView: content)
-            p.behavior = .transient
-            p.animates = true
-            p.show(relativeTo: statusItem.button!.bounds, of: statusItem.button!, preferredEdge: .minY)
-            popover = p
-        }
+        if let popover, popover.isShown { popover.performClose(nil); return }
+        guard let model = SettingsWindowManager.shared.modelForQuery(), let button = statusItem.button else { return }
+        let content = MenuBarView(engine: engine, panelCtrl: panelController, model: model,
+                                 onOpenSettings: { [weak self] in self?.popover?.performClose(nil); SettingsWindowManager.shared.show() },
+                                 onTogglePanel: { [weak self] in self?.panelController.toggle() },
+                                 onRefresh: { [weak self] in self?.refreshAll() },
+                                 onOpenAccount: { [weak self] slug in
+                                     self?.popover?.performClose(nil)
+                                     SettingsWindowManager.shared.showAccount(slug)
+                                 })
+        let preview = NSPopover()
+        preview.contentViewController = NSHostingController(rootView: content)
+        preview.behavior = .transient
+        preview.animates = false
+        preview.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover = preview
     }
 }
 
@@ -146,7 +122,7 @@ enum WindowFrameMemory {
 final class SettingsWindowManager: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowManager()
     private var window: NSWindow?
-    private weak var model: SettingsModel?
+    private var model: SettingsModel?
     private let defaults: UserDefaults
     private let autosaveName: String
     /// App init 时注入 (engine / 路径在 App 侧)
@@ -158,6 +134,17 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    func showAccount(_ slug: String) {
+        guard let model = modelForQuery(), model.selectAccount(slug, tab: .config) else { return }
+        show()
+    }
+
+    func showSettings() {
+        guard let model = modelForQuery() else { return }
+        model.navigate(to: .settings)
+        show()
+    }
+
     func show() {
         if let window {
             NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .show))
@@ -167,8 +154,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        guard let model = makeModel?() else { return }
-        self.model = model
+        guard let model = modelForQuery() else { return }
         let host = NSHostingController(rootView: SettingsCenterView(model: model, engine: model.engine))
         let w = SettingsMainWindow(contentViewController: host)
         w.title = "TokenHUD"
@@ -205,6 +191,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     /// 关窗: 有未保存草稿先确认 (返回 false 阻止关闭)
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let accepted = model?.leaveGuard() ?? true
+        if accepted, let model, model.draft != nil || model.showingTemplates { model.discardDraft() }
         if !accepted {
             NSApp.setActivationPolicy(SettingsWindowLifecycle.activationPolicy(after: .closeCancelled))
         }

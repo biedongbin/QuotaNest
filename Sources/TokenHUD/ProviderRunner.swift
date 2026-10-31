@@ -58,6 +58,13 @@ final class ProviderRunner {
         p.currentDirectoryURL = plugin.dir
         var env = ProcessInfo.processInfo.environment
         if let nodePath { env["TOKENHUD_NODE"] = nodePath }
+        env["TOKENHUD_STDOUT_ONLY"] = "1"
+        env["TOKENHUD_HUD_DIR"] = logDir.path
+        env["TOKENHUD_AUTH_FILE"] = plugin.manifest.authFile.map(PluginGenerator.expandPath)?.path
+            ?? logDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json").path
+        env["TOKENHUD_CACHE_FILE"] = DataEngine.cachePath(for: plugin, hudDir: logDir).path
+        env["TOKENHUD_QUERY_URL"] = plugin.manifest.queryUrl ?? ""
+        env["TOKENHUD_QUOTA_MODE"] = plugin.manifest.quotaMode ?? ""
         p.environment = env
 
         let out = Pipe()
@@ -66,9 +73,11 @@ final class ProviderRunner {
         p.standardError = err
 
         do { try p.run() } catch { return nil }
+        let stdout = PipeCapture(out.fileHandleForReading, limit: 2_000_000)
+        let stderr = PipeCapture(err.fileHandleForReading, limit: 4096)
 
         let deadline = Date().addingTimeInterval(timeout)
-        while p.isRunning && Date() < deadline {
+        while p.isRunning && Date() < deadline && !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         if p.isRunning {
@@ -79,24 +88,26 @@ final class ProviderRunner {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
             if p.isRunning { kill(p.processIdentifier, SIGKILL) }
-            p.waitUntilExit() // SIGKILL 后进程必死, 此等待有界
-            dumpStderr(err, plugin: plugin)
+            let reapDeadline = Date().addingTimeInterval(1)
+            while p.isRunning && Date() < reapDeadline {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            dumpStderr(stderr.finish(within: 1), plugin: plugin)
             return nil
         }
         guard p.terminationStatus == 0 else {
-            dumpStderr(err, plugin: plugin)
+            dumpStderr(stderr.finish(within: 1), plugin: plugin)
             return nil
         }
 
-        let data = Self.readAllBounded(out.fileHandleForReading, within: 2)
+        let data = stdout.finish(within: 2)
         let cache = UsageCache.make(body: data, now: Date().timeIntervalSince1970 * 1000)
-        if cache == nil { dumpStderr(err, plugin: plugin) } // stdout 解析失败也留诊断线索
+        if cache == nil { dumpStderr(stderr.finish(within: 1), plugin: plugin) } // stdout 解析失败也留诊断线索
         return cache
     }
 
     /// stderr 尾部 4KB 写到注入的日志目录，落盘前过滤凭证。
-    private func dumpStderr(_ pipe: Pipe, plugin: PluginProvider) {
-        let data = Self.readAllBounded(pipe.fileHandleForReading, within: 1)
+    private func dumpStderr(_ data: Data, plugin: PluginProvider) {
         guard !data.isEmpty else { return }
         let tail = data.count > 4096 ? data.suffix(4096) : data[...]
         let text = String(data: tail, encoding: .utf8) ?? String(decoding: tail, as: UTF8.self)
@@ -119,21 +130,29 @@ final class ProviderRunner {
         return out
     }
 
-    /// 有界读取: 进程已退出但孤儿孙进程可能仍持有 stdout 写端; 同步读丢后台队列, 超时放弃
-    private static func readAllBounded(_ handle: FileHandle, within window: TimeInterval) -> Data {
-        final class Box: @unchecked Sendable {
-            private let lock = NSLock()
-            private var d = Data()
-            func set(_ v: Data) { lock.lock(); d = v; lock.unlock() }
-            func get() -> Data { lock.lock(); defer { lock.unlock() }; return d }
+    /// 后台持续排空管道，避免先等进程退出导致写端填满。输出有上限，孤儿写端等待有界。
+    private final class PipeCapture: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+        private let done = DispatchSemaphore(value: 0)
+
+        init(_ handle: FileHandle, limit: Int) {
+            DispatchQueue.global(qos: .utility).async { [self] in
+                defer { done.signal() }
+                while let chunk = try? handle.read(upToCount: 65_536), !chunk.isEmpty {
+                    lock.lock()
+                    data.append(chunk)
+                    if data.count > limit { data = Data(data.suffix(limit)) }
+                    lock.unlock()
+                }
+            }
         }
-        let box = Box()
-        let done = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
-            box.set(handle.readDataToEndOfFile())
-            done.signal()
+
+        func finish(within window: TimeInterval) -> Data {
+            _ = done.wait(timeout: .now() + window)
+            lock.lock()
+            defer { lock.unlock() }
+            return data
         }
-        _ = done.wait(timeout: .now() + window)
-        return box.get()
     }
 }

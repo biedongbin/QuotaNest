@@ -7,10 +7,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
 const NAME = process.env.USAGE_PROVIDER_NAME || 'glm';
-const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, `.${NAME}-usage-auth.json`);
-const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, `.${NAME}-usage-cache.json`);
+const AUTH_FILE = process.env.TOKENHUD_AUTH_FILE || process.env.USAGE_AUTH_FILE || join(HUD_DIR, `.${NAME}-usage-auth.json`);
+const CACHE_FILE = process.env.TOKENHUD_CACHE_FILE || process.env.USAGE_CACHE_FILE || join(HUD_DIR, `.${NAME}-usage-cache.json`);
 const TTL_MS = 60_000;
 const FETCH_TIMEOUT_MS = 8000;
 const verbose = !!(process.env.USAGE_VERBOSE || process.env.GLM_PROVIDER_VERBOSE);
@@ -20,6 +20,10 @@ const readJson = (p, def) => {
 };
 
 const writeCache = (obj) => {
+  if (process.env.TOKENHUD_STDOUT_ONLY === '1') {
+    process.stdout.write(JSON.stringify(obj) + '\n');
+    return;
+  }
   try {
     mkdirSync(HUD_DIR, { recursive: true });
     writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2));
@@ -71,54 +75,9 @@ const extractBucket = (limit, cfg) => {
     const t = Date.parse(resetsRaw); // ISO 8601 → epoch ms
     if (!Number.isNaN(t)) resetsAt = Math.floor(t / 1000);
   }
-  // 固定周期重置：resetsAtWeekly → 下周一 0 点 (本地时区) epoch 秒
-  if (resetsAt == null && cfg.resetsAtWeekly) {
-    resetsAt = nextMondayMidnight();
-  }
-  // 固定每日时刻重置：resetsAtDaily → 今天/明天 HH:MM (本地时区) epoch 秒
-  if (resetsAt == null && cfg.resetsAtDaily != null) {
-    resetsAt = nextDailyTime(cfg.resetsAtDaily);
-  }
-  // 多个固定时刻重置：resetsAtTimes → 取最近的下一个 (今天或明天)
-  if (resetsAt == null && Array.isArray(cfg.resetsAtTimes)) {
-    resetsAt = nextOfTimes(cfg.resetsAtTimes);
-  }
+  // No reset timestamp is inferred from local schedules or calendar periods.
   return { used_percentage: pct, resets_at: resetsAt };
 };
-
-// 下周一 0 点 (本地时区) 的 epoch 秒; 今天周一则取下周一
-function nextMondayMidnight() {
-  const now = new Date();
-  const day = now.getDay(); // 0=周日, 1=周一
-  let daysAhead = (8 - day) % 7; // 周一=1 → 7天后; 周日=0 → 1天后
-  if (daysAhead === 0) daysAhead = 7; // 今天周一 → 下周一
-  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysAhead, 0, 0, 0, 0);
-  return Math.floor(next.getTime() / 1000);
-}
-
-// 每天固定时刻 (HH:MM, 本地时区) 的 epoch 秒; 已过则取明天
-function nextDailyTime(hhmm) {
-  const [h, m] = String(hhmm).split(':').map(Number);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-  if (today.getTime() <= now.getTime()) today.setDate(today.getDate() + 1);
-  return Math.floor(today.getTime() / 1000);
-}
-
-// 多个固定时刻 (HH:MM 数组) 中最近的下一个; 今天已过则取明天
-function nextOfTimes(times) {
-  const now = new Date();
-  const nowMs = now.getTime();
-  let best = null;
-  for (const t of times) {
-    const [h, m] = String(t).split(':').map(Number);
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-    let ms = today.getTime();
-    if (ms <= nowMs) ms += 24 * 3600 * 1000; // 今天已过 → 明天
-    if (best == null || ms < best) best = ms;
-  }
-  return best == null ? null : Math.floor(best / 1000);
-}
 
 async function main() {
   const auth = readJson(AUTH_FILE, null);
@@ -136,10 +95,21 @@ async function main() {
 
   // 用 curl 而非 node fetch：bigmodel 对 node/undici 客户端风控（返回 code:401），
   // curl 的 UA + TLS 指纹被放行。header 从 auth.headers 动态构造。
-  const headerArgs = Object.entries(auth.headers || {}).flatMap(([k, v]) => ['-H', `${k}: ${v}`]);
+  const headers = { ...(auth.headers || {}) };
+  const token = headers.authorization;
+  if (NAME === 'glm' && !token) {
+    writeCache({ ...prevBuckets, error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
+    return;
+  }
+  if (token) {
+    for (const key of Object.keys(headers)) {
+      if (key !== 'authorization' && key.toLowerCase() === 'authorization') delete headers[key];
+    }
+  }
+  const headerArgs = Object.entries(headers).flatMap(([key, value]) => ['-H', `${key}: ${value}`]);
   const method = (auth.method || 'GET').toUpperCase();
   const methodArgs = method === 'GET' ? [] : ['-X', method];
-  const r = spawnSync('curl', [
+  const r = spawnSync(process.env.TOKENHUD_CURL || '/usr/bin/curl', [
     '-s', '--max-time', String(Math.ceil(FETCH_TIMEOUT_MS / 1000)),
     ...methodArgs, auth.apiUrl, ...headerArgs,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -153,7 +123,7 @@ async function main() {
   try { data = JSON.parse(r.stdout); }
   catch {
     writeCache({ ...prevBuckets, error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error(`[${NAME}-provider] parse failed:`, (r.stdout || '').slice(0, 200));
+    if (verbose) console.error(`[${NAME}-provider] parse failed`);
     return;
   }
 

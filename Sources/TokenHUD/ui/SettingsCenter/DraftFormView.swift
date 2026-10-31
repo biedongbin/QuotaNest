@@ -1,377 +1,225 @@
 import SwiftUI
-import AppKit
-
-// MARK: - 草稿表单 (配置 / 自动任务 共用, 单页三个分区)
 
 struct DraftFormView: View {
-    /// 按 tab 分段: .config = 基本信息 + 查询与凭证, .trigger = 自动任务, .all = 全部
     enum Section { case config, trigger, all }
-
     @ObservedObject var model: SettingsModel
     let draft: Draft
     var section: Section = .all
-
-    @State private var showKey = false
-
-    private var m: ProviderManifest? { model.draftManifest() }
-    private var isNew: Bool { draft.isNew }
-    private var isAPIKey: Bool { model.draftAuthStyle() == "apikey" }
+    @State private var revealCallKey = false
+    @State private var revealQueryKey = false
+    @State private var revealQueryToken = false
+    @State private var revealQueryCookie = false
+    @State private var clearing: CredentialKind?
+    private enum CredentialKind: String, Identifiable { case call, query; var id: String { rawValue } }
+    private var manifest: ProviderManifest? { model.draftManifest() }
     private var builtin: Bool { model.draftBuiltin() }
-    private var canCall: Bool { model.draftCanCall() }
-    private var hasExistingKey: Bool { !isNew && draft.hasExistingKey }
-    private var clearPending: Bool { draft.values.clearKeyIntent }
-
-    /// P1-9: 清除 Key 独立意图 — 确认弹窗后置位; 再点撤销
-    private func toggleClearKey() {
-        guard var d = model.draft else { return }
-        if d.values.clearKeyIntent {
-            d.values.clearKeyIntent = false
-            model.draft = d
-        } else {
-            let alert = NSAlert()
-            alert.messageText = "清除该账号的 API Key？"
-            alert.informativeText = "保存后清除当前密钥，依赖该密钥的操作将不可用；独立的调用凭证会保留。"
-            alert.addButton(withTitle: "清除")
-            alert.addButton(withTitle: "取消")
-            alert.alertStyle = .warning
-            if alert.runModal() == .alertFirstButtonReturn {
-                d.values.clearKeyIntent = true
-                d.values.key = ""
-                model.draft = d
-            }
-        }
-    }
-
-    /// 内置模板的 url 字段装的是额度查询接口 (脚本型取自 auth-template 的 apiUrl), 通用模板才是服务根地址
-    private var urlFieldLabel: String {
-        builtin ? "额度查询地址" : "服务地址"
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            notice
+        VStack(alignment: .leading, spacing: 18) {
+            Text("连接与计划修改保存后生效；账号启停和展示开关即时生效。API 与额度查询使用各自的凭证。")
+                .font(.callout).foregroundStyle(.secondary)
             if section != .trigger {
-                basicGroup
-                credentialGroup
-                callGroup
+                identity
+                callConnection
+                quotaConnection
             }
-            if section != .config {
-                if canCall { triggerGroup } else { unsupportedTrigger }
-            }
+            if section != .config { schedule }
         }
-        .onChange(of: draft.values) { _, _ in
-            // 用户改动后清掉旧的保存错误汇总, 只保留字段级提示
-            if !model.topError.isEmpty { model.topError = "" }
-        }
-    }
-
-    private var notice: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "pencil.circle").font(.system(size: 11))
-            Text(isNew ? "新账号保存后加入总览；修改保留在当前草稿，测试不会自动保存。"
-                       : "草稿仅在本机内存，未保存；切换 tab 不丢失，关窗/切换账号会确认。")
-                .font(Typo.small)
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(Palette.muted)
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.accentSoft))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
-    }
-
-    // MARK: 基本信息
-
-    private var basicGroup: some View {
-        CardBox {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("基本信息").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("名称用于总览、悬浮窗和菜单栏展示。").font(Typo.small).foregroundStyle(Palette.muted)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    field("账号名称", required: true, error: model.errors["name"]) {
-                        TextField("例如 GLM 工作号", text: bind(\.name))
-                            .textFieldStyle(.plain)
-                            .fieldBox(invalid: model.errors["name"] != nil)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("供应商 / 授权方式").font(Typo.small).foregroundStyle(Palette.muted)
-                        HStack(spacing: 6) {
-                            BadgeText(text: model.current.map { model.providerName(for: $0) } ?? m?.label ?? "通用兼容")
-                            BadgeText(text: isAPIKey ? "API Key" : "授权登录", locked: !isAPIKey)
-                        }
-                        Text(builtin ? "内置供应商：协议与地址由模板提供，只有密钥/模型/时间可改。"
-                                     : "自定义供应商：可修改地址与调用协议。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
-                }
-
-                if !builtin, isAPIKey {
-                    field("调用协议", required: false, error: nil) {
-                        Picker("", selection: bind(\.proto)) {
-                            Text("OpenAI 兼容 · chat/completions").tag("openai")
-                            Text("Anthropic 兼容 · messages").tag("anthropic")
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: 查询与凭证
-
-    private var credentialGroup: some View {
-        CardBox {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("查询与凭证").font(Typo.section).foregroundStyle(Palette.ink)
-                Text(isAPIKey ? "Key 保存后写入本机凭证文件，仅用于额度查询与调用。"
-                              : "凭证来自本机 CLI，只读展示。")
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-
-                field(urlFieldLabel, required: false, error: model.errors["url"]) {
-                    TextField("https://…", text: bind(\.url))
-                        .textFieldStyle(.plain)
-                        .font(Typo.mono)
-                        .fieldBox(invalid: model.errors["url"] != nil, readonly: builtin)
-                        .disabled(builtin)
-                    Text(builtin ? "\(AddressPresentation.builtinNote)；该地址用于查询额度。"
-                                 : (m?.queryUrl != nil ? "留空表示不查询该账号的额度。" : "自定义地址需为有效的 http(s) URL。"))
-                        .font(Typo.small).foregroundStyle(Palette.muted)
-                }
-
-                if builtin, let r = m?.refreshUrl {
-                    field("调用地址", required: false, error: nil) {
-                        Text(r)
-                            .font(Typo.mono).foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.readonlyField))
-                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
-                        Text("测试调用实际请求的端点，只读。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
-                }
-
-                if isAPIKey {
-                    field("API Key", required: !hasExistingKey, error: model.errors["key"]) {
-                        HStack(spacing: 8) {
-                            Group {
-                                if showKey {
-                                    TextField(hasExistingKey ? "保持原值" : "粘贴 API Key", text: bind(\.key))
-                                } else {
-                                    SecureField(hasExistingKey ? "保持原值" : "粘贴 API Key", text: bind(\.key))
-                                }
-                            }
-                            .textFieldStyle(.plain)
-                            .font(Typo.mono)
-                            .fieldBox(invalid: model.errors["key"] != nil)
-                            Button(showKey ? "隐藏" : "显示") { showKey.toggle() }.barButton()
-                            // P1-9: 清除 Key 是独立显式意图 (确认后置位, 保存时落盘清空)
-                            if hasExistingKey {
-                                Button(clearPending ? "撤销清除" : "清除 Key") { toggleClearKey() }
-                                    .barButton(clearPending ? .primary : .plain)
-                            }
-                        }
-                        Text(clearPending
-                             ? "已标记清除：保存后该账号凭证将被清空。"
-                             : (hasExistingKey ? "留空保存即保持原 Key；清除需点「清除 Key」确认。"
-                                               : "保存后写入 ~/.claude/hud 下的凭证文件（600 权限）。"))
-                            .font(Typo.small).foregroundStyle(clearPending ? Palette.danger : Palette.muted)
-                    }
+        .confirmationDialog(clearing == .call ? "保存后清除 API 调用凭证？" : "保存后清除额度查询凭证？",
+                            isPresented: Binding(get: { clearing != nil }, set: { if !$0 { clearing = nil } }), titleVisibility: .visible) {
+            Button("标记清除", role: .destructive) {
+                if clearing == .call {
+                    model.draft?.values.clearKeyIntent = true
+                    model.draft?.values.key = ""
                 } else {
-                    field("凭证来源", required: false, error: nil) {
-                        Text(m?.authFile ?? "本机 CLI")
-                            .font(Typo.mono).foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.readonlyField))
-                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border, lineWidth: 1))
-                        Text("只读 · 由本机 CLI 维护，TokenHUD 不写入、不刷新。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
+                    model.draft?.values.clearQueryKeyIntent = true
+                    model.draft?.values.queryKey = ""
+                    model.draft?.values.queryToken = ""
+                    model.draft?.values.queryCookie = ""
                 }
-
-                if let slug = draft.slug {
-                    Text("额度查询使用已保存配置；修改凭证后请先保存，再查询额度。")
-                        .font(Typo.small).foregroundStyle(Palette.muted)
-                    Button(model.running.contains(slug) ? "查询中…" : "查询已保存账号额度") { model.query(slug) }
-                        .barButton()
-                        .disabled(model.running.contains(slug) || model.current?.canQuery != true || model.current?.isConfigured != true)
-                        .help(model.current?.isConfigured == true ? "查询已保存配置；不会启用后台任务或保存当前输入" : "请先补全并保存账号配置，再查询额度")
-                } else {
-                    Text("新账号保存后可查询额度；下方模型测试可直接使用当前输入。")
-                        .font(Typo.small).foregroundStyle(Palette.muted)
-                }
+                clearing = nil
             }
+            Button("取消", role: .cancel) { clearing = nil }
+        } message: {
+            Text("另一组凭证不会改变；保存前可以撤销。")
         }
     }
-
-    private var callGroup: some View {
-        CardBox {
+    private var identity: some View {
+        GroupBox("账号") {
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("账号名称", text: bind(\.name)).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("账号名称")
+                if let error = model.errors["name"] { Text(error).foregroundStyle(.red).font(.callout) }
+                LabeledContent("供应商类型", value: manifest?.label ?? "自定义兼容 API")
+                Text("账号名称用于菜单、悬浮窗与 HUD；同一类型可以添加多个账号。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(8)
+        }
+    }
+    private var callConnection: some View {
+        GroupBox("API 调用") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("模型调用与测试").font(Typo.section).foregroundStyle(Palette.ink)
-                if canCall {
-                    VStack(alignment: .leading, spacing: 12) {
-                        field("模型", required: false, error: nil) {
-                            TextField("填写模型名称", text: bind(\.model))
-                                .textFieldStyle(.plain).font(Typo.mono).fieldBox()
-                        }
-                        field("提示词", required: false, error: nil) {
-                            TextField("只回复 OK", text: bind(\.prompt))
-                                .textFieldStyle(.plain).fieldBox()
-                        }
-                    }
-                    Text("使用当前输入，测试不会保存配置或启用计划；发送一次模型调用会消耗额度。")
-                        .font(Typo.small).foregroundStyle(Palette.muted)
-                    Button(model.isTestingCurrentConfig ? "测试中…" : "发送测试调用") {
-                        model.testCallDraft(values: draft.values)
-                    }
-                    .barButton(.primary)
-                    .disabled(model.isTestingCurrentConfig)
-                    .help("用当前未保存的模型与凭证发送一次测试调用")
-                } else {
-                    Text("此账号尚未配置或接入模型调用。通用账号请先填写有效服务地址；供应商模板缺少调用接入时，额度查询仍可独立使用。")
-                        .font(Typo.small).foregroundStyle(Palette.muted)
+                labeled("服务地址") {
+                    TextField("https://api.example.com/v1", text: bind(\.url))
+                        .textFieldStyle(.roundedBorder).disabled(builtin)
+                        .accessibilityLabel("API 服务地址")
+                }
+                Picker("调用协议", selection: bind(\.proto)) {
+                    Text("OpenAI Chat Completions").tag("openai")
+                    Text("Anthropic Messages").tag("anthropic")
+                }.disabled(builtin)
+                if builtin {
+                    Label("地址与协议由供应商类型提供", systemImage: "lock")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                secret("API Key", value: bind(\.key), revealed: $revealCallKey)
+                credentialActions(query: false)
+                labeled("模型") {
+                    TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("调用模型")
+                }
+                labeled("测试提示词") {
+                    TextField("只回复 OK", text: bind(\.prompt)).textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("测试提示词")
+                }
+                HStack {
+                    Text("使用当前输入，不保存配置。发送一次调用会消耗额度。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    AccountActionButton(title: model.isTestingCurrentConfig ? "测试中…" : "测试当前 API 配置",
+                                        identifier: "account.test-draft", enabled: !model.isTestingCurrentConfig) {
+                        model.testCallDraft(values: model.draft?.values ?? draft.values)
+                    }.fixedSize().frame(height: 28)
                 }
                 if let result = model.callTestResult(for: nil) { CallTestResultView(result: result) }
-            }
+            }.padding(8)
         }
     }
-
-    // MARK: 自动任务
-
-    private var triggerGroup: some View {
-        CardBox {
+    private var quotaConnection: some View {
+        GroupBox("额度查询 · 可选") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("自动任务").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("保存不发起任何请求；定时按本机时区 24 小时制执行，会消耗额度。自动查询开关与间隔在保存后的「自动任务」页直接操作。")
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-
-                Toggle(isOn: bind(\.autoTrigger)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("模型定时调用").font(Typo.body).foregroundStyle(Palette.ink)
-                        Text("到点发送一次测试调用，会消耗额度；与自动查询额度独立。")
-                            .font(Typo.small).foregroundStyle(Palette.muted)
-                    }
-                }
-                .toggleStyle(.switch)
-
-                Text("调用时间点").font(Typo.small).bold().foregroundStyle(Palette.muted)
-
-                HStack(spacing: 8) {
-                    TextField("09:00", text: bindTimeInput)
-                        .textFieldStyle(.plain).font(Typo.mono)
-                        .frame(width: 120)
-                        .fieldBox(invalid: model.errors["time"] != nil)
-                        .onSubmit { model.addTime() }
-                    Button("添加") { model.addTime() }.barButton()
-                    if let e = model.errors["time"] {
-                        Text(e).font(Typo.small).foregroundStyle(Palette.danger)
-                    }
-                }
-                Text("示例：09:00 合法；9:00、24:00、09:60 非法；时间点不可重复。")
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-
-                if draft.values.times.isEmpty {
-                    Text("尚未添加时间点。").font(Typo.small).foregroundStyle(Palette.muted)
+                Picker("查询方式", selection: bind(\.quotaMode)) {
+                    Text("不查询额度").tag("none")
+                    Text("查询接口").tag("endpoint")
+                    if builtin { Text("供应商脚本").tag("script") }
+                }.disabled(builtin)
+                if draft.values.quotaMode == "none" {
+                    Text("此账号只用于 API 调用与计划。不开启额度查询也可保存和使用。")
+                        .font(.callout).foregroundStyle(.secondary)
                 } else {
-                    FlowChips(times: draft.values.times) { model.removeTime(at: $0) }
+                    if draft.values.quotaMode == "endpoint" {
+                        labeled("额度查询地址") {
+                            TextField("https://example.com/api/usage", text: bind(\.queryURL))
+                                .textFieldStyle(.roundedBorder).disabled(builtin)
+                                .accessibilityLabel("额度查询地址")
+                        }
+                    } else {
+                        Label("查询逻辑由内置供应商脚本提供", systemImage: "lock")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    quotaCredentials
+                    credentialActions(query: true)
+                    if !builtin {
+                        Text("使用独立 Bearer Key 查询此精确地址。接口需返回规范额度 JSON；5 小时、周、月窗口与重置时间均可缺省。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let slug = draft.slug {
+                        Button(model.running.contains(slug) ? "查询中…" : "查询已保存配置") { model.query(slug) }
+                            .disabled(model.running.contains(slug) || model.current.map { !model.quotaConfigured($0) } != false)
+                        Text("额度查询使用已保存配置；先保存新凭证，再查询。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                if let e = model.errors["times"] {
-                    Text(e).font(Typo.small).foregroundStyle(Palette.danger)
-                }
-
-
+            }.padding(8)
+        }
+    }
+    @ViewBuilder private var quotaCredentials: some View {
+        if manifest?.authStyle != "apikey", builtin, draft.values.quotaMode == "script" {
+            Text("由本机授权来源提供。可选凭证只用于该账号查询，不会更改外部 CLI 登录。")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        switch manifest?.queryAuth {
+        case "jwt": secret("额度查询 Token", value: bind(\.queryToken), revealed: $revealQueryToken)
+        case "cookie": secret("额度查询 Cookie", value: bind(\.queryCookie), revealed: $revealQueryCookie)
+        default: secret("额度查询 Key", value: bind(\.queryKey), revealed: $revealQueryKey)
+        }
+        if draft.values.quotaMode == "script", manifest?.queryAuth != "cookie" {
+            secret("查询 Cookie（可选）", value: bind(\.queryCookie), revealed: $revealQueryCookie)
+            Text("仅用于脚本支持的查询方式；配置状态不代表已验证服务连接。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func credentialActions(query: Bool) -> some View {
+        let marked = query ? draft.values.clearQueryKeyIntent : draft.values.clearKeyIntent
+        return HStack {
+            Text(marked ? "已标记清除，保存后生效" : "留空保持已有凭证；新输入替换对应凭证")
+                .font(.caption).foregroundStyle(marked ? Color.red : Color.secondary)
+            Spacer()
+            if !draft.isNew {
+                Button(marked ? "撤销清除" : "清除凭证…") {
+                    if marked {
+                        if query { model.draft?.values.clearQueryKeyIntent = false }
+                        else { model.draft?.values.clearKeyIntent = false }
+                    } else { clearing = query ? .query : .call }
+                }.font(.callout)
             }
         }
     }
-
-    private var unsupportedTrigger: some View {
-        CardBox {
+    private var schedule: some View {
+        GroupBox("模型定时调用") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("自动任务").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("自动查询开关与间隔在保存后的「自动任务」页直接操作。")
-                    .font(Typo.small).foregroundStyle(Palette.muted)
-                UnsupportedBox(title: builtin ? "尚未接入模型调用" : "尚未配置模型调用",
-                               detail: builtin ? "此模板当前可独立查询额度；尚无可用的模型调用接入。"
-                                               : "请在配置页填写有效调用地址与模型，再设置调用计划。")
-            }
+                Toggle("启用调用计划", isOn: bind(\.autoTrigger)).toggleStyle(.switch)
+                Text("使用 API 调用配置，独立于额度查询；按本机时区 \(TimeZone.current.identifier) 执行。每次调用会消耗额度。")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    TextField("09:00", text: Binding(get: { model.draft?.timeInput ?? "" }, set: { model.draft?.timeInput = $0 }))
+                        .textFieldStyle(.roundedBorder).frame(width: 100).accessibilityLabel("添加调用时间，24小时制")
+                        .onSubmit { model.addTime() }
+                    Button("添加时间") { model.addTime() }
+                }
+                ForEach(["time", "times"], id: \.self) { key in
+                    if let error = model.errors[key] { Text(error).font(.callout).foregroundStyle(.red) }
+                }
+                FlowChips(times: draft.values.times) { model.removeTime(at: $0) }
+                if draft.values.times.isEmpty { Text("尚未添加时间点").foregroundStyle(.secondary) }
+            }.padding(8)
         }
     }
-
-    // MARK: 底栏 (由 DetailPanel 固定在滚动区外, 两个 tab 都可见)
-
-    // MARK: 绑定
-
-    private func bind<T>(_ kp: WritableKeyPath<DraftValues, T>) -> Binding<T> {
-        Binding(
-            get: { model.draft?.values[keyPath: kp] ?? draft.values[keyPath: kp] },
-            set: { v in
-                if model.draft != nil { model.draft?.values[keyPath: kp] = v }
-            })
+    private func bind<T>(_ keyPath: WritableKeyPath<DraftValues, T>) -> Binding<T> {
+        Binding(get: { model.draft?.values[keyPath: keyPath] ?? draft.values[keyPath: keyPath] }, set: {
+            model.draft?.values[keyPath: keyPath] = $0
+        })
     }
-
-    private var bindTimeInput: Binding<String> {
-        Binding(
-            get: { model.draft?.timeInput ?? "" },
-            set: { v in
-                model.draft?.timeInput = v
-                if model.errors["time"] != nil { model.errors["time"] = nil }
-            })
+    private func labeled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) { Text(label).font(.callout).foregroundStyle(.secondary); content() }
     }
-
-    private func field<C: View>(_ label: String, required: Bool, error: String?,
-                                @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 2) {
-                Text(label).font(Typo.small).foregroundStyle(Palette.muted)
-                if required { Text("*").font(Typo.small).foregroundStyle(Palette.danger) }
-            }
-            content()
-            if let error {
-                Text(error).font(Typo.small).foregroundStyle(Palette.danger)
+    private func secret(_ label: String, value: Binding<String>, revealed: Binding<Bool>) -> some View {
+        labeled(label) {
+            HStack {
+                Group {
+                    if revealed.wrappedValue { TextField("留空保持原值", text: value) }
+                    else { SecureField("留空保持原值", text: value) }
+                }.textFieldStyle(.roundedBorder).accessibilityLabel(label)
+                Button { revealed.wrappedValue.toggle() } label: {
+                    Image(systemName: revealed.wrappedValue ? "eye.slash" : "eye")
+                }.accessibilityLabel(revealed.wrappedValue ? "隐藏\(label)" : "显示\(label)")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// 时间点 chips 流式排布 (无第三方布局, 手算换行)
 struct FlowChips: View {
     let times: [String]
     let onRemove: (Int) -> Void
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 8) {
-                    ForEach(row, id: \.self) { i in
-                        chip(times[i], index: i)
-                    }
-                    Spacer(minLength: 0)
-                }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 95), alignment: .leading)], alignment: .leading, spacing: 8) {
+            ForEach(Array(times.enumerated()), id: \.offset) { index, time in
+                HStack {
+                    Text(time).monospacedDigit()
+                    Button { onRemove(index) } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("删除 \(time)")
+                }.padding(6).background(Palette.badgeBg, in: RoundedRectangle(cornerRadius: 6))
             }
         }
-    }
-
-    /// 每行 6 个 (HH:MM chip 固定宽度, 无需真实测量)
-    private var rows: [[Int]] {
-        stride(from: 0, to: times.count, by: 6).map { start in
-            Array(start..<min(start + 6, times.count))
-        }
-    }
-
-    private func chip(_ t: String, index: Int) -> some View {
-        HStack(spacing: 4) {
-            Text(t).font(Typo.small).monospacedDigit().foregroundStyle(Palette.ink)
-            Button { onRemove(index) } label: {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Palette.muted)
-            .accessibilityLabel("删除 \(t)")
-        }
-        .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 3)
-        .background(Capsule().fill(Palette.badgeBg))
-        .overlay(Capsule().strokeBorder(Palette.border, lineWidth: 1))
     }
 }

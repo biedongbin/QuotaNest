@@ -1,95 +1,109 @@
 #!/usr/bin/env node
-// OpenCode Go 用量 provider: Zen API v1 usage (Bearer key -> JSON, 稳定)
-// 旧路线 (workspace 页 SSR HTML 解析) 已废弃: 网站改客户端渲染, SSR 不再内联 usage 数据
-// auth: { refreshApiKey (Bearer, 即 API key), apiUrl(可选覆盖 usage 端点) }
+// Cookie: verified Console API, with static legacy workspace HTML/Seroval fallback.
+// API-key mode retains the Zen usage endpoint. Source contracts are documented in docs/.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { parseOpenCodeUsage, openCodeWorkspaceIDs, validWorkspaceID } from './provider-web-parsing.mjs';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
-const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.oc-go-usage-auth.json');
-const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.oc-go-usage-cache.json');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
+const AUTH_FILE = process.env.TOKENHUD_AUTH_FILE || process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.oc-go-usage-auth.json');
+const CACHE_FILE = process.env.TOKENHUD_CACHE_FILE || process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.oc-go-usage-cache.json');
 const TTL_MS = 60_000;
-const verbose = !!process.env.USAGE_VERBOSE;
-
-const readJson = (p, def) => {
-  try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return def; }
-};
-const writeCache = (obj) => {
+const BASE = 'https://opencode.ai';
+// Public Solid server-function selector, not a credential. Kept only for legacy workspace discovery.
+const WORKSPACES_FUNCTION = 'def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f';
+const deadline = Date.now() + 18000;
+const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
+const writeCache = obj => {
+  if (process.env.TOKENHUD_STDOUT_ONLY === '1') { process.stdout.write(JSON.stringify(obj) + '\n'); return; }
   try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2)); } catch {}
 };
-
-const DEFAULT_URL = 'https://opencode.ai/zen/go/v1/usage';
-
-function main() {
-  const auth = readJson(AUTH_FILE, null);
-  if (!auth || !auth.refreshApiKey) {
-    writeCache({ error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS });
-    if (verbose) console.error('[oc-go-provider] missing refreshApiKey');
-    return;
-  }
-  const url = auth.apiUrl && auth.apiUrl.includes('/usage') ? auth.apiUrl : DEFAULT_URL;
-  const r = spawnSync('curl', [
-    '-s', '--max-time', '10',
-    '-H', `Authorization: Bearer ${auth.refreshApiKey}`,
-    '-w', '\n%{http_code}',
-    url,
-  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  if (r.error || r.status !== 0 || !r.stdout) {
-    writeCache({ error: 'network', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error('[oc-go-provider] curl failed:', r.error?.message || ('exit ' + r.status));
-    return;
-  }
-  // 拆 HTTP 状态与体 (P1-3: 429 → ratelimit 退避)
-  const out = r.stdout.trimEnd();
-  const nl = out.lastIndexOf('\n');
-  const status = parseInt(out.slice(nl + 1).trim(), 10);
-  if (status === 401 || status === 403) {
-    writeCache({ error: 'auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error('[oc-go-provider] HTTP', status);
-    return;
-  }
-  if (status === 429) {
-    writeCache({ error: 'ratelimit', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error('[oc-go-provider] HTTP 429');
-    return;
-  }
-  let data;
-  try { data = JSON.parse(out.slice(0, nl)); } catch {
-    writeCache({ error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error('[oc-go-provider] non-JSON:', r.stdout.slice(0, 120));
-    return;
-  }
-  const u = data && data.usage;
-  if (!u) {
-    writeCache({ error: 'parse', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
-    if (verbose) console.error('[oc-go-provider] no usage:', r.stdout.slice(0, 120));
-    return;
-  }
-  const bucket = (b) => !b ? null : {
-    used_percentage: typeof b.percent === 'number' ? b.percent : null,
-    resets_at: b.resetsAt ? Math.floor(Date.parse(b.resetsAt) / 1000) : null,
-  };
-  // P1-11 动态窗口: rolling/weekly/monthly 原生窗口 (amount/limit 有则带 USD)
-  const win = (label, b) => {
-    if (!b) return null;
-    const w = { label, ...bucket(b) };
-    if (typeof b.used === 'number') w.amount = b.used;
-    if (typeof b.total === 'number') w.limit = b.total;
-    if (w.amount != null && w.limit != null) w.unit = 'USD';
-    return w;
-  };
-  const windows = [win('滚动', u.rolling), win('本周', u.weekly), win('本月', u.monthly)].filter(Boolean);
-  writeCache({
-    five_hour: bucket(u.rolling),
-    seven_day: bucket(u.weekly),
-    monthly: bucket(u.monthly),
-    windows,
-    generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false,
-  });
-  if (verbose) console.error('[oc-go-provider] ok');
+const fail = error => {
+  const previous = readJson(CACHE_FILE);
+  writeCache({ ...(previous || {}), error, stale: true, lastAttemptAt: Date.now(), ttlMs: TTL_MS });
+};
+function request(url, credential, extraHeaders = []) {
+  const remaining = Math.min(6, (deadline - Date.now()) / 1000);
+  if (remaining <= 0) return { error: 'network' };
+  const result = spawnSync(process.env.TOKENHUD_CURL || '/usr/bin/curl', [
+    '-sS', '--connect-timeout', String(Math.min(3, remaining)), '--max-time', String(remaining), '--proto', '=https,http',
+    '-H', credential, '-H', 'Accept: application/json,text/html;q=0.9,*/*;q=0.8',
+    '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143.0.0.0 Safari/537.36',
+    ...extraHeaders.flatMap(value => ['-H', value]),
+    '-w', '\n%{http_code}', '--url', url,
+  ], { encoding: 'utf8', timeout: Math.ceil(remaining * 1000) + 100, killSignal: 'SIGKILL',
+    maxBuffer: 2_000_000, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (result.error || result.status !== 0) return { error: 'network' };
+  const separator = result.stdout.lastIndexOf('\n');
+  const status = Number(result.stdout.slice(separator + 1).trim());
+  const text = result.stdout.slice(0, separator);
+  const error = [401, 403, 301, 302, 303, 307, 308].includes(status) ? 'auth'
+    : status === 429 ? 'ratelimit' : status === 200 ? null : 'network';
+  return { status, text, error };
 }
-
+function configuredWorkspace(auth) {
+  const explicit = auth.workspaceID ?? auth.workspaceId;
+  if (validWorkspaceID(explicit)) return explicit;
+  try {
+    const url = new URL(process.env.TOKENHUD_QUERY_URL || auth.queryUrl || auth.apiUrl || BASE);
+    if (url.protocol !== 'https:' || url.hostname !== 'opencode.ai') return null;
+    const id = /^\/(?:workspace|console)\/((?:wrk_|org_)[A-Za-z0-9_-]+)(?:\/|$)/.exec(url.pathname)?.[1];
+    return validWorkspaceID(id) ? id : null;
+  } catch { return null; }
+}
+function cookieUsage(auth, cookie) {
+  const credential = `Cookie: ${cookie}`;
+  const legacyCookie = /(?:^|;\s*)(?:auth|__Host-auth)=/.test(cookie);
+  let workspace = configuredWorkspace(auth);
+  if (!workspace) {
+    const orgs = request(`${BASE}/console/api/orgs`, credential);
+    if (!orgs.error) workspace = openCodeWorkspaceIDs(orgs.text)[0];
+    if (!workspace && !orgs.error && parseOpenCodeUsage(orgs.text)?.error === 'auth') {
+      return { error: 'auth' };
+    }
+    if (!workspace && (!legacyCookie || orgs.error === 'ratelimit' || orgs.error === 'network')) {
+      return { error: orgs.error || 'parse' };
+    }
+    if (!workspace) {
+      const legacy = request(`${BASE}/_server?id=${WORKSPACES_FUNCTION}`, credential, [
+        `X-Server-Id: ${WORKSPACES_FUNCTION}`, `X-Server-Instance: server-fn:${randomUUID()}`,
+        `Origin: ${BASE}`, `Referer: ${BASE}`,
+      ]);
+      if (legacy.error) return { error: legacy.error };
+      workspace = openCodeWorkspaceIDs(legacy.text)[0];
+      if (!workspace) return { error: parseOpenCodeUsage(legacy.text)?.error || 'parse' };
+    }
+  }
+  const consoleResult = request(`${BASE}/console/api/go/status`, credential, [`x-org-id: ${workspace}`]);
+  if (!consoleResult.error) {
+    const usage = parseOpenCodeUsage(consoleResult.text);
+    if (usage) return usage;
+  }
+  if (!legacyCookie || !workspace.startsWith('wrk_') || consoleResult.error === 'ratelimit'
+      || (consoleResult.error === 'network' && consoleResult.status !== 404)) {
+    return { error: consoleResult.error || 'parse' };
+  }
+  const legacy = request(`${BASE}/workspace/${workspace}/go`, credential);
+  if (legacy.error) return { error: legacy.error };
+  return parseOpenCodeUsage(legacy.text) || { error: 'parse' };
+}
+function main() {
+  const auth = readJson(AUTH_FILE) || {};
+  const cookie = String(auth.cookieAuth || '').trim();
+  const key = String(auth.queryKey ?? auth.refreshApiKey ?? '').trim();
+  if ((!cookie && !key) || /[\r\n]/.test(cookie || key)) { fail('no-auth'); return; }
+  let usage;
+  if (cookie) usage = cookieUsage(auth, cookie);
+  else {
+    const url = process.env.TOKENHUD_QUERY_URL || auth.queryUrl || auth.apiUrl || `${BASE}/zen/go/v1/usage`;
+    const result = request(url, `Authorization: Bearer ${key}`);
+    usage = result.error ? { error: result.error } : parseOpenCodeUsage(result.text);
+  }
+  if (!usage || usage.error) { fail(usage?.error || 'parse'); return; }
+  writeCache({ ...usage, generatedAt: Date.now(), ttlMs: TTL_MS, error: null, stale: false });
+}
 main();

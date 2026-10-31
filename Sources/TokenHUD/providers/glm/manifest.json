@@ -14,7 +14,7 @@
   "label": "GLM",
   "name": "CC-GLM",
   "needsCredential": true,
-  "queryAuth": "bearer",
+  "queryAuth": "jwt",
   "refreshAuth": "bearer",
   "refreshHeader": "Authorization: Bearer <key>\nanthropic-version: 2023-06-01",
   "refreshProtocol": "anthropic",

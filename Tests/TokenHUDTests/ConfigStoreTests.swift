@@ -37,7 +37,7 @@ struct ConfigStoreTests {
         m.refreshAuth = "cookie"
         let c = ProviderConfigStore.read(authFile: f, manifest: m)
         #expect(c.queryCookie == "sid=1")
-        #expect(c.refreshKey == "sid=1") // refreshAuth=cookie 用同一 cookie
+        #expect(c.refreshKey == "rk") // 显式调用凭证不被额度 Cookie 覆盖
     }
 
     @Test func readBearerFallsBackToHeader() throws {
@@ -355,7 +355,7 @@ struct RefreshTriggerTests {
                                                  authStyle: "local", builtin: false))          // 本机凭证不缺
     }
 
-    @Test @MainActor func incompleteSaveForcesAutoQueryOff() throws {
+    @Test @MainActor func incompleteSavePausesCallsWithoutDisablingAccount() throws {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("th-inc-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -370,17 +370,18 @@ struct RefreshTriggerTests {
         let model = SettingsModel(engine: engine, hudDir: hudDir, userDir: userDir,
                                   settingsURL: tmp.appendingPathComponent("settings.json"), bundleDir: nil,
                                   defaults: UserDefaults(suiteName: "th-model-\(UUID().uuidString)")!)
-        // 缺 key 的通用自定义账号 (url 合法) → 可保存, autoQuery 被强制 off
+        // 缺调用凭证可以保存为未配置账号，不应连带停用账号。
         var v = DraftValues()
         v.name = "半配置号"
         v.url = "https://api.example.com"
         v.key = ""            // 执行性缺失
-        v.autoQuery = true    // 用户开着 → 保存时强制关
+        v.autoQuery = true    // 账号启用与调用是否就绪独立
         model.draft = Draft(slug: nil, template: nil, isNew: true, values: v, base: DraftValues())
         model.save()
         #expect(model.topError.isEmpty)                 // 结构无错 → 保存放行
         #expect(engine.allPlugins.contains { $0.slug == "ban-zhi-hao" || $0.manifest.fullName.contains("半配置") })
-        #expect(engine.disabledSlugs.contains(engine.allPlugins[0].slug))  // autoQuery 已置 off
+        #expect(!engine.disabledSlugs.contains(engine.allPlugins[0].slug)) // 保留账号启用意图
+        #expect(engine.triggerDisabledSlugs.contains(engine.allPlugins[0].slug))
         let row = model.accounts.first
         #expect(row?.isConfigured == false)             // 状态 = 未配置
     }
@@ -502,7 +503,7 @@ struct ConfigP2Tests {
         c.queryKey = "k"; c.refreshKey = "k"
         try ProviderConfigStore.write(c, manifest: m, to: f)
         let obj = try readBack(f)
-        #expect(obj["schemaVersion"] as? Int == 1)
+        #expect(obj["schemaVersion"] as? Int == 2)
     }
 
     @Test func defaultTestPromptAndMaxTokens() throws {

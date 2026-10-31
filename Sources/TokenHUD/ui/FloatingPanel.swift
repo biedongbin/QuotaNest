@@ -237,7 +237,8 @@ final class PanelController: ObservableObject {
                 // 快捷入口只查余额, 不发模型调用 (不隐式消费额度)
                 Task { await self.engine.refreshBalancesOnly() }
             },
-            onOpenSettings: { [weak self] in self?.openSettings() }
+            onOpenSettings: { [weak self] in self?.openSettings() },
+            operationModel: SettingsWindowManager.shared.modelForQuery()
         ))
     }
 }

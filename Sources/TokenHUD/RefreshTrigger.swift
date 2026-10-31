@@ -44,9 +44,8 @@ enum RefreshTrigger {
         if config.testModel.isEmpty {
             config.testModel = manifest.refreshModel
         }
-        // P2-6: manifest.testPrompt 优先于 auth 值/缺省 (内置供应商声明值胜出)
-        if let mp = manifest.testPrompt, !mp.isEmpty {
-            config.testPrompt = mp
+        if config.testPrompt.isEmpty {
+            config.testPrompt = manifest.testPrompt ?? ProviderConfig.defaultPrompt
         }
         return await testRefresh(config: config)
     }

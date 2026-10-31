@@ -10,9 +10,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
-const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.cline-usage-auth.json');
-const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.cline-usage-cache.json');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
+const AUTH_FILE = process.env.TOKENHUD_AUTH_FILE || process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.cline-usage-auth.json');
+const CACHE_FILE = process.env.TOKENHUD_CACHE_FILE || process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.cline-usage-cache.json');
 const API_BASE = 'https://api.cline.bot';
 const TIMEOUT_S = 8;   // 单次请求上限; 最多两次 = 16s, 留余量给 ProviderRunner 20s 上限
 const TTL_MS = 60_000;
@@ -28,6 +28,10 @@ const readJson = (p) => {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 };
 const writeCache = (obj) => {
+  if (process.env.TOKENHUD_STDOUT_ONLY === '1') {
+    process.stdout.write(JSON.stringify(obj) + '\n');
+    return;
+  }
   try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2)); } catch {}
 };
 // 失败通用出口: 旧缓存有桶则保留 (UI 用上一轮), 仅无旧数据才写错误态

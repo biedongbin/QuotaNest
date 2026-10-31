@@ -767,7 +767,7 @@ struct DataEngineTests {
         #expect(entries["acc1"] != nil)
     }
 
-    @Test @MainActor func hudSyncRejectsDifferentBuiltinInstanceWithoutChangingFiles() throws {
+    @Test @MainActor func hudSyncUsesIndependentCacheForSecondBuiltinAccount() throws {
         let (engine, tmp, hudDir, _) = makeEngine("hud-builtin-instance")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let settings = tmp.appendingPathComponent("settings.json")
@@ -782,9 +782,10 @@ struct DataEngineTests {
             .write(to: second.appendingPathComponent("manifest.json"))
         engine.reloadRegistry()
         let result = engine.writeEnvsForHudSync()
-        if case .success = result { Issue.record("非默认实例不能读取默认账号缓存") }
-        #expect(try Data(contentsOf: settings) == settingsData)
-        #expect(try Data(contentsOf: envsURL) == envsData)
+        if case .failure(let error) = result { Issue.record("独立账号应能同步：\(error)") }
+        let projected = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: envsURL))
+        #expect(projected["cline-2"]?.cache == hudDir.appendingPathComponent(".cline-2-usage-cache.json").path)
+        #expect(projected["Cline"] == nil)
         // 已隐藏的第二账号不能阻止其他账号正常同步。
         engine.setTracking("cline-2", enabled: false)
         if case .failure(let error) = engine.writeEnvsForHudSync() {
@@ -792,7 +793,7 @@ struct DataEngineTests {
         }
     }
 
-    @Test @MainActor func hudSyncRejectsCustomBuiltinNameWithDifferentCache() throws {
+    @Test @MainActor func hudSyncUsesCustomCacheEvenWhenNameMatchesBuiltin() throws {
         let (engine, tmp, hudDir, _) = makeEngine("hud-custom-builtin")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let settings = tmp.appendingPathComponent("settings.json")
@@ -808,16 +809,17 @@ struct DataEngineTests {
             .write(to: customDir.appendingPathComponent("manifest.json"))
         engine.reloadRegistry()
 
-        if case .success = engine.writeEnvsForHudSync() { Issue.record("自定义同名账号不能读取内置缓存") }
-        #expect(try Data(contentsOf: settings) == originalSettings)
-        #expect(try Data(contentsOf: envsURL) == originalEnvs)
+        if case .failure(let error) = engine.writeEnvsForHudSync() { Issue.record("自定义账号应能同步：\(error)") }
+        let projected = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: envsURL))
+        #expect(projected["custom-cline"]?.cache == hudDir.appendingPathComponent(".custom-usage-cache.json").path)
+        #expect(projected["Cline"] == nil)
         // 冲突账号已关闭 HUD 时，不应阻断其他账号同步。
         if case .failure(let error) = engine.setHudHidden("custom-cline", hidden: true) {
             Issue.record("未选中的冲突账号不应阻断同步：\(error.localizedDescription)")
         }
     }
 
-    @Test @MainActor func hudSyncRejectsDefaultSlugWithChangedCache() throws {
+    @Test @MainActor func hudSyncProjectsConfiguredCacheForDefaultAccount() throws {
         let (engine, tmp, hudDir, _) = makeEngine("hud-changed-cache")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let settings = tmp.appendingPathComponent("settings.json")
@@ -834,9 +836,10 @@ struct DataEngineTests {
             .write(to: pluginDir.appendingPathComponent("manifest.json"))
         engine.reloadRegistry()
 
-        if case .success = engine.writeEnvsForHudSync() { Issue.record("默认 slug 也必须检查实际缓存路径") }
-        #expect(try Data(contentsOf: settings) == originalSettings)
-        #expect(try Data(contentsOf: envsURL) == originalEnvs)
+        if case .failure(let error) = engine.writeEnvsForHudSync() { Issue.record("配置的缓存应能同步：\(error)") }
+        let projected = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: envsURL))
+        #expect(projected["cline"]?.cache == hudDir.appendingPathComponent(".changed-usage-cache.json").path)
+        #expect(projected["Cline"] == nil)
         engine.setTracking("cline", enabled: false)
         if case .failure(let error) = engine.writeEnvsForHudSync() {
             Issue.record("停用冲突账号不应阻断同步：\(error.localizedDescription)")
@@ -873,8 +876,8 @@ struct DataEngineTests {
         addPlugin("custom1", stdout: "{}", to: tmp)
         engine.reloadRegistry()
         #expect(engine.hudSyncNames.count == 2)                    // 含内置 CC-X
-        #expect(engine.hudSyncNames.contains("CC-X"))
-        #expect(engine.envsEntryNames == ["custom1"])              // envs entry 仅自定义
+        #expect(engine.hudSyncNames.contains("builtin1"))
+        #expect(engine.envsEntryNames == ["builtin1", "custom1"]) // 内置类型同样使用账号投影
         // 既有合法 ACCOUNT_ENVS (含内置) 保留, 垃圾值滤除
         let settings = tmp.appendingPathComponent("settings.json")
         try? #"{"env":{"ACCOUNT_ENVS":"CC-X,acc-junk,custom1"}}"#
@@ -882,15 +885,16 @@ struct DataEngineTests {
         engine.writeEnvsForHudSync()
         let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any]
         let v = ((obj?["env"] as? [String: Any])?["ACCOUNT_ENVS"] as? String) ?? ""
-        #expect(v == "CC-X,acc-junk,custom1")   // 顺序保留，未知外部条目不擅自移除
-        // envs.json 只含自定义 entry (内置走 registry 硬编码)
+        #expect(v == "CC-X,acc-junk,custom1,builtin1")   // 顺序保留，未知外部条目不擅自移除
+        // 所有 App 账号均写动态 entry，外部选择保留。
         let envs = try JSONDecoder().decode([String: EnvsEntry].self,
                                             from: Data(contentsOf: hudDir.appendingPathComponent("envs.json")))
         #expect(envs.keys.contains("custom1"))
         #expect(!envs.keys.contains("CC-X"))
+        #expect(envs["builtin1"]?.cache == hudDir.appendingPathComponent(".builtin1-usage-cache.json").path)
         // 停用账号不进 keys
         engine.setTracking("custom1", enabled: false)
-        #expect(engine.hudSyncNames == ["CC-X"])
+        #expect(engine.hudSyncNames == ["builtin1"])
     }
 }
 

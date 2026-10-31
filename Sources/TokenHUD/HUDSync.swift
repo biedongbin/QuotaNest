@@ -28,7 +28,7 @@ enum HUDSync {
     /// (内置供应商的 name 由 builtinNames 参数动态收集, 加新内置供应商不再改此清单)
     static let externalBuiltinKeys: Set<String> = ["Claude-Max"]
 
-    /// 与 statusline ENV_REGISTRY 的固定缓存读取契约保持一致；不能让同名账号指向另一份缓存。
+    /// 旧版固定 HUD 名称：仅用于识别并迁移本应用的历史选择键。
     static let builtinCacheFiles: [String: String] = [
         "CC-GLM": ".glm-usage-cache.json",
         "GPT": ".gpt-usage-cache.json",
@@ -37,12 +37,15 @@ enum HUDSync {
         "Cline": ".cline-usage-cache.json",
     ]
 
+    /// 显示名和类型名可重复；HUD 身份始终使用稳定的账号 slug。
+    static func accountKey(_ plugin: PluginProvider) -> String { plugin.slug }
+
     static func envsDict(plugins: [PluginProvider], hudDir: URL,
                          builtinNames: Set<String>) -> [String: EnvsEntry] {
         var d: [String: EnvsEntry] = [:]
-        for p in plugins where p.manifest.isEnabled && !builtinNames.contains(p.manifest.name) {
-            d[p.manifest.name] = EnvsEntry(
-                label: p.manifest.label,
+        for p in plugins where p.manifest.isEnabled {
+            d[accountKey(p)] = EnvsEntry(
+                label: p.manifest.fullName,
                 source: "cache",
                 cache: DataEngine.cachePath(for: p, hudDir: hudDir).path,
                 buckets: p.manifest.buckets)
@@ -117,21 +120,9 @@ enum HUDSync {
     /// 同步前计算两份文件，保留第三方条目；后一步失败时恢复前一步原始数据。
     static func sync(plugins: [PluginProvider], hiddenSlugs: Set<String>, disabledSlugs: Set<String>,
                      removingManagedNames: Set<String> = [], hudDir: URL, settingsURL: URL) throws {
-        let managedNames = Set(plugins.map(\.manifest.name)).union(removingManagedNames)
+        var managedNames = Set(plugins.map(\.slug)).union(removingManagedNames)
         let selected = plugins.filter {
             $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hiddenSlugs.contains($0.slug)
-        }
-        let counts = Dictionary(grouping: selected, by: \.manifest.name).filter { $0.value.count > 1 }
-        let mismatchedBuiltinCache = selected.contains { plugin in
-            guard let filename = builtinCacheFiles[plugin.manifest.name] else { return false }
-            let expected = hudDir.appendingPathComponent(filename).standardizedFileURL.resolvingSymlinksInPath()
-            let actual = DataEngine.cachePath(for: plugin, hudDir: hudDir)
-                .standardizedFileURL.resolvingSymlinksInPath()
-            return actual != expected
-        }
-        guard counts.isEmpty, !mismatchedBuiltinCache else {
-            throw NSError(domain: "HUDSync", code: 4,
-                          userInfo: [NSLocalizedDescriptionKey: "此账号的 HUD 标识冲突，尚未同步"])
         }
         let settings = try Data(contentsOf: settingsURL)
         guard let object = try JSONSerialization.jsonObject(with: settings) as? [String: Any] else {
@@ -142,7 +133,7 @@ enum HUDSync {
             ?? (object["env"] as? [String: Any])?["ACCOUNT_ENV"] as? String
         let currentNames = (currentEnv ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        let selectedNames = selected.map(\.manifest.name)
+        let selectedNames = selected.map(accountKey)
         let envsURL = hudDir.appendingPathComponent("envs.json")
         let fileManager = FileManager.default
         let oldEnvs = fileManager.fileExists(atPath: envsURL.path) ? try Data(contentsOf: envsURL) : nil
@@ -150,8 +141,26 @@ enum HUDSync {
         if let oldEnvs {
             entries = try JSONDecoder().decode([String: EnvsEntry].self, from: oldEnvs)
         }
-        // 未注册的原有键也保留，避免误删其他工具的用户选择。
-        let newNames = currentNames.filter { !managedNames.contains($0) || selectedNames.contains($0) }
+        for p in plugins {
+            let ownedLegacyEntry = entries[p.manifest.name]?.cache == DataEngine.cachePath(for: p, hudDir: hudDir).path
+            if builtinCacheFiles[p.manifest.name] != nil || ownedLegacyEntry {
+                managedNames.insert(p.manifest.name)
+            }
+        }
+        // 旧版按类型名选择：优先映射到缺省实例，其余同名账号各自追加。
+        var aliases: [String: String] = [:]
+        for p in plugins where managedNames.contains(p.manifest.name) {
+            let matching = plugins.filter { $0.manifest.name == p.manifest.name }
+            if matching.count == 1 || p.slug == p.manifest.template {
+                aliases[p.manifest.name] = accountKey(p)
+            }
+        }
+        var newNames: [String] = []
+        for name in currentNames {
+            let key = aliases[name] ?? name
+            guard !managedNames.contains(name) || selectedNames.contains(key) else { continue }
+            if !newNames.contains(key) { newNames.append(key) }
+        }
         let names = newNames + selectedNames.filter { !newNames.contains($0) }
         let settingsOutput = try settingsData(settings, accountEnvs: names.joined(separator: ","),
                                               statuslinePath: hudDir.appendingPathComponent("statusline.mjs").path)

@@ -8,251 +8,124 @@ struct FloatingView: View {
     var onQuit: () -> Void = {}
     var onRefreshAll: () -> Void = {}
     var onOpenSettings: () -> Void = {}
-
+    var operationModel: SettingsModel? = nil
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var style: PanelStyle { controller.style }
-    private var bgOpacity: Double { controller.bgOpacity }
-    private var textOpacity: Double { controller.textOpacity }
-    /// v0.2 「悬浮窗显示」: 关闭的账号不出现在悬浮窗
-    private var visibleStates: [ProviderState] {
-        engine.states.filter { st in
-            !engine.disabledSlugs.contains(st.slug) && !engine.floatingHiddenSlugs.contains(st.slug)
-        }
+    private var states: [ProviderState] {
+        engine.states.filter { !engine.floatingHiddenSlugs.contains($0.slug) }
     }
-
     var body: some View {
-        VStack(spacing: 6) {
-            if expanded {
-                VStack(alignment: .leading, spacing: style == .compact ? 2 : 6) {
-                    ForEach(visibleStates) { st in
-                        providerCard(st)
-                    }
-                    HStack {
-                        Text("刷新 \(engine.lastRefresh.map { Self.time($0) } ?? "—")")
-                            .font(.caption2).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("收起", action: onToggle).buttonStyle(.plain)
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(8)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { onToggle() } // 展开态双击收起
-            } else {
-                HStack(spacing: 10) {
-                    ForEach(visibleStates) { st in
-                        HStack(spacing: 4) {
-                            ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
-                                          accent: brandColor(st.manifest.accent), size: 16)
-                            PctText(pct: st.worstPct, size: 13, weight: .bold)
-                        }
-                    }
-                    Image(systemName: "chevron.down")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                        .onTapGesture(count: 2) { onToggle() }
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { onToggle() }
-                .help("双击展开明细, 右键菜单")
-            }
-        }
-        .opacity(textOpacity)
-        .background(panelBackground)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: style)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: bgOpacity)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: textOpacity)
-        // 右键菜单: 关闭悬浮窗 / 刷新余额 / 供应商管理 / 退出
-        .contextMenu {
-            Button("关闭悬浮窗") { controller.toggle() }
-            Button("刷新余额") { onRefreshAll() }
-            Button("设置中心…") { onOpenSettings() }
-            Divider()
-            Button("退出") { onQuit() }
-        }
-    }
-
-    /// 按风格渲染背景; 边框用 primary 自适应明暗 (HIG 9.4)
-    /// reduceTransparency 时弃 material 用实底 (HIG 9.5)
-    @ViewBuilder
-    private var panelBackground: some View {
-        switch style {
-        case .card:
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1.0 : bgOpacity))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
-                .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
-        case .glass:
-            RoundedRectangle(cornerRadius: 18)
-                .fill(reduceTransparency
-                      ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
-                      : AnyShapeStyle(.ultraThinMaterial.opacity(bgOpacity)))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.2)))
-                .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
-        case .compact:
-            RoundedRectangle(cornerRadius: 8)
-                .fill(reduceTransparency
-                      ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
-                      : AnyShapeStyle(.thinMaterial.opacity(bgOpacity)))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.08)))
-        case .list:
-            RoundedRectangle(cornerRadius: 12)
-                .fill(reduceTransparency
-                      ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
-                      : AnyShapeStyle(.thinMaterial.opacity(bgOpacity)))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.1)))
-        }
-    }
-
-    /// 单家区块: 按风格渲染布局结构 (共用 ProviderBadge/PctText/CountdownChip 设计零件)
-    @ViewBuilder
-    private func providerCard(_ st: ProviderState) -> some View {
-        switch style {
-        case .card: cardCard(st)
-        case .glass: glassRow(st)
-        case .compact: compactRow(st)
-        case .list: listBlock(st)
-        }
-    }
-
-    /// 头行: 徽标 + 名称 + 收藏 (四风格通用)
-    private func headerRow(_ st: ProviderState, badgeSize: CGFloat) -> some View {
-        HStack(spacing: 7) {
-            ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
-                          accent: brandColor(st.manifest.accent), size: badgeSize)
-            Text(st.manifest.fullName)
-                .font(.system(.caption, design: .rounded).weight(.semibold))
-            Spacer()
-            starButton(st)
-        }
-    }
-
-    /// 桶行: 标签 + 进度 + 数字 + 倒计时 chip (四风格通用)
-    private func bucketRow(_ r: MiniRow, barWidth: CGFloat, barHeight: CGFloat) -> some View {
-        HStack(spacing: 6) {
-            Text(r.label)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, alignment: .leading)
-            UsageBar(pct: r.bucket.usedPercentage)
-                .frame(width: barWidth, height: barHeight)
-            PctText(pct: r.bucket.usedPercentage, size: 12, weight: .semibold)
-                .frame(width: 38, alignment: .trailing)
-            if let rt = resetText(r.bucket) {
-                CountdownChip(text: rt)
-            }
-        }
-    }
-
-    /// 卡片风格: 每供应商一张圆角卡片
-    private func cardCard(_ st: ProviderState) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            headerRow(st, badgeSize: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(zipBucketRows(st), id: \.label) { r in
-                    bucketRow(r, barWidth: 96, barHeight: 6)
-                }
-            }
-            .padding(.leading, 31) // 与徽标右侧文字对齐
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
-        )
-    }
-
-    /// 玻璃风格: 无卡底, hairline 分隔
-    private func glassRow(_ st: ProviderState) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            headerRow(st, badgeSize: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(zipBucketRows(st), id: \.label) { r in
-                    bucketRow(r, barWidth: 96, barHeight: 5)
-                }
-            }
-            .padding(.leading, 31)
-        }
-        .padding(.vertical, 6)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
-        }
-    }
-
-    /// 紧凑风格: 单行 (徽标 + 每桶 点条+数字+chip 横排), 数据密度最高
-    private func compactRow(_ st: ProviderState) -> some View {
-        HStack(spacing: 6) {
-            ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
-                          accent: brandColor(st.manifest.accent), size: 18)
-            ForEach(zipBucketRows(st), id: \.label) { r in
-                HStack(spacing: 3) {
-                    Text(r.label).font(.system(size: 9, design: .rounded)).foregroundStyle(.tertiary)
-                    DotBar(pct: r.bucket.usedPercentage)
-                    PctText(pct: r.bucket.usedPercentage, size: 12, weight: .semibold)
-                    if let rt = resetText(r.bucket) {
-                        CountdownChip(text: rt)
-                    }
-                }
-            }
-            Spacer()
-            starButton(st)
-        }
-        .padding(.vertical, 2)
-    }
-
-    /// 列表风格: 纵列无底, 最省空间
-    private func listBlock(_ st: ProviderState) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                ProviderBadge(icon: st.manifest.icon, label: st.manifest.label,
-                              accent: brandColor(st.manifest.accent), size: 20)
-                Text(st.manifest.fullName)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "circle.grid.2x2.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+                Text("TokenHUD").font(.caption.weight(.semibold))
                 Spacer()
-                starButton(st)
+                Button(action: onToggle) { Image(systemName: expanded ? "chevron.up" : "chevron.down") }
+                    .accessibilityLabel(expanded ? "收起悬浮明细" : "展开悬浮明细")
+                    .help(expanded ? "收起明细" : "展开明细")
+                Button { controller.hide() } label: { Image(systemName: "xmark") }
+                    .accessibilityLabel("关闭悬浮速览").help("关闭悬浮速览")
             }
-            ForEach(zipBucketRows(st), id: \.label) { r in
-                bucketRow(r, barWidth: 84, barHeight: 5)
-                    .padding(.leading, 2)
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2, perform: onToggle)
+            if expanded {
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        if states.isEmpty { Text("暂无显示中的账号").foregroundStyle(.secondary) }
+                        ForEach(states) { state in floatingAccount(state) }
+                    }.padding(12)
+                }
+                .frame(height: 290)
+                Divider()
+                HStack {
+                    Button("管理账号…", action: onOpenSettings)
+                    Spacer()
+                    Button("刷新额度", action: onRefreshAll).disabled(engine.isRefreshingAll)
+                }.buttonStyle(.borderless).font(.caption).padding(10)
+            } else {
+                HStack(spacing: 8) {
+                    if let state = states.first {
+                        let snapshot = QuotaPresentation(state: state)
+                        Text(state.manifest.fullName).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if state.manifest.supportsQuota {
+                            Text(snapshot.metrics.first?.value ?? "—").monospacedDigit()
+                            if snapshot.isOld { Text("旧值").foregroundStyle(.secondary) }
+                        } else { Text("API").foregroundStyle(.secondary) }
+                        if states.count > 1 { Text("+\(states.count - 1)").foregroundStyle(.secondary) }
+                    } else { Text("暂无账号").foregroundStyle(.secondary) }
+                }
+                .font(.caption).padding(.horizontal, 12).padding(.bottom, 10)
+                .contentShape(Rectangle()).onTapGesture(count: 2, perform: onToggle)
             }
         }
-    }
-
-    private func starButton(_ st: ProviderState) -> some View {
-        Button {
-            engine.setIconProvider(engine.iconProviderSlug == st.slug ? nil : st.slug)
-        } label: {
-            Image(systemName: engine.iconProviderSlug == st.slug ? "star.fill" : "star")
-                .font(.caption2)
-                .foregroundStyle(engine.iconProviderSlug == st.slug ? .yellow : .secondary)
+        .frame(width: 320)
+        .foregroundStyle(.primary)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.regularMaterial))
+                .opacity(reduceTransparency ? 1 : max(0.45, controller.bgOpacity))
         }
-        .buttonStyle(.plain)
-        .help("设为图标默认显示")
-        .accessibilityLabel(engine.iconProviderSlug == st.slug ? "取消图标默认显示" : "设为图标默认显示")
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.15)))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contextMenu {
+            Button(expanded ? "收起明细" : "展开明细", action: onToggle)
+            Button("关闭悬浮速览") { controller.hide() }
+            Divider()
+            Button("刷新额度", action: onRefreshAll)
+            Button("管理账号…", action: onOpenSettings)
+            Divider()
+            Button("退出 TokenHUD", action: onQuit)
+        }
     }
-
-    /// 重置倒计时文本 (如 "3h15m"); 无值则 nil
-    private func resetText(_ bucket: Bucket) -> String? {
-        HUDFmt.resetCountdown(bucket.resetsAt, now: Date())
+    private func floatingAccount(_ state: ProviderState) -> some View {
+        let snapshot = QuotaPresentation(state: state)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Button { SettingsWindowManager.shared.showAccount(state.slug) } label: {
+                    Text(state.manifest.fullName).font(.callout.weight(.medium)).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("打开此账号")
+                if state.manifest.supportsQuota,
+                   let model = operationModel {
+                    FloatingQueryAction(model: model, slug: state.slug, name: state.manifest.fullName)
+                }
+            }
+            if state.manifest.supportsQuota {
+                ForEach(snapshot.metrics) { metric in QuotaMetricView(metric: metric, old: snapshot.isOld, compact: true) }
+                Text(snapshot.status).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("仅 API 调用").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .contextMenu {
+            Button("打开账号") { SettingsWindowManager.shared.showAccount(state.slug) }
+            Button("查询额度") { SettingsWindowManager.shared.modelForQuery()?.query(state.slug) }
+                .disabled(!state.manifest.supportsQuota)
+            Divider()
+            Button("关闭悬浮速览") { controller.hide() }
+            Button("管理账号…", action: onOpenSettings)
+        }
     }
-
-    /// 最后刷新时间 HH:mm:ss (不随秒数重渲染, 避免"0s前"卡住)
-    static func time(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f.string(from: date)
-    }
+    static func time(_ date: Date) -> String { date.formatted(.dateTime.hour().minute().second()) }
 }
 
-struct MiniRow { let label: String; let bucket: Bucket }
-
-extension FloatingView {
-    func zipBucketRows(_ st: ProviderState) -> [MiniRow] {
-        var out: [MiniRow] = []
-        if let b = st.cache?.fiveHour, let l = st.manifest.buckets["five_hour"] { out.append(.init(label: l, bucket: b)) }
-        if let b = st.cache?.sevenDay, let l = st.manifest.buckets["seven_day"] { out.append(.init(label: l, bucket: b)) }
-        if let b = st.cache?.monthly, let l = st.manifest.buckets["monthly"] { out.append(.init(label: l, bucket: b)) }
-        return out
+private struct FloatingQueryAction: View {
+    @ObservedObject var model: SettingsModel
+    let slug: String
+    let name: String
+    var body: some View {
+        Group {
+            if model.running.contains(slug) {
+                ProgressView().controlSize(.mini).accessibilityLabel("正在查询 \(name)")
+            } else {
+                Button { model.query(slug) } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+                    .disabled(model.row(slug).map { !model.quotaConfigured($0) } ?? true)
+                    .accessibilityLabel("查询 \(name) 的额度")
+            }
+        }
     }
 }

@@ -58,7 +58,7 @@ enum SettingsValidation {
         switch intent {
         case .clear: return ""
         case .replace:
-            let k = draftKey.trimmingCharacters(in: .whitespaces)
+            let k = draftKey.trimmingCharacters(in: .whitespacesAndNewlines)
             return (k.isEmpty && !existingKey.isEmpty) ? nil : k
         }
     }
@@ -113,7 +113,7 @@ enum CapabilityStatus: Equatable {
     /// 额度查询能力: 有 queryUrl/cacheFile = 可查 (configured);
     /// 通用自定义模板无解析适配 = notIntegrated (App 未接, 非服务不支持)
     static func quota(manifest: ProviderManifest) -> CapabilityStatus {
-        if manifest.queryUrl != nil || manifest.cacheFile != nil { return .configured }
+        if manifest.supportsQuota { return .configured }
         return .notIntegrated
     }
 
@@ -142,6 +142,12 @@ struct DraftValues: Equatable {
     var times: [String] = []
     /// P1-9 显式清除 Key 意图 (确认后置位); 空输入 = 保持原值, 不置位
     var clearKeyIntent = false
+    var queryURL = ""
+    var queryKey = ""
+    var queryToken = ""
+    var queryCookie = ""
+    var quotaMode = "none"
+    var clearQueryKeyIntent = false
 }
 
 struct Draft: Equatable {
@@ -182,7 +188,7 @@ struct AccountRow: Identifiable {
     var id: String { plugin.slug }
     var name: String { plugin.manifest.fullName }
     /// 有 queryUrl = 可查额度 (GPT/Cline 也有); 脚本型实例由 fetch.sh 直查, 由 cacheFile 声明
-    var canQuery: Bool { plugin.manifest.queryUrl != nil || plugin.manifest.cacheFile != nil }
+    var canQuery: Bool { plugin.manifest.supportsQuota }
     /// 有 refreshUrl = 可定时调用
     var canCall: Bool { plugin.manifest.refreshUrl != nil }
     /// 模板实例 = 内置 (地址由模板提供)
@@ -477,15 +483,31 @@ final class SettingsModel: ObservableObject {
     /// P1-10 执行性配置完整判定 (静态, 供 AccountRow 构建)
     nonisolated private static func configured(_ p: PluginProvider,
                                                readConfig: (PluginProvider) -> ProviderConfig) -> Bool {
-        guard p.manifest.authStyle == "apikey" else { return true }  // 本机凭证型不缺配置
         let cfg = readConfig(p)
-        let key = cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey
-        if key.isEmpty { return false }
-        // 通用自定义型: url 也必须在 (manifest.queryUrl 或 auth.apiUrl)
-        if p.manifest.template == nil && p.manifest.queryUrl == nil && cfg.queryUrl.isEmpty {
-            return false
+        let callReady = SettingsValidation.isValidURL(cfg.refreshUrl)
+            && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+        let queryReady = Self.queryReady(p.manifest, config: cfg)
+        return callReady || queryReady
+    }
+
+    nonisolated private static func queryReady(_ manifest: ProviderManifest, config: ProviderConfig) -> Bool {
+        guard manifest.supportsQuota else { return false }
+        if config.quotaMode == "endpoint", !SettingsValidation.isValidURL(config.queryUrl) { return false }
+        switch manifest.queryAuth {
+        case "jwt": return !config.queryToken.isEmpty
+        case "cookie": return !config.queryCookie.isEmpty
+        case "header": return true
+        default: return !config.queryKey.isEmpty || !config.queryCookie.isEmpty
         }
-        return true
+    }
+
+    func callConfigured(_ row: AccountRow) -> Bool {
+        let cfg = readConfig(row.plugin)
+        return SettingsValidation.isValidURL(cfg.refreshUrl) && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+    }
+
+    func quotaConfigured(_ row: AccountRow) -> Bool {
+        Self.queryReady(row.plugin.manifest, config: readConfig(row.plugin))
     }
 
     /// 关闭自动查询后账号不在 states 里, 但缓存文件仍在 → 直接读盘 (手动查询结果照常显示)
@@ -606,40 +628,66 @@ final class SettingsModel: ObservableObject {
 
     func startEdit() {
         guard let row = current else { return }
-        let p = row.plugin
-        let cfg = readConfig(p)
-        let independentCallKey = hasIndependentCallKey(config: cfg, provider: p)
-        let existingKey = independentCallKey ? cfg.queryKey : (cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey)
-        let v = DraftValues(name: p.manifest.fullName,
-                            url: p.manifest.queryUrl ?? cfg.queryUrl,
-                            key: existingKey.isEmpty ? "" : existingKey,
-                            model: cfg.testModel.isEmpty ? p.manifest.refreshModel : cfg.testModel,
-                            prompt: cfg.testPrompt,
-                            proto: cfg.refreshProtocol,
-                            autoQuery: !engine.disabledSlugs.contains(p.slug),
-                            autoTrigger: !engine.triggerDisabledSlugs.contains(p.slug)
-                                && p.manifest.refreshUrl != nil,
-                            times: cfg.scheduleTimes)
-        draft = Draft(slug: p.slug, template: p.manifest.template, isNew: false, values: v, base: v)
-        draft?.hasExistingKey = !existingKey.isEmpty
+        let cfg = readConfig(row.plugin)
+        var v = DraftValues(name: row.name, url: cfg.apiBaseURL, key: cfg.refreshKey,
+                            model: cfg.testModel, prompt: cfg.testPrompt, proto: cfg.refreshProtocol,
+                            autoQuery: row.enabled,
+                            autoTrigger: !engine.triggerDisabledSlugs.contains(row.id)
+                                && !cfg.scheduleTimes.isEmpty && row.canCall, times: cfg.scheduleTimes)
+        v.queryURL = cfg.queryUrl
+        v.queryKey = cfg.queryKey
+        v.queryToken = cfg.queryToken
+        v.queryCookie = cfg.queryCookie
+        v.quotaMode = cfg.quotaMode
+        draft = Draft(slug: row.id, template: row.plugin.manifest.template, isNew: false, values: v, base: v)
+        draft?.hasExistingKey = !cfg.refreshKey.isEmpty
         errors = [:]; topError = ""
+    }
+
+    func duplicateAccount(_ slug: String) {
+        guard leaveGuard(), row(slug) != nil else { return }
+        selected = slug
+        startEdit()
+        guard var copy = draft else { return }
+        copy.slug = nil
+        copy.isNew = true
+        copy.hasExistingKey = false
+        copy.values.name += " 副本"
+        copy.values.key = ""
+        copy.values.queryKey = ""
+        copy.values.queryToken = ""
+        copy.values.queryCookie = ""
+        copy.values.autoTrigger = false
+        copy.values.clearKeyIntent = false
+        copy.values.clearQueryKeyIntent = false
+        copy.base = DraftValues()
+        draft = copy
+        newDraftTestKey = "new-draft-\(UUID().uuidString)"
+        showingTemplates = false
+        navPage = .detail
+        tab = .config
+        flash("已复制配置，请填写新账号凭证；定时调用保持关闭", error: false)
+    }
+
+    func discardDraft() {
+        clearDraft()
+        showingTemplates = false
+        errors = [:]
+        topError = ""
+        tab = .config
     }
 
     func pickTemplate(_ choice: TemplateChoice) {
         guard leaveGuard() else { return }
         let m = choice.manifest
         newDraftTestKey = "new-draft-\(UUID().uuidString)"
-        // 脚本型模板的查询地址在 auth 模板的 apiUrl 里, 只读展示用
-        let urlHint = m?.queryUrl ?? templateAuthURL(choice.id)
-        let v = DraftValues(name: (m?.fullName ?? choice.label) + " 新账号",
-                            url: urlHint,
-                            key: "",
-                            model: m?.testModel ?? "",
-                            prompt: m?.testPrompt ?? ProviderConfig.defaultPrompt,
-                            proto: m?.refreshProtocol ?? choice.proto ?? "openai",
-                            autoQuery: true,
-                            autoTrigger: false,
-                            times: [])
+        var v = DraftValues(name: (m?.fullName ?? "自定义") + " 新账号",
+                            url: APIEndpoint.baseURL(from: m?.refreshUrl ?? ""), key: "",
+                            model: m?.testModel ?? "", prompt: m?.testPrompt ?? ProviderConfig.defaultPrompt,
+                            proto: m?.refreshProtocol ?? choice.proto ?? "openai", autoQuery: true,
+                            autoTrigger: false, times: [])
+        v.queryURL = m?.queryUrl ?? templateAuthURL(choice.id)
+        v.quotaMode = m == nil ? "none" : "script"
         draft = Draft(slug: nil, template: choice.manifest.map { _ in choice.id }, isNew: true,
                       values: v, base: DraftValues())
         errors = [:]; topError = ""
@@ -701,6 +749,13 @@ final class SettingsModel: ObservableObject {
             name: d.values.name, key: d.values.key, url: d.values.url,
             authStyle: draftAuthStyle(), builtin: draftBuiltin(),
             hasExistingKey: d.isNew ? false : d.hasExistingKey)
+        if !d.values.url.isEmpty && !SettingsValidation.isValidURL(d.values.url) {
+            errs["url"] = "API Base URL 必须是有效的 http(s) 地址"
+        }
+        if d.values.quotaMode == "endpoint" && !d.values.queryURL.isEmpty
+            && !SettingsValidation.isValidURL(d.values.queryURL) {
+            errs["queryURL"] = "额度查询 URL 必须是有效的 http(s) 地址"
+        }
         let triggerErrs = SettingsValidation.triggerErrors(
             times: d.values.times, timeInput: d.timeInput,
             triggerEnabled: d.values.autoTrigger, canCall: draftCanCall())
@@ -740,15 +795,9 @@ final class SettingsModel: ObservableObject {
             }
         }
         do {
-            // P1-10: 执行性缺失可保存 (账号标未配置), 但依赖配置的开关强制 off + 提示
-            let incomplete = SettingsValidation.isIncomplete(
-                name: values.name, key: values.key, url: values.url,
-                authStyle: draftAuthStyle(), builtin: draftBuiltin(),
-                hasExistingKey: d.isNew ? false : d.hasExistingKey)
-            if incomplete {
-                values.autoQuery = false
-                values.autoTrigger = false
-            }
+            // 额度查询可缺失；仅调用配置不完整时暂停消费计划。
+            let incomplete = !draftCallReady(values)
+            if incomplete { values.autoTrigger = false }
             let slug = d.isNew ? try create(values: values, draft: d)
                                : try update(values: values, draft: d)
             engine.reloadRegistry()
@@ -762,7 +811,7 @@ final class SettingsModel: ObservableObject {
             if d.isNew { tab = .config }
             navPage = .detail
             flash(incomplete
-                  ? "已保存（未配置：凭证或地址缺失，自动查询与定时调用已关闭）"
+                  ? "已保存；API 调用配置待补全，定时调用保持关闭"
                   : "已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
             // P1-1: 保存不发请求 (FR-05.2) — 不再触发 forceRefresh; 新快照等 interval 到期由 10s timer 按 isAttemptFresh 判定
         } catch {
@@ -783,112 +832,113 @@ final class SettingsModel: ObservableObject {
         return hudDir.appendingPathComponent(".\(p.slug)-usage-auth.json")
     }
 
+    private func draftConfig(_ values: DraftValues, existing: ProviderConfig? = nil) -> ProviderConfig {
+        var cfg = existing ?? ProviderConfig()
+        let existingCallKey = cfg.refreshKey
+        if let key = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingCallKey,
+            intent: values.clearKeyIntent ? .clear : .replace) { cfg.refreshKey = key }
+        if values.clearQueryKeyIntent {
+            cfg.queryKey = ""; cfg.queryToken = ""; cfg.queryCookie = ""
+        } else {
+            if !values.queryKey.isEmpty || existing == nil { cfg.queryKey = values.queryKey }
+            if !values.queryToken.isEmpty || existing == nil { cfg.queryToken = values.queryToken }
+            if !values.queryCookie.isEmpty || existing == nil { cfg.queryCookie = values.queryCookie }
+        }
+        cfg.apiBaseURL = values.url.trimmingCharacters(in: .whitespacesAndNewlines)
+        cfg.refreshProtocol = values.proto
+        cfg.refreshUrl = APIEndpoint.requestURL(baseURL: cfg.apiBaseURL, protocolName: cfg.refreshProtocol)
+        cfg.refreshHeader = values.proto == "anthropic"
+            ? "x-api-key: <key>\nanthropic-version: 2023-06-01" : "Authorization: Bearer <key>"
+        if existing?.refreshProtocol == values.proto, let header = draftManifest()?.refreshHeader, !header.isEmpty {
+            cfg.refreshHeader = header
+        }
+        cfg.queryUrl = values.queryURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        cfg.quotaMode = values.quotaMode
+        cfg.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        cfg.testPrompt = values.prompt
+        cfg.scheduleTimes = values.times
+        if let manifest = draftManifest(), draftBuiltin() {
+            cfg.refreshUrl = manifest.refreshUrl ?? ""
+            cfg.apiBaseURL = APIEndpoint.baseURL(from: cfg.refreshUrl)
+            cfg.refreshProtocol = manifest.refreshProtocol ?? cfg.refreshProtocol
+            cfg.refreshHeader = manifest.refreshHeader ?? cfg.refreshHeader
+        }
+        return cfg
+    }
+
+    private func draftCallReady(_ values: DraftValues) -> Bool {
+        let existing = draft?.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
+        let cfg = draftConfig(values, existing: existing)
+        return SettingsValidation.isValidURL(cfg.refreshUrl) && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+    }
+
     private func create(values: DraftValues, draft d: Draft) throws -> String {
         let name = values.name.trimmingCharacters(in: .whitespaces)
-        // 凭据型模板: 空 Key 由校验已挡; 此处只保证落盘不写入空替换
         let base = PluginGenerator.slugify(name)
-        let existing = ProviderRegistry.load(bundleDir: bundleDir, userDir: userDir).plugins.map(\.slug)
         var slug = base
         var n = 2
-        while existing.contains(slug) || FileManager.default.fileExists(
+        while engine.allPlugins.contains(where: { $0.slug == slug }) || FileManager.default.fileExists(
             atPath: userDir.appendingPathComponent(slug).path) {
             slug = "\(base)-\(n)"; n += 1
         }
-        var cfg = ProviderConfig()
-        cfg.queryUrl = values.url
-        cfg.queryKey = values.key
-        cfg.refreshKey = values.key
-        cfg.testModel = values.model
-        cfg.testPrompt = values.prompt
-        cfg.refreshProtocol = values.proto
-        cfg.refreshUrl = ProviderImporter.triggerURLForTest(values.url, values.proto)
-        cfg.refreshHeader = genericCallHeader(manifest: nil)
-        cfg.scheduleTimes = values.times
-        if let tslug = d.template, let tmpl = engine.template(bySlug: tslug) {
-            let manifest = try PluginGenerator.instantiate(template: tmpl, slug: slug, name: name,
-                                                           into: userDir, hudDir: hudDir)
-            guard let af = manifest.authFile.map(PluginGenerator.expandPath) else { return slug }
-            var merged = ProviderConfigStore.read(authFile: af, manifest: manifest)
-            merged.queryKey = cfg.queryKey
-            merged.refreshKey = cfg.refreshKey
-            merged.testModel = cfg.testModel
-            merged.testPrompt = cfg.testPrompt
-            merged.scheduleTimes = cfg.scheduleTimes
-            try ProviderConfigStore.write(merged, manifest: manifest, to: af)
-            applyToggles(slug: slug, values: values, manifest: manifest)
-            return slug
+        var cfg = draftConfig(values)
+        let manifest: ProviderManifest
+        if let type = d.template, let template = engine.template(bySlug: type) {
+            manifest = try PluginGenerator.instantiate(template: template, slug: slug, name: name,
+                                                       into: userDir, hudDir: hudDir)
+            let defaults = ProviderConfigStore.read(authFile: PluginGenerator.expandPath(manifest.authFile ?? ""),
+                                                    manifest: manifest)
+            if cfg.queryUrl.isEmpty { cfg.queryUrl = defaults.queryUrl }
+            cfg.quotaMode = "script"
+        } else {
+            manifest = PluginGenerator.customManifest(name: name, config: cfg,
+                authFile: PluginGenerator.authPath(slug: slug, hudDir: hudDir))
+            try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
+                script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
         }
-        // 通用自定义: manifest + one-api 脚本 + auth
-        let authPath = PluginGenerator.authPath(slug: slug, hudDir: hudDir)
-        let manifest = PluginGenerator.customManifest(name: name, config: cfg, authFile: authPath)
-        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
-        try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
-                                        script: PluginGenerator.oneAPIFetchScript(slug: slug), into: userDir)
-        let af = PluginGenerator.expandPath(authPath)
-        try FileManager.default.createDirectory(at: af.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: af.path) {
-            try ProviderConfigStore.createCustom(slug: slug, to: af)
-        }
+        let af = PluginGenerator.expandPath(PluginGenerator.authPath(slug: slug, hudDir: hudDir))
         try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
         applyToggles(slug: slug, values: values, manifest: manifest)
         return slug
     }
 
     private func update(values: DraftValues, draft d: Draft) throws -> String {
-        guard let slug = d.slug,
-              let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return d.slug ?? "" }
-        let name = values.name.trimmingCharacters(in: .whitespaces)
-        guard let af = authURL(p) else { throw NSError(domain: "TokenHUD", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "凭证文件路径缺失"]) }
+        guard let slug = d.slug, let p = engine.allPlugins.first(where: { $0.slug == slug }),
+              let af = authURL(p) else {
+            throw NSError(domain: "TokenHUD", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "账号已不存在，请重新选择"])
+        }
         if p.manifest.authStyle != "apikey",
            !AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
             throw NSError(domain: "TokenHUD", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "凭证来自外部只读文件，不能在此保存；请使用本应用的账号配置记录。"])
+                          userInfo: [NSLocalizedDescriptionKey: "凭证来自外部只读文件，请新建独立账号"])
         }
-        var cfg = readConfig(p)
-        // P1-9: Key 三态落盘 — clear→清空, 空+已有→保持原值 (nil 不动), 有值→替换
-        let independentCallKey = hasIndependentCallKey(config: cfg, provider: p)
-        let existingKey = independentCallKey ? cfg.queryKey : (cfg.queryKey.isEmpty ? cfg.refreshKey : cfg.queryKey)
-        let intent: SettingsValidation.KeyIntent = values.clearKeyIntent ? .clear : .replace
-        if let resolved = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingKey,
-                                                        intent: intent) {
-            cfg.queryKey = resolved
-            if !independentCallKey { cfg.refreshKey = resolved }
-        } else if !independentCallKey, cfg.queryKey.isEmpty {
-            // 旧共享凭证只有 refreshApiKey 时，保持原值也要同步已有查询凭证槽。
-            cfg.queryKey = existingKey
-        }
-        cfg.queryUrl = values.url
-        cfg.testModel = values.model
-        cfg.testPrompt = values.prompt
-        cfg.scheduleTimes = values.times
-        if p.manifest.template == nil {
-            // 通用: name/address/protocol 进 manifest, 同步脚本
-            cfg.refreshProtocol = values.proto
-            cfg.refreshUrl = ImportCandidateTriggerURL(values.url, proto: values.proto)
-            cfg.refreshHeader = genericCallHeader(manifest: p.manifest)
-            let manifest = PluginGenerator.customManifest(
-                name: name, config: cfg,
+        let previous = readConfig(p)
+        let cfg = draftConfig(values, existing: previous)
+        let changedQuota = cfg.queryKey != previous.queryKey || cfg.queryToken != previous.queryToken
+            || cfg.queryCookie != previous.queryCookie || cfg.queryUrl != previous.queryUrl
+            || cfg.quotaMode != previous.quotaMode
+        var manifest = p.manifest
+        if manifest.template == nil {
+            let generated = PluginGenerator.customManifest(name: values.name, config: cfg,
                 authFile: PluginGenerator.authPath(slug: slug, hudDir: hudDir))
-            try PluginGenerator.writePlugin(slug: slug, manifest: manifest,
-                                            script: PluginGenerator.oneAPIFetchScript(slug: slug),
-                                            into: userDir)
-            try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
-        } else {
-            var m = p.manifest
-            m.displayName = name
-            let script = (try? String(contentsOf: userDir.appendingPathComponent(slug + "/fetch.sh"),
-                                      encoding: .utf8)) ?? ""
-            try PluginGenerator.writePlugin(slug: slug, manifest: m, script: script, into: userDir)
-            try ProviderConfigStore.write(cfg, manifest: m, to: af)
+            manifest = generated
+            manifest.origin = p.manifest.origin
         }
-        if var m = engine.allPlugins.first(where: { $0.slug == slug })?.manifest {
-            m.displayName = name
-            applyToggles(slug: slug, values: values, manifest: m)
-        } else {
-            applyToggles(slug: slug, values: values, manifest: p.manifest)
+        manifest.displayName = values.name.trimmingCharacters(in: .whitespaces)
+        let script = manifest.template == nil ? PluginGenerator.oneAPIFetchScript(slug: slug)
+            : try String(contentsOf: p.dir.appendingPathComponent("fetch.sh"), encoding: .utf8)
+        try PluginGenerator.writePlugin(slug: slug, manifest: manifest, script: script, into: userDir)
+        try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
+        if changedQuota {
+            let cache = DataEngine.cachePath(for: p, hudDir: hudDir)
+            if AccountFileOwnership.canRemoveHUDFile(cache, slug: slug, kind: .cache, hudDir: hudDir),
+               FileManager.default.fileExists(atPath: cache.path) {
+                try FileManager.default.removeItem(at: cache)
+            }
+            engine.invalidateSnapshot(slug)
         }
+        applyToggles(slug: slug, values: values, manifest: manifest)
         return slug
     }
 
@@ -896,28 +946,6 @@ final class SettingsModel: ObservableObject {
         engine.setTracking(slug, enabled: values.autoQuery)
         let callable = manifest.refreshUrl != nil
         engine.setTriggerEnabled(slug, enabled: callable && values.autoTrigger)
-    }
-
-    private func ImportCandidateTriggerURL(_ base: String, proto: String) -> String {
-        let b = base.hasSuffix("/") ? String(base.dropLast()) : base
-        if proto == "anthropic" {
-            return b.hasSuffix("/v1") ? b + "/messages" : b + "/v1/messages"
-        }
-        return b.hasSuffix("/v1") ? b + "/chat/completions" : b + "/v1/chat/completions"
-    }
-
-    private func hasIndependentCallKey(config: ProviderConfig, provider: PluginProvider) -> Bool {
-        guard !config.refreshKey.isEmpty, config.refreshKey != config.queryKey else { return false }
-        if !config.queryKey.isEmpty { return true }
-        guard let file = authURL(provider), let data = try? Data(contentsOf: file),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-        if let field = provider.manifest.queryKeyField { return object[field] != nil }
-        let headers = object["headers"] as? [String: Any] ?? [:]
-        return headers["Authorization"] != nil
-    }
-
-    private func genericCallHeader(manifest: ProviderManifest?) -> String {
-        manifest?.refreshHeader.flatMap { $0.isEmpty ? nil : $0 } ?? "Authorization: Bearer <key>"
     }
 
     // MARK: 动作
@@ -955,38 +983,9 @@ final class SettingsModel: ObservableObject {
     /// 使用点击时的当前输入，不保存凭证、配置或计划。
     func testCallDraft(values: DraftValues) {
         guard let draft else { flash("请先打开账号配置", error: true); return }
-        let manifest = draftManifest()
-        var config = draft.slug.flatMap { slug in
-            engine.allPlugins.first(where: { $0.slug == slug }).map(readConfig)
-        } ?? ProviderConfig()
-        let oldQueryKey = config.queryKey
-        let oldCallKey = config.refreshKey
-        let provider = draft.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug } }
-        let hasIndependentCallKey = provider.map { self.hasIndependentCallKey(config: config, provider: $0) } ?? false
-        let enteredKey = values.key.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !hasIndependentCallKey {
-            let intent: SettingsValidation.KeyIntent = values.clearKeyIntent ? .clear : .replace
-            if let key = SettingsValidation.resolveKey(draftKey: enteredKey,
-                                                       existingKey: oldCallKey.isEmpty ? oldQueryKey : oldCallKey,
-                                                       intent: intent) {
-                config.refreshKey = key
-            }
-        }
-        if draft.template != nil {
-            config.refreshUrl = manifest?.refreshUrl ?? ""
-            config.refreshProtocol = manifest?.refreshProtocol ?? config.refreshProtocol
-            config.refreshHeader = manifest?.refreshHeader
-                ?? (manifest?.refreshAuth == "cookie" ? "Cookie: <key>" : "Authorization: Bearer <key>")
-        } else {
-            config.refreshUrl = ProviderImporter.triggerURLForTest(
-                values.url.trimmingCharacters(in: .whitespacesAndNewlines), values.proto)
-            config.refreshProtocol = values.proto
-            config.refreshHeader = genericCallHeader(manifest: manifest)
-        }
-        config.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        config.testPrompt = values.prompt
-        let source = hasIndependentCallKey ? "当前输入（使用独立调用凭证）" : "当前输入"
-        performTestCall(config: config, key: callTestResultKey, source: source,
+        let existing = draft.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
+        let config = draftConfig(values, existing: existing)
+        performTestCall(config: config, key: callTestResultKey, source: "当前输入",
                         providerName: values.name.isEmpty ? "新账号" : values.name)
     }
 
@@ -1094,7 +1093,7 @@ final class SettingsModel: ObservableObject {
         navPage = .overview
         engine.reloadRegistry()
         let hasSameName = engine.allPlugins.contains { $0.manifest.name == p.manifest.name }
-        let removed = hasSameName ? Set<String>() : Set([p.manifest.name])
+        let removed = hasSameName ? Set([p.slug]) : Set([p.slug, p.manifest.name])
         if case .failure(let error) = engine.writeEnvsForHudSync(removingManagedNames: removed) {
             cleanupFailures.append("HUD 未更新：\(error.localizedDescription)")
         }
@@ -1222,7 +1221,11 @@ final class SettingsModel: ObservableObject {
                let last = dict.max(by: { $0.key < $1.key }) {
                 switch last.value {
                 case "fired": outcome = "\(last.key) 已登记，调用结果未知"
+                case "succeeded": outcome = "\(last.key) 调用成功"
+                case "failed": outcome = "\(last.key) 调用失败"
+                case "uncertain": outcome = "\(last.key) 结果不确定，可能已消费"
                 case "skipped:busy": outcome = "\(last.key) 跳过：调用繁忙"
+                case "skipped:disabled": outcome = "\(last.key) 跳过：账号或计划已停用"
                 default: outcome = "\(last.key) 调用结果未知"
                 }
             }

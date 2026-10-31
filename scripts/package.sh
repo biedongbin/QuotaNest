@@ -9,8 +9,8 @@ VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
 BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 OUT=".build/TokenHUD.app"
 rm -rf "$OUT"
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)
+swiftly run swift build -c release
+BIN=$(swiftly run swift build -c release --show-bin-path)
 APP="$OUT/Contents"
 mkdir -p "$APP/MacOS" "$APP/Resources"
 cp "$BIN/TokenHUD" "$APP/MacOS/"

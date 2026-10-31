@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 const HOME = homedir();
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(HOME, '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
 const GLM_CACHE = join(HUD_DIR, '.glm-usage-cache.json');
 const GLM_AUTH = join(HUD_DIR, '.glm-usage-auth.json');
 const GPT_CACHE = join(HUD_DIR, '.gpt-usage-cache.json');
@@ -182,6 +182,22 @@ function renderBucket(label, bucket, stale) {
   return s;
 }
 
+function renderWindow(window, stale) {
+  if (!window || typeof window !== 'object') return '';
+  const label = window.label || window.period || '额度';
+  const pct = typeof window.used_percentage === 'number' ? window.used_percentage
+    : (typeof window.remaining_percentage === 'number' ? 100 - window.remaining_percentage : null);
+  if (Number.isFinite(pct)) return renderBucket(label, { ...window, used_percentage: pct }, stale);
+  const amount = typeof window.amount === 'number' && Number.isFinite(window.amount) ? window.amount : null;
+  const limit = typeof window.limit === 'number' && Number.isFinite(window.limit) ? window.limit : null;
+  if (amount == null && limit == null) return '';
+  let text = `${dim(label + ':')}${amount ?? '—'}${limit == null ? '' : '/' + limit}${window.unit ? ' ' + window.unit : ''}`;
+  const reset = formatResetTime(window.resets_at);
+  if (reset) text += dim(`(${reset})`);
+  if (stale) text += dim('*');
+  return text;
+}
+
 function readJsonSafe(p) {
   try { return JSON.parse(readFileSync(p, 'utf8')); }
   catch { return null; }
@@ -236,7 +252,7 @@ function renderEnvQuota(envKey, stdin) {
   const cfg = ENV_REGISTRY[envKey];
   if (!cfg) return '';
   const labelSeg = wrap(envColor(envKey), cfg.label);
-  let fiveHour = null, sevenDay = null, monthly = null, stale = false, error = null;
+  let fiveHour = null, sevenDay = null, monthly = null, windows = [], stale = false, error = null;
 
   if (cfg.source === 'rate_limits') {
     const rl = stdin?.rate_limits || {};
@@ -249,11 +265,14 @@ function renderEnvQuota(envKey, stdin) {
     fiveHour = cache?.five_hour || null;
     sevenDay = cache?.seven_day || null;
     monthly = cache?.monthly || null;
+    windows = Array.isArray(cache?.windows) ? cache.windows : [];
     stale = cache?.stale === true || !!cache?.error || !usageFresh(cache);
     maybeSpawnUsage(cache, cfg.auth, cfg.spawnEnv, cfg.provider || USAGE_PROVIDER);
   }
 
   if (error === 'auth') return `${labelSeg} ${wrap(C.yellow, '需登录')}`;
+  const dynamic = windows.map(window => renderWindow(window, stale)).filter(Boolean);
+  if (dynamic.length) return `${labelSeg} ${dynamic.join(BUCKET_SEP)}`;
   const buckets = [];
   if (cfg.buckets.five_hour && fiveHour?.used_percentage != null) {
     buckets.push(renderBucket(cfg.buckets.five_hour, fiveHour, stale));

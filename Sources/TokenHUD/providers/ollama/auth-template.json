@@ -1,5 +1,5 @@
 {
-  "apiUrl": "https://ollama.com/api/usage",
+  "apiUrl": "https://ollama.com/api/balance",
   "headers": {
     "Accept": "application/json",
     "Authorization": ""

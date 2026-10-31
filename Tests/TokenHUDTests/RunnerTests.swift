@@ -54,6 +54,21 @@ final class RunnerTests {
         #expect(cache?.generatedAt != nil)
     }
 
+    @Test func runnerDrainsOutputBeforeWaitingForExit() async throws {
+        let dir = tmp.appendingPathComponent("p/large-output", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try """
+        #!/bin/zsh
+        printf '%*s' 262144 ''
+        printf '%*s' 262144 '' >&2
+        print -r -- '{"seven_day":{"used_percentage":37}}'
+        """.write(to: dir.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
+        let runner = ProviderRunner(nodePath: nil, logDir: tmp)
+        let cache = await runner.run(PluginProvider(slug: "large-output",
+            manifest: ProviderManifest(name: "Large", label: "Large"), dir: dir), timeout: 2)
+        #expect(cache?.sevenDay?.usedPercentage == 37)
+    }
+
     @Test func runnerTimeoutReturnsNil() async throws {
         let d = tmp.appendingPathComponent("p/slow", isDirectory: true)
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)

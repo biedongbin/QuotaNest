@@ -33,7 +33,7 @@ actor CallSlots {
 actor QueryGate {
     enum GateError: Error { case waitTimeout }
 
-    private var ops: [String: Task<UsageCache?, Never>] = [:]
+    private var ops: [String: (revision: Double?, task: Task<UsageCache?, Never>)] = [:]
     private var globalInFlight = 0
     let globalLimit: Int
     let waitBudgetSec: Double
@@ -46,20 +46,24 @@ actor QueryGate {
     var inFlightSlugs: [String] { Array(ops.keys) }
 
     /// 执行一次查询 op: 同账号在飞 → 合并共享; 否则占位执行 (满位先等, 等待计入总预算)
-    func run(slug: String, _ op: @escaping @Sendable () async -> UsageCache?) async throws -> UsageCache? {
-        if let existing = ops[slug] { return await existing.value }      // 合并: 后到者共享同 op
+    func run(slug: String, revision: Double? = nil,
+             _ op: @escaping @Sendable () async -> UsageCache?) async throws -> UsageCache? {
         let deadline = Date().addingTimeInterval(waitBudgetSec)
-        while globalInFlight >= globalLimit {
-            if Date() >= deadline { throw GateError.waitTimeout }        // 等待超预算: 不再排队
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            if let existing = ops[slug] { return await existing.value }  // 等待期间同账号 op 起飞 → 合并
+        while true {
+            if let existing = ops[slug], existing.revision == revision {
+                return await existing.task.value
+            }
+            // 同账号旧凭证仍在飞：等它释放，绝不能把旧账号结果交给新 revision。
+            if ops[slug] == nil && globalInFlight < globalLimit { break }
+            if Date() >= deadline { throw GateError.waitTimeout }
+            try await Task.sleep(nanoseconds: 50_000_000)
         }
         globalInFlight += 1
         let task = Task { () async -> UsageCache? in
-            defer { Task { await self.finish(slug: slug) } }             // 完成即释放, 唤醒后续等待者
+            defer { Task { await self.finish(slug: slug) } }
             return await op()
         }
-        ops[slug] = task
+        ops[slug] = (revision, task)
         return await task.value
     }
 
@@ -220,8 +224,8 @@ final class DataEngine: ObservableObject {
         reloadRegistry()
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                await self?.refreshNow()
                 self?.checkSchedules()
+                await self?.refreshNow()
             }
         }
         Task { await refreshNow() }
@@ -249,6 +253,7 @@ final class DataEngine: ObservableObject {
     /// P2-3: 实例已存在 → 字段级 merge — 只补模板新增能力字段, 不全量覆盖
     /// (用户对 manifest 的手改/工具改动保留; displayName 等用户字段一律不动)
     func migrateAccounts() {
+        migrateLegacyCustomAccounts()
         guard let bundleDir else { return }
         let fm = FileManager.default
         for t in ProviderRegistry.scan(dir: bundleDir) {
@@ -258,9 +263,96 @@ final class DataEngine: ObservableObject {
             if fm.fileExists(atPath: manifestPath.path) {
                 Self.mergeManifestCapabilities(template: t.manifest, into: manifestPath)
             } else {
-                _ = try? PluginGenerator.instantiate(template: t, slug: t.slug,
-                                                     name: t.manifest.fullName, into: userDir,
-                                                     hudDir: hudDir)
+                let instanceAuth = PluginGenerator.expandPath(PluginGenerator.authPath(slug: t.slug, hudDir: hudDir))
+                let hadInstanceAuth = fm.fileExists(atPath: instanceAuth.path)
+                let legacyAuth = t.manifest.authFile.map {
+                    hudDir.appendingPathComponent(PluginGenerator.expandPath($0).lastPathComponent)
+                }
+                let hadLegacyAuth = legacyAuth.map { fm.fileExists(atPath: $0.path) } ?? false
+                do {
+                    var manifest = try PluginGenerator.instantiate(template: t, slug: t.slug,
+                                                                    name: t.manifest.fullName, into: userDir,
+                                                                    hudDir: hudDir)
+                    if !hadInstanceAuth, hadLegacyAuth, let legacyAuth {
+                        manifest.authFile = legacyAuth.path
+                        if let cache = t.manifest.cacheFile {
+                            let legacyCache = hudDir.appendingPathComponent(PluginGenerator.expandPath(cache).lastPathComponent)
+                            if fm.fileExists(atPath: legacyCache.path) { manifest.cacheFile = legacyCache.path }
+                        }
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                        try encoder.encode(manifest).write(to: manifestPath, options: .atomic)
+                    }
+                    if !hadInstanceAuth && !hadLegacyAuth && t.manifest.authStyle != "local" {
+                        disabledSlugs.insert(t.slug)
+                        triggerDisabledSlugs.insert(t.slug)
+                        defaults.set(Array(disabledSlugs), forKey: Self.defaultsDisabledKey)
+                        defaults.set(Array(triggerDisabledSlugs), forKey: Self.defaultsTriggerDisabledKey)
+                    }
+                } catch {
+                    registryErrors[t.slug] = "账号迁移失败：\(error.localizedDescription)"
+                }
+            }
+        }
+        upgradeTemplateAccounts()
+    }
+
+    private func upgradeTemplateAccounts() {
+        guard let bundleDir else { return }
+        let templates = ProviderRegistry.scan(dir: bundleDir)
+        for plugin in ProviderRegistry.scan(dir: userDir) {
+            guard let type = plugin.manifest.template,
+                  let template = templates.first(where: { $0.slug == type }) else { continue }
+            let scriptURL = plugin.dir.appendingPathComponent("fetch.sh")
+            if let oldScript = try? String(contentsOf: scriptURL, encoding: .utf8),
+               oldScript.contains("# TokenHUD 模板:"),
+               let source = try? String(contentsOf: template.dir.appendingPathComponent("fetch.sh"), encoding: .utf8) {
+                let current = source.replacingOccurrences(of: "{SLUG}", with: plugin.slug)
+                if oldScript != current { try? current.write(to: scriptURL, atomically: true, encoding: .utf8) }
+            }
+            Self.mergeManifestCapabilities(template: template.manifest,
+                                           into: plugin.dir.appendingPathComponent("manifest.json"))
+        }
+    }
+
+    /// 仅迁移旧版自动生成的 billing 脚本；用户自己编写的插件不改动。
+    func migrateLegacyCustomAccounts() {
+        let fm = FileManager.default
+        for plugin in ProviderRegistry.scan(dir: userDir) {
+            guard plugin.manifest.template == nil, plugin.manifest.quotaMode == nil else { continue }
+            let scriptURL = plugin.dir.appendingPathComponent(plugin.manifest.fetch)
+            let manifestURL = plugin.dir.appendingPathComponent("manifest.json")
+            let auth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
+                ?? hudDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
+            guard scriptURL.standardizedFileURL == plugin.dir.appendingPathComponent("fetch.sh").standardizedFileURL,
+                  scriptURL.resolvingSymlinksInPath().deletingLastPathComponent().path == plugin.dir.resolvingSymlinksInPath().path,
+                  auth.lastPathComponent == ".\(plugin.slug)-usage-auth.json",
+                  auth.resolvingSymlinksInPath().deletingLastPathComponent().path == hudDir.resolvingSymlinksInPath().path,
+                  let script = try? String(contentsOf: scriptURL, encoding: .utf8),
+                  script.contains("# TokenHUD 生成: one-api"), script.contains("billing/subscription"),
+                  let originalManifest = try? Data(contentsOf: manifestURL),
+                  let originalAuth = try? Data(contentsOf: auth) else { continue }
+            var config = ProviderConfigStore.read(authFile: auth, manifest: plugin.manifest)
+            let legacyAuth = (try? JSONSerialization.jsonObject(with: originalAuth)) as? [String: Any]
+            let storedBase = (legacyAuth?["apiUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !storedBase.isEmpty { config.apiBaseURL = storedBase }
+            else if let base = plugin.manifest.queryUrl, !base.isEmpty { config.apiBaseURL = base }
+            config.queryUrl = ""
+            config.quotaMode = "none"
+            var manifest = plugin.manifest
+            manifest.queryUrl = nil
+            manifest.quotaMode = "none"
+            do {
+                try ProviderConfigStore.write(config, manifest: manifest, to: auth)
+                try PluginGenerator.writePlugin(slug: plugin.slug, manifest: manifest,
+                                                script: PluginGenerator.oneAPIFetchScript(slug: plugin.slug), into: userDir)
+            } catch {
+                // 保存失败恢复原始三份文件，避免半迁移改变模型调用配置。
+                try? originalAuth.write(to: auth, options: .atomic)
+                try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: auth.path)
+                try? originalManifest.write(to: manifestURL, options: .atomic)
+                try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
+                registryErrors[plugin.slug] = "旧账号迁移失败：\(error.localizedDescription)"
             }
         }
     }
@@ -279,6 +371,15 @@ final class DataEngine: ObservableObject {
                          "refreshUrl", "refreshProtocol", "refreshAuth", "refreshHeader",
                          "needsCredential", "buckets", "accent", "icon", "intervalSec"]
         var changed = false
+        // v1 GLM 模板误把网页登录 token 声明成 bearer；仅修正已知旧声明。
+        if template.queryAuth == "jwt", obj["queryAuth"] as? String == "bearer" {
+            obj["queryAuth"] = "jwt"
+            changed = true
+        }
+        if obj["template"] != nil, obj["quotaMode"] == nil {
+            obj["quotaMode"] = "script"
+            changed = true
+        }
         for k in mergeKeys where obj[k] == nil {
             if let v = tmpl[k] { obj[k] = v; changed = true }
         }
@@ -370,7 +471,12 @@ final class DataEngine: ObservableObject {
                     Self.saveSkipped(f, defaults: defaults)
                     return
                 }
-                _ = await trigger(sch.manifest, sch.authFile)
+                let response = await trigger(sch.manifest, sch.authFile)
+                let outcome = response?.hasPrefix("✓") == true ? "succeeded"
+                    : (response?.contains("结果不确定") == true ? "uncertain" : "failed")
+                var completed = loadFiredSchedules()
+                completed[Self.scheduleDedupKey(slug: sch.slug, date: now), default: [:]][hhmm] = outcome
+                saveFiredSchedules(completed)
             }
         }
     }
@@ -512,15 +618,12 @@ final class DataEngine: ObservableObject {
     var hudSyncNames: [String] {
         allPlugins
             .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hudHiddenSlugs.contains($0.slug) }
-            .map(\.manifest.name)
+            .map(HUDSync.accountKey)
     }
 
-    /// envs.json 动态 entry 仅自定义账号 (内置走 statusline ENV_REGISTRY 硬编码, 不重复写)
+    /// 每个已选账号均有动态缓存条目，类型模板不再决定 HUD 身份。
     var envsEntryNames: [String] {
-        allPlugins
-            .filter { $0.manifest.isEnabled && !disabledSlugs.contains($0.slug) && !hudHiddenSlugs.contains($0.slug) }
-            .filter { $0.manifest.template == nil }
-            .map(\.manifest.name)
+        hudSyncNames
     }
 
     /// 同步账号投影到 HUD，保留不属于本应用的条目；失败反馈给用户界面。
@@ -573,6 +676,17 @@ final class DataEngine: ObservableObject {
         return providerOrder.count // 未列出, 排最后
     }
 
+    /// nil 是旧自有 fetch 插件的兼容契约；新账号必须显式声明 endpoint 或 none。
+    nonisolated static func canQuery(_ manifest: ProviderManifest) -> Bool {
+        switch manifest.quotaMode {
+        case "none": return false
+        case "script": return true
+        case "endpoint": return !(manifest.queryUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case nil: return true
+        default: return false
+        }
+    }
+
     func refreshNow() async {
         let now = Date().timeIntervalSince1970 * 1000
         // P1-3 退避: ratelimit 暂停窗口内的账号跳过本轮自动查询 (到期自动恢复; 手动 forceRefresh 不受限)
@@ -580,7 +694,23 @@ final class DataEngine: ObservableObject {
         // MainActor 上下文先筛过期家 (按尝试时间: 失败也会前移 lastAttemptAt, 免 10s timer 对失败家反复重刷)
         // v0.2: 间隔取每账号覆盖优先 (秒), 缺省 manifest.interval
         let due: [(String, PluginProvider)] = states.compactMap { st in
-            guard paused[st.slug] == nil else { return nil }
+            guard Self.canQuery(st.manifest), paused[st.slug] == nil else { return nil }
+            if st.manifest.quotaMode != nil {
+                guard let auth = authURL(for: st) else { return nil }
+                let config = ProviderConfigStore.read(authFile: auth, manifest: st.manifest)
+                let ready: Bool
+                if st.manifest.quotaMode == "endpoint" {
+                    ready = !config.queryKey.isEmpty
+                } else {
+                    switch st.manifest.queryAuth {
+                    case "jwt": ready = !config.queryToken.isEmpty
+                    case "cookie": ready = !config.queryCookie.isEmpty
+                    case "header": ready = true
+                    default: ready = !config.queryKey.isEmpty || !config.queryCookie.isEmpty
+                    }
+                }
+                guard ready else { return nil }
+            }
             let override = defaults.integer(forKey: Self.intervalKey(st.slug))
             let interval = override > 0 ? override * 60 : st.manifest.interval
             guard !HUDFmt.isAttemptFresh(st.cache, interval: interval, now: now) else { return nil }
@@ -603,13 +733,14 @@ final class DataEngine: ObservableObject {
                 PluginProvider(slug: $0.slug, manifest: $0.manifest, dir: pluginDir(slug: $0.slug))
             }
         guard let plugin else { return .failed("供应商不存在") }
+        guard Self.canQuery(plugin.manifest) else { return .failed("该账号未配置额度查询") }
         // 核对: 查询期间账号被删/凭证被改 → 丢弃 (FR-05.3)
         let rev0 = Self.configRevision(slug: slug, manifest: plugin.manifest)
         let now = Date().timeIntervalSince1970 * 1000
         // P1-2: 查询 op 走统一 gate (同账号在飞 → 合并共享结果; 满位等待计入 20s 总预算)
         let fetched: UsageCache?
         do {
-            fetched = try await queryGate.run(slug: slug) { [runner] in await runner.run(plugin) }
+            fetched = try await queryGate.run(slug: slug, revision: rev0) { [runner] in await runner.run(plugin) }
         } catch {
             return .failed(Self.reason(for: "busy"))
         }
@@ -640,7 +771,7 @@ final class DataEngine: ObservableObject {
             for (slug, plugin) in due {
                 group.addTask { [gate = queryGate, runner] in
                     // gate 抛超时 → 记 busy (该家本轮未查, 不误标 fetch 失败)
-                    let cache = try? await gate.run(slug: slug) { await runner.run(plugin) }
+                    let cache = try? await gate.run(slug: slug, revision: revisions[slug]) { await runner.run(plugin) }
                     return (slug, cache ?? nil)
                 }
             }
@@ -793,9 +924,18 @@ final class DataEngine: ObservableObject {
     private func apply(slug: String, fetched: UsageCache?, now: Double) {
         guard let i = states.firstIndex(where: { $0.slug == slug }) else { return }
         if let fetched {
-            writeCache(fetched, plugin: states[i])
-            states[i].cache = fetched
-            states[i].isStale = false
+            var snapshot = fetched
+            if fetched.error != nil, var previous = states[i].cache,
+               fetched.accountId == previous.accountId,
+               fetched.accountId != nil || (states[i].manifest.authStyle != "local" && states[i].manifest.queryAuth != "header") {
+                previous.error = fetched.error
+                previous.stale = true
+                previous.lastAttemptAt = fetched.lastAttemptAt ?? now
+                snapshot = previous
+            }
+            writeCache(snapshot, plugin: states[i])
+            states[i].cache = snapshot
+            states[i].isStale = snapshot.error != nil || snapshot.stale == true
             // P1-3: 429 退避 — ratelimit → 暂停自动查询至 max(interval, 60s); 成功则清除暂停 (到期恢复的另一路径)
             var paused = Self.loadPaused(defaults: defaults)
             if fetched.error == "ratelimit" {
@@ -805,10 +945,11 @@ final class DataEngine: ObservableObject {
             }
             Self.savePaused(paused, defaults: defaults)
         } else {
-            // 失败: 保留旧值与原 generatedAt (成功快照时间不因失败推进, FR-03.8),
-            // 仅前移 lastAttemptAt — due 判定用 isAttemptFresh, 10s timer 不会反复重刷
-            var old = states[i].cache ?? UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil,
-                                                    monthly: nil, error: "fetch", stale: true)
+            // local/header 的当前身份无法证实：进程失败不能沿用上一 CLI 账号的数据。
+            let local = states[i].manifest.authStyle == "local" || states[i].manifest.queryAuth == "header"
+            let previous = local ? nil : states[i].cache
+            var old = previous ?? UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil,
+                                            monthly: nil, error: "fetch", stale: true)
             old.stale = true
             old.lastAttemptAt = now
             if old.error == nil { old.error = "fetch" }
@@ -816,6 +957,13 @@ final class DataEngine: ObservableObject {
             states[i].isStale = true
             writeCache(old, plugin: states[i])
         }
+    }
+
+    /// 凭证轮换后立即清除该账号的内存快照；磁盘删除由账号仓储负责。
+    func invalidateSnapshot(_ slug: String) {
+        guard let index = states.firstIndex(where: { $0.slug == slug }) else { return }
+        states[index].cache = nil
+        states[index].isStale = true
     }
 
     private func readCache(slug: String, manifest: ProviderManifest) -> UsageCache? {

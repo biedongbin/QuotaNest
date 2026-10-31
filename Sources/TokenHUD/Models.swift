@@ -32,6 +32,13 @@ struct ProviderManifest: Codable {
     /// 导入来源标识 "source:recordId" (9router:<id>/cc-switch:<id>/cpamp:<文件名>); 手建账号 nil
     /// 导入查重按它判 (同源同记录 = 已存在), 不按显示名
     var origin: String?
+    /// none: 仅管理与调用；endpoint: 标准 JSON 额度接口；script: 类型提供的解析器。
+    var quotaMode: String?
+
+    var supportsQuota: Bool {
+        if let quotaMode { return quotaMode != "none" }
+        return queryUrl?.isEmpty == false || cacheFile != nil
+    }
 
     var isEnabled: Bool { enabled ?? true }
     var interval: Int { intervalSec ?? 60 }
@@ -44,7 +51,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -55,7 +62,7 @@ struct ProviderManifest: Codable {
          refreshUrl: String? = nil, refreshProtocol: String? = nil, refreshAuth: String? = nil,
          refreshHeader: String? = nil, builtin: Bool? = nil, template: String? = nil,
          accent: String? = nil, icon: String? = nil, enabled: Bool? = true,
-         authMode: String? = nil, origin: String? = nil) {
+         authMode: String? = nil, origin: String? = nil, quotaMode: String? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -81,6 +88,7 @@ struct ProviderManifest: Codable {
         self.enabled = enabled
         self.authMode = authMode
         self.origin = origin
+        self.quotaMode = quotaMode
     }
 
     init(from decoder: Decoder) throws {
@@ -110,6 +118,7 @@ struct ProviderManifest: Codable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         authMode = try c.decodeIfPresent(String.self, forKey: .authMode)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        quotaMode = try c.decodeIfPresent(String.self, forKey: .quotaMode)
     }
 }
 

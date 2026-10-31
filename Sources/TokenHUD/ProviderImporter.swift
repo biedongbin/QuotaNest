@@ -265,14 +265,12 @@ enum ProviderImporter {
             stagedAuth = PluginGenerator.expandPath(
                 PluginGenerator.authPath(slug: slug, hudDir: stagedHud))   // 模板 auth 落在 staging
             var cfg = ProviderConfigStore.read(authFile: stagedAuth, manifest: stagedManifest)
-            cfg.queryKey = c.apiKey
             cfg.refreshKey = c.apiKey
             try ProviderConfigStore.write(cfg, manifest: stagedManifest, to: stagedAuth)
         } else {
             // 通用自定义: baseURL + key, 协议决定触发端点与 header
             var cfg = ProviderConfig()
-            cfg.queryUrl = c.baseURL
-            cfg.queryKey = c.apiKey
+            cfg.apiBaseURL = c.baseURL
             cfg.refreshKey = c.apiKey
             cfg.refreshProtocol = c.proto
             cfg.refreshUrl = triggerURL(c.baseURL, proto: c.proto)
@@ -299,9 +297,18 @@ enum ProviderImporter {
             throw NSError(domain: "ProviderImporter", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "auth 文件已存在: \(finalAuth.lastPathComponent)"])
         }
-        try fm.moveItem(at: stagedProviders.appendingPathComponent(slug),
-                        to: userDir.appendingPathComponent(slug))
-        try fm.moveItem(at: stagedAuth, to: finalAuth)
+        let finalPlugin = userDir.appendingPathComponent(slug).standardizedFileURL
+        guard finalPlugin.deletingLastPathComponent().standardizedFileURL.path == userDir.standardizedFileURL.path else {
+            throw NSError(domain: "ProviderImporter", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "账号目录超出应用配置范围"])
+        }
+        try fm.moveItem(at: stagedProviders.appendingPathComponent(slug), to: finalPlugin)
+        do {
+            try fm.moveItem(at: stagedAuth, to: finalAuth)
+        } catch {
+            try fm.moveItem(at: finalPlugin, to: stagedProviders.appendingPathComponent(slug))
+            throw error
+        }
         return slug
     }
 
@@ -345,11 +352,7 @@ enum ProviderImporter {
 
     /// baseURL → chat 触发端点 (已含 /v1 或 /messages 则不重复拼)
     private static func triggerURL(_ base: String, proto: String) -> String {
-        let b = base.hasSuffix("/") ? String(base.dropLast()) : base
-        if proto == "anthropic" {
-            return b.hasSuffix("/v1") ? b + "/messages" : b + "/v1/messages"
-        }
-        return b.hasSuffix("/v1") ? b + "/chat/completions" : b + "/v1/chat/completions"
+        APIEndpoint.requestURL(baseURL: base, protocolName: proto)
     }
 
     /// 单测可见入口 (private 逻辑的薄封装)

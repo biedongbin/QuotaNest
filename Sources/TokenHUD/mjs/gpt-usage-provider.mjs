@@ -12,9 +12,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const HUD_DIR = join(CLAUDE_DIR, 'hud');
-const AUTH_FILE = process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.gpt-usage-auth.json');
-const CACHE_FILE = process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.gpt-usage-cache.json');
+const HUD_DIR = process.env.TOKENHUD_HUD_DIR || join(CLAUDE_DIR, 'hud');
+const AUTH_FILE = process.env.TOKENHUD_AUTH_FILE || process.env.USAGE_AUTH_FILE || join(HUD_DIR, '.gpt-usage-auth.json');
+const CACHE_FILE = process.env.TOKENHUD_CACHE_FILE || process.env.USAGE_CACHE_FILE || join(HUD_DIR, '.gpt-usage-cache.json');
 const USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
 const TIMEOUT_S = 12;
 const TTL_MS = 60_000;
@@ -26,6 +26,10 @@ const readJson = (p) => {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 };
 const writeCache = (obj) => {
+  if (process.env.TOKENHUD_STDOUT_ONLY === '1') {
+    process.stdout.write(JSON.stringify(obj) + '\n');
+    return;
+  }
   try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2)); } catch {}
 };
 // 失败通用出口：同账号旧缓存有 legacy 桶或有效动态窗口则保留，否则写错误态。

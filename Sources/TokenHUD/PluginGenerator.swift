@@ -13,7 +13,7 @@ enum PluginGenerator {
     static func customManifest(name: String, config: ProviderConfig, authFile: String) -> ProviderManifest {
         ProviderManifest(
             name: name, label: name, displayName: name,
-            buckets: ["seven_day": "周"],
+            buckets: ["five_hour": "5h", "seven_day": "周", "monthly": "月"],
             authFile: authFile,
             testModel: config.testModel.isEmpty ? nil : config.testModel,
             testPrompt: config.testPrompt.isEmpty ? nil : config.testPrompt,
@@ -22,7 +22,8 @@ enum PluginGenerator {
             refreshUrl: config.refreshUrl.isEmpty ? nil : config.refreshUrl,
             refreshProtocol: config.refreshProtocol,
             refreshAuth: "bearer",
-            refreshHeader: config.refreshHeader.isEmpty ? nil : config.refreshHeader)
+            refreshHeader: config.refreshHeader.isEmpty ? nil : config.refreshHeader,
+            quotaMode: config.quotaMode)
     }
 
     // MARK: - 类型模板 → 账号实例
@@ -56,6 +57,7 @@ enum PluginGenerator {
         let t = template.manifest
         let manifest = ProviderManifest(
             name: t.name, label: t.label, displayName: name,
+            intervalSec: t.intervalSec,
             buckets: t.buckets,
             cacheFile: cachePath(slug: slug, hudDir: hudDir),
             authFile: authPath(slug: slug, hudDir: hudDir),
@@ -70,7 +72,7 @@ enum PluginGenerator {
             refreshAuth: t.refreshAuth,
             refreshHeader: t.refreshHeader,
             template: template.slug,
-            accent: t.accent, icon: t.icon)
+            accent: t.accent, icon: t.icon, authMode: t.authMode, quotaMode: "script")
         // fetch.sh: 读模板脚本, {SLUG} 替换后写入实例目录
         let script = (try? String(contentsOf: template.dir.appendingPathComponent("fetch.sh"), encoding: .utf8))
             .map { $0.replacingOccurrences(of: "{SLUG}", with: slug) }
@@ -94,28 +96,10 @@ enum PluginGenerator {
     static func oneAPIFetchScript(slug: String) -> String {
         """
         #!/bin/zsh
-        # TokenHUD 生成: one-api / OpenAI 兼容 (url/key 读 auth 文件)
         set -eu
-        AUTH_FILE="$HOME/.claude/hud/.\(slug)-usage-auth.json"
-        BASE=$(python3 -c "import json;print(json.load(open('$AUTH_FILE')).get('apiUrl','').rstrip('/'))")
-        KEY=$(python3 -c "import json;print((json.load(open('$AUTH_FILE')).get('headers') or {}).get('Authorization','').replace('Bearer ',''))")
-        AUTH="Authorization: Bearer $KEY"
-        START=$(date +%Y-%m-01)
-        END=$(date -v+1d +%Y-%m-%d)
-        SUB=$(curl -s --max-time 10 -H "$AUTH" "$BASE/v1/dashboard/billing/subscription")
-        USAGE=$(curl -s --max-time 10 -H "$AUTH" "$BASE/v1/dashboard/billing/usage?start_date=$START&end_date=$END")
-        printf '%s\\n%s\\n' "$SUB" "$USAGE" | python3 -c '
-        import json, sys
-        lines = sys.stdin.read().split("\\n")
-        sub = json.loads(lines[0])
-        usage = json.loads(lines[1])
-        quota = sub.get("hard_quota") or sub.get("total_granted") or 0
-        total = usage.get("total_usage") or 0
-        if not quota or quota <= 0:
-            print(json.dumps({"error": "quota"})); raise SystemExit(1)
-        pct = round(total / quota * 100, 1)
-        print(json.dumps({"seven_day": {"used_percentage": pct}}))
-        '
+        HUD_DIR="${TOKENHUD_HUD_DIR:-$HOME/.claude/hud}"
+        export TOKENHUD_AUTH_FILE="${TOKENHUD_AUTH_FILE:-$HUD_DIR/.\(slug)-usage-auth.json}"
+        exec "${TOKENHUD_NODE:-node}" "$HUD_DIR/generic-usage-provider.mjs"
         """
     }
 

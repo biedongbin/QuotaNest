@@ -68,7 +68,8 @@ final class ImportCenterModel: ObservableObject {
     @Published var importing = false
     @Published var lastMessage = ""
     /// P1-7: 导入循环后台 Task 句柄 (可取消: 已成功项保留, 未开始项标 skipped)
-    private var importTask: Task<Void, Never>??
+    private var importTask: Task<Void, Never>?
+    private var scanGeneration = UUID()
 
     let engine: DataEngine
     let hudDir: URL
@@ -82,13 +83,13 @@ final class ImportCenterModel: ObservableObject {
 
     /// P1-7: 取消进行中的导入 (已成功项保留, 未开始项标 skipped)
     func cancelImport() {
-        guard importing, let task = importTask ?? nil, !task.isCancelled else { return }
+        guard importing, let task = importTask, !task.isCancelled else { return }
         task.cancel()
     }
 
     /// 切换源: 清空结果并重新扫描
     func switchTo(_ s: Source) {
-        guard s != source || scanState == .idle else { return }
+        guard !importing, s != source || scanState == .idle else { return }
         source = s
         rows = []; picked = []; lastMessage = ""
         scanState = .idle
@@ -108,7 +109,9 @@ final class ImportCenterModel: ObservableObject {
     }
 
     func scan() {
-        guard scanState != .scanning else { return }
+        guard !importing, scanState != .scanning else { return }
+        let generation = UUID()
+        scanGeneration = generation
         scanState = .scanning
         rows = []; picked = []
         let src = source
@@ -117,7 +120,7 @@ final class ImportCenterModel: ObservableObject {
         Task { [weak self] in
             let result = await Self.scanWithTimeout(src: src, home: home, seconds: 8)
             guard let self else { return }
-            guard self.source == src else { return }
+            guard self.source == src, self.scanGeneration == generation else { return }
             switch result {
             case .success(let list):
                 self.apply(list)
@@ -249,54 +252,54 @@ final class ImportCenterModel: ObservableObject {
 
     /// P1-7: 导入循环移后台 Task (不冻 UI); 中途取消 → 已成功项保留, 未开始项标 skipped
     func importSelected() {
-        let chosen = rows.indices.filter { picked.contains(rows[$0].id) && !rows[$0].imported }
+        guard !importing else { return }
+        let chosen = rows.filter { picked.contains($0.id) && !$0.imported && $0.state.pickable }
+            .map { ($0.id, $0.candidate) }
         guard !chosen.isEmpty else {
             lastMessage = "请先勾选要导入的账号"
             return
         }
         importing = true
-        lastMessage = "导入中…可随时取消。"
-        importTask = Task { [weak self] in
-            await self?.runImport(indices: chosen)
-        }
+        lastMessage = "导入中…可取消尚未开始的项目。"
+        importTask = Task { [weak self] in await self?.runImport(chosen) }
     }
 
-    private func runImport(indices chosen: [Int]) async {
+    private func runImport(_ chosen: [(UUID, ImportCandidate)]) async {
         var ok = 0, fail = 0, skipped = 0
-        for i in chosen {
-            if Task.isCancelled {                                   // 取消: 未开始项标 skipped, 保留勾选
-                rows[i].failure = "已取消"
+        for (id, candidate) in chosen {
+            if Task.isCancelled {
+                if let index = rows.firstIndex(where: { $0.id == id }) { rows[index].failure = "已取消" }
                 skipped += 1
                 continue
             }
-            let c = rows[i].candidate
-            // 磁盘操作后台执行 (导入循环已在 Task 内; templates 主线程快照后传入)
             let templates = engine.templates
             let result = await Task.detached(priority: .userInitiated) { [templates, userDir, hudDir] in
-                Result { try ProviderImporter.apply(c, templates: templates,
-                                                    userDir: userDir, hudDir: hudDir) }
+                Result { try ProviderImporter.apply(candidate, templates: templates, userDir: userDir, hudDir: hudDir) }
             }.value
+            // The result belongs to this immutable row ID, never a pre-await index.
+            guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
             switch result {
             case .success:
-                rows[i].imported = true
-                rows[i].failure = nil
-                rows[i].note = "已导入"
-                picked.remove(rows[i].id)
+                rows[index].imported = true
+                rows[index].failure = nil
+                rows[index].note = "已导入"
+                picked.remove(id)
                 ok += 1
             case .failure(let error):
-                rows[i].failure = error.localizedDescription
+                rows[index].failure = error.localizedDescription
                 fail += 1
             }
         }
         engine.reloadRegistry()
         importing = false
+        importTask = nil
         if skipped > 0 {
-            lastMessage = "已取消：成功 \(ok) 个保留，\(skipped) 个未导入（已保留勾选，可重试）。"
+            lastMessage = "已取消：\(ok) 个成功项保留，\(skipped) 个未开始，可重新勾选重试。"
             picked.formUnion(rows.filter { $0.failure == "已取消" }.map(\.id))
         } else if fail == 0 {
             lastMessage = "导入完成：\(ok) 个账号已加入列表。"
         } else {
-            lastMessage = "部分失败：成功 \(ok) 个，失败 \(fail) 个。失败项已保留勾选，可重试；已成功的不再重复导入。"
+            lastMessage = "成功 \(ok) 个，失败 \(fail) 个；失败项可重试。"
             picked = Set(rows.filter { $0.failure != nil }.map(\.id))
         }
     }
@@ -321,7 +324,7 @@ struct ImportCenterSheet: View {
             Rectangle().fill(Palette.border).frame(height: 1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    sourcePicker
+                    sourcePicker.disabled(im.importing)
                     bodyContent
                 }
                 .padding(20)
@@ -332,6 +335,7 @@ struct ImportCenterSheet: View {
         .frame(minWidth: 560, idealWidth: 720, minHeight: 380, idealHeight: 520)
         .background(Palette.surface)
         .onAppear { if im.scanState == .idle { im.scan() } }
+        .onDisappear { im.cancelImport() }
     }
 
     private var header: some View {
@@ -412,7 +416,7 @@ struct ImportCenterSheet: View {
                                              : (row.state.pickable ? Palette.accent : Palette.muted.opacity(0.4)))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!row.state.pickable || row.imported)
+                    .disabled(!row.state.pickable || row.imported || im.importing)
                     .frame(width: 22)
                     .accessibilityLabel("选择 \(row.candidate.name)")
 
@@ -483,9 +487,9 @@ struct ImportCenterSheet: View {
             Spacer()
             Button("扫描") { im.scan() }
                 .barButton()
-                .disabled(im.scanState == .scanning)
+                .disabled(im.scanState == .scanning || im.importing)
             if im.scanState == .scanned || !im.rows.isEmpty {
-                Button("全选可导入") { im.toggleAll() }.barButton()
+                Button("全选可导入") { im.toggleAll() }.barButton().disabled(im.importing)
             }
             Button("关闭") { dismiss() }.barButton()
                 .keyboardShortcut(.cancelAction)

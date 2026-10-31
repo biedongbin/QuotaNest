@@ -124,7 +124,7 @@ struct ImportTests {
         #expect(out[0].apiKey == "clp_1")
     }
 
-    @Test func applyCreatesIndependentInstances() {
+    @Test func applyCreatesIndependentInstances() throws {
         let home = tmpHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let userDir = home.appendingPathComponent("providers")
@@ -139,16 +139,15 @@ struct ImportTests {
         let before = realNames()
         let c = ImportCandidate(source: "t", name: "Same Name", template: nil, apiKey: "k",
                                 baseURL: "https://a.example", proto: "openai", note: "")
-        let s1 = try? ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
-        let s2 = try? ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
-        #expect(s1 != nil && s2 != nil)
+        let s1 = try ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
+        let s2 = try ProviderImporter.apply(c, templates: [], userDir: userDir, hudDir: hudDir)
         #expect(s1 != s2)                              // slug 冲突自动加序号
-        let manifest = userDir.appendingPathComponent(s1!).appendingPathComponent("manifest.json")
+        let manifest = userDir.appendingPathComponent(s1).appendingPathComponent("manifest.json")
         #expect(FileManager.default.fileExists(atPath: manifest.path))
-        let fetch = userDir.appendingPathComponent(s1!).appendingPathComponent("fetch.sh")
+        let fetch = userDir.appendingPathComponent(s1).appendingPathComponent("fetch.sh")
         #expect(FileManager.default.fileExists(atPath: fetch.path))
         // auth 落在传入 hudDir
-        #expect(FileManager.default.fileExists(atPath: hudDir.appendingPathComponent(".\(s1!)-usage-auth.json").path))
+        #expect(FileManager.default.fileExists(atPath: hudDir.appendingPathComponent(".\(s1)-usage-auth.json").path))
         // 真实 hud 目录无新增 .same-name*
         let added = realNames().subtracting(before).filter { $0.hasPrefix(".same-name") }
         #expect(added.isEmpty, "导入外溢到真实 hud 目录: \(added)")

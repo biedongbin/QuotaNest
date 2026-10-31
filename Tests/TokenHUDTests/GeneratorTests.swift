@@ -16,56 +16,62 @@ struct GeneratorTests {
     }
 
     @Test func fetchScriptReadsAuthFile() {
-        let s = PluginGenerator.oneAPIFetchScript(slug: "my-relay")
-        #expect(s.contains(".my-relay-usage-auth.json")) // url/key 运行时读 auth, 不内嵌
-        #expect(!s.contains("sk-"))
-        #expect(s.contains("billing/subscription"))
-        #expect(s.contains("billing/usage"))
-        // 传输层: SUB/USAGE 必须以真换行交给 python3（print -r 下 \n 是字面两字节，python 按真换行 split 必败）
-        #expect(s.contains(#"printf '%s\n%s\n' "$SUB" "$USAGE""#))
+        let script = PluginGenerator.oneAPIFetchScript(slug: "my-relay")
+        #expect(script.contains(".my-relay-usage-auth.json"))
+        #expect(script.contains("TOKENHUD_AUTH_FILE"))
+        #expect(script.contains("generic-usage-provider.mjs"))
+        #expect(!script.contains("billing/"))
+        #expect(!script.contains("sk-"))
     }
 
     @Test func scriptMergePipelineEndToEnd() throws {
-        // 端到端: PATH 前置 stub curl + 写 auth 文件, 真实运行生成脚本验证读取管线
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("pg-home-\(UUID())")
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pg-e2e-\(UUID())")
-        defer {
-            try? FileManager.default.removeItem(at: dir)
-            try? FileManager.default.removeItem(at: home)
-        }
-        // 脚本读 $HOME/.claude/hud/.my-relay-usage-auth.json
-        let hud = home.appendingPathComponent(".claude/hud", isDirectory: true)
+        // 真实执行生成的 shell + Node adapter，HTTP 传输由离线 curl 替身提供。
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pg-endpoint-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let hud = root.appendingPathComponent("independent-config")
         try FileManager.default.createDirectory(at: hud, withIntermediateDirectories: true)
-        try """
-        {"apiUrl": "https://x", "headers": {"Authorization": "Bearer sk-k"}, "refreshApiKey": "sk-k"}
-        """.write(to: hud.appendingPathComponent(".my-relay-usage-auth.json"), atomically: true, encoding: .utf8)
-
-        let s = PluginGenerator.oneAPIFetchScript(slug: "my-relay")
-        let bin = dir.appendingPathComponent("bin", isDirectory: true)
-        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let curl = bin.appendingPathComponent("curl")
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/TokenHUD/mjs")
+        for name in ["generic-usage-provider.mjs", "usage-normalize.mjs"] {
+            try FileManager.default.copyItem(at: source.appendingPathComponent(name), to: hud.appendingPathComponent(name))
+        }
+        let auth = hud.appendingPathComponent(".my-relay-usage-auth.json")
+        try Data(#"{"quotaMode":"endpoint","queryUrl":"https://quota.example.test/exact","queryKey":"fixture-quota","refreshApiKey":"must-not-be-used"}"#.utf8).write(to: auth)
+        let curl = root.appendingPathComponent("curl")
         try """
         #!/bin/zsh
-        case "$*" in
-          *subscription*) print -r -- '{"hard_quota": 100}' ;;
-          *usage*) print -r -- '{"total_usage": 25}' ;;
-        esac
+        print -r -- "$@" > "$TOKENHUD_TEST_ARGUMENTS"
+        print -r -- '{"weekly":{"used_percentage":25}}'
+        printf '200'
         """.write(to: curl, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
-        let script = dir.appendingPathComponent("fetch.sh")
-        try s.write(to: script, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        p.arguments = [script.path]
-        p.environment = ["PATH": bin.path + ":/usr/bin:/bin", "HOME": home.path]
-        let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
-        try p.run(); p.waitUntilExit()
-        let txt = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        #expect(p.terminationStatus == 0)
-        #expect(txt.contains("\"seven_day\""))
-        #expect(txt.contains("25.0"))
+        let script = root.appendingPathComponent("fetch.sh")
+        try PluginGenerator.oneAPIFetchScript(slug: "my-relay").write(to: script, atomically: true, encoding: .utf8)
+        let node = try #require(NodeLocator.find(nvmHome: NSHomeDirectory() + "/.nvm",
+            extraPaths: ["/opt/homebrew/bin/node", "/usr/local/bin/node"], saved: nil))
+        let args = root.appendingPathComponent("arguments.txt")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = [script.path]
+        var env = ProcessInfo.processInfo.environment
+        env["TOKENHUD_NODE"] = node
+        env["TOKENHUD_HUD_DIR"] = hud.path
+        env["TOKENHUD_CURL"] = curl.path
+        env["TOKENHUD_TEST_ARGUMENTS"] = args.path
+        process.environment = env
+        let out = Pipe(); process.standardOutput = out; process.standardError = Pipe()
+        try process.run(); process.waitUntilExit()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        #expect(process.terminationStatus == 0)
+        let cache = try JSONDecoder().decode(UsageCache.self, from: data)
+        #expect(cache.error == nil, "离线额度结果：\(String(decoding: data, as: UTF8.self))")
+        #expect(cache.sevenDay?.usedPercentage == 25)
+        #expect(cache.sevenDay?.resetsAt == nil)
+        let arguments = try String(contentsOf: args, encoding: .utf8)
+        #expect(arguments.contains("https://quota.example.test/exact"))
+        #expect(arguments.contains("fixture-quota"))
+        #expect(!arguments.contains("must-not-be-used"))
+        #expect(!arguments.contains("billing"))
     }
 
     @Test func scriptSyntaxValid() throws {
