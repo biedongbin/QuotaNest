@@ -15,8 +15,8 @@ struct DraftFormView: View {
     private var builtin: Bool { model.draftBuiltin() }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("连接与计划修改保存后生效；账号启停和展示开关即时生效。API 与额度查询使用各自的凭证。")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("连接与计划保存后生效。API 调用与额度查询使用独立凭证。")
                 .font(.callout).foregroundStyle(.secondary)
             if section != .trigger {
                 identity
@@ -47,13 +47,13 @@ struct DraftFormView: View {
     private var identity: some View {
         GroupBox("账号") {
             VStack(alignment: .leading, spacing: 10) {
-                TextField("账号名称", text: bind(\.name)).textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("账号名称")
+                labeled("账号名称") {
+                    TextField("账号名称", text: bind(\.name)).fieldBox()
+                        .accessibilityLabel("账号名称")
+                }
                 if let error = model.errors["name"] { Text(error).foregroundStyle(.red).font(.callout) }
-                LabeledContent("供应商类型", value: manifest?.label ?? "自定义兼容 API")
-                Text("账号名称用于菜单、悬浮窗与 HUD；同一类型可以添加多个账号。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(8)
+                labeled("供应商类型") { Text(manifest?.label ?? "自定义兼容 API").foregroundStyle(Palette.muted) }
+            }
         }
     }
     private var callConnection: some View {
@@ -61,13 +61,15 @@ struct DraftFormView: View {
             VStack(alignment: .leading, spacing: 12) {
                 labeled("服务地址") {
                     TextField("https://api.example.com/v1", text: bind(\.url))
-                        .textFieldStyle(.roundedBorder).disabled(builtin)
+                        .fieldBox().disabled(builtin)
                         .accessibilityLabel("API 服务地址")
                 }
-                Picker("调用协议", selection: bind(\.proto)) {
-                    Text("OpenAI Chat Completions").tag("openai")
-                    Text("Anthropic Messages").tag("anthropic")
-                }.disabled(builtin)
+                labeled("调用协议") {
+                    Picker("调用协议", selection: bind(\.proto)) {
+                        Text("OpenAI Chat Completions").tag("openai")
+                        Text("Anthropic Messages").tag("anthropic")
+                    }.labelsHidden().disabled(builtin)
+                }
                 if builtin {
                     Label("地址与协议由供应商类型提供", systemImage: "lock")
                         .font(.caption).foregroundStyle(.secondary)
@@ -76,14 +78,16 @@ struct DraftFormView: View {
                 credentialActions(query: false)
                 labeled("模型") {
                     TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
-                        .textFieldStyle(.roundedBorder).accessibilityLabel("调用模型")
+                        .fieldBox().accessibilityLabel("调用模型")
                 }
-                labeled("测试提示词") {
-                    TextField("只回复 OK", text: bind(\.prompt)).textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("测试提示词")
-                }
+                DisclosureGroup("测试选项") {
+                    labeled("测试提示词") {
+                        TextField("只回复 OK", text: bind(\.prompt)).fieldBox()
+                            .accessibilityLabel("测试提示词")
+                    }.padding(.top, 6)
+                }.font(.system(size: 12)).foregroundStyle(Palette.muted)
                 HStack {
-                    Text("使用当前输入，不保存配置。发送一次调用会消耗额度。")
+                    Text("测试使用当前输入，不保存；会消耗额度。")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     AccountActionButton(title: model.isTestingCurrentConfig ? "测试中…" : "测试当前 API 配置",
@@ -92,17 +96,19 @@ struct DraftFormView: View {
                     }.fixedSize().frame(height: 28)
                 }
                 if let result = model.callTestResult(for: nil) { CallTestResultView(result: result) }
-            }.padding(8)
+            }
         }
     }
     private var quotaConnection: some View {
         GroupBox("额度查询 · 可选") {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("查询方式", selection: bind(\.quotaMode)) {
-                    Text("不查询额度").tag("none")
-                    Text("查询接口").tag("endpoint")
-                    if builtin { Text("供应商脚本").tag("script") }
-                }.disabled(builtin)
+                labeled("查询方式") {
+                    Picker("查询方式", selection: bind(\.quotaMode)) {
+                        Text("不查询额度").tag("none")
+                        Text("查询接口").tag("endpoint")
+                        if builtin { Text("供应商脚本").tag("script") }
+                    }.labelsHidden().disabled(builtin)
+                }
                 if draft.values.quotaMode == "none" {
                     Text("此账号只用于 API 调用与计划。不开启额度查询也可保存和使用。")
                         .font(.callout).foregroundStyle(.secondary)
@@ -110,7 +116,7 @@ struct DraftFormView: View {
                     if draft.values.quotaMode == "endpoint" {
                         labeled("额度查询地址") {
                             TextField("https://example.com/api/usage", text: bind(\.queryURL))
-                                .textFieldStyle(.roundedBorder).disabled(builtin)
+                                .fieldBox().disabled(builtin)
                                 .accessibilityLabel("额度查询地址")
                         }
                     } else {
@@ -120,7 +126,7 @@ struct DraftFormView: View {
                     quotaCredentials
                     credentialActions(query: true)
                     if !builtin {
-                        Text("使用独立 Bearer Key 查询此精确地址。接口需返回规范额度 JSON；5 小时、周、月窗口与重置时间均可缺省。")
+                        Text("使用独立 Bearer Key；接口返回额度 JSON，窗口与重置时间可缺省。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if let slug = draft.slug {
@@ -130,7 +136,7 @@ struct DraftFormView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-            }.padding(8)
+            }
         }
     }
     @ViewBuilder private var quotaCredentials: some View {
@@ -173,7 +179,7 @@ struct DraftFormView: View {
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
                     TextField("09:00", text: Binding(get: { model.draft?.timeInput ?? "" }, set: { model.draft?.timeInput = $0 }))
-                        .textFieldStyle(.roundedBorder).frame(width: 100).accessibilityLabel("添加调用时间，24小时制")
+                        .fieldBox().frame(width: 100).accessibilityLabel("添加调用时间，24小时制")
                         .onSubmit { model.addTime() }
                     Button("添加时间") { model.addTime() }
                 }
@@ -182,7 +188,7 @@ struct DraftFormView: View {
                 }
                 FlowChips(times: draft.values.times) { model.removeTime(at: $0) }
                 if draft.values.times.isEmpty { Text("尚未添加时间点").foregroundStyle(.secondary) }
-            }.padding(8)
+            }
         }
     }
     private func bind<T>(_ keyPath: WritableKeyPath<DraftValues, T>) -> Binding<T> {
@@ -191,7 +197,13 @@ struct DraftFormView: View {
         })
     }
     private func labeled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) { Text(label).font(.callout).foregroundStyle(.secondary); content() }
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+            GridRow(alignment: .firstTextBaseline) {
+                Text(label).font(.system(size: 12)).foregroundStyle(Palette.inkSecondary)
+                    .frame(width: 110, alignment: .trailing)
+                content().frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
     private func secret(_ label: String, value: Binding<String>, revealed: Binding<Bool>) -> some View {
         labeled(label) {
@@ -199,7 +211,7 @@ struct DraftFormView: View {
                 Group {
                     if revealed.wrappedValue { TextField("留空保持原值", text: value) }
                     else { SecureField("留空保持原值", text: value) }
-                }.textFieldStyle(.roundedBorder).accessibilityLabel(label)
+                }.fieldBox().accessibilityLabel(label)
                 Button { revealed.wrappedValue.toggle() } label: {
                     Image(systemName: revealed.wrappedValue ? "eye.slash" : "eye")
                 }.accessibilityLabel(revealed.wrappedValue ? "隐藏\(label)" : "显示\(label)")

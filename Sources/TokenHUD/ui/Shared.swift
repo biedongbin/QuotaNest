@@ -2,10 +2,10 @@ import SwiftUI
 
 func hudColor(_ c: HUDFmt.Color) -> Color {
     switch c {
-    case .red: return .red
-    case .yellow: return .yellow
-    case .green: return .green
-    case .dim: return .secondary.opacity(0.6)
+    case .red: return Palette.danger
+    case .yellow: return Palette.warn
+    case .green: return Palette.accent
+    case .dim: return Palette.muted
     }
 }
 
@@ -41,21 +41,19 @@ struct ProviderBadge: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-            .fill(LinearGradient(colors: [accent.opacity(0.9), accent.opacity(0.55)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .fill(accent.opacity(0.1))
             .overlay {
                 Group {
                     if let icon {
                         Image(systemName: icon).font(.system(size: size * 0.5, weight: .bold))
                     } else {
                         Text(String(label.prefix(1)).uppercased())
-                            .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
+                            .font(.system(size: size * 0.45, weight: .bold))
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(accent)
             }
             .frame(width: size, height: size)
-            .shadow(color: accent.opacity(0.35), radius: size * 0.2, y: 1)
             .accessibilityHidden(true) // 装饰性, 名称由相邻 Text 提供
     }
 }
@@ -68,7 +66,7 @@ struct PctText: View {
 
     var body: some View {
         Text(formatPct(pct))
-            .font(.system(size: size, weight: weight, design: .rounded))
+            .font(.system(size: size, weight: weight))
             .monospacedDigit()
             .foregroundStyle(hudColor(HUDFmt.pctColor(pct)))
     }
@@ -80,7 +78,7 @@ struct CountdownChip: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .medium, design: .rounded))
+            .font(.system(size: 9, weight: .medium))
             .monospacedDigit()
             .foregroundStyle(.secondary)
             .padding(.horizontal, 5)
@@ -99,7 +97,7 @@ struct BucketRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .leading)
             UsageBar(pct: bucket.usedPercentage)
@@ -122,25 +120,17 @@ struct UsageBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            let h = geo.size.height
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.10))
-                if let p = pct {
+                Capsule().fill(Palette.barTrack)
+                if let p = pct, p > 0 {
                     let w = geo.size.width * CGFloat(min(max(p, 0), 100) / 100)
-                    Capsule()
-                        .fill(barGradient(p))
-                        .frame(width: max(w, h * 0.6)) // 极低时保圆头
-                        .shadow(color: p >= 90 ? Color.red.opacity(0.55) : .clear,
-                                radius: style == .thick ? 3 : 2)
+                    Capsule().fill(p >= 90 ? Palette.warn : Palette.accent)
+                        .frame(width: max(0, w))
                 }
             }
         }
     }
 
-    private func barGradient(_ p: Double) -> LinearGradient {
-        let c = hudColor(HUDFmt.pctColor(p))
-        return LinearGradient(colors: [c.opacity(0.65), c], startPoint: .leading, endPoint: .trailing)
-    }
 }
 
 /// 点状进度: 5 格, 按用量点亮 (紧凑风格)

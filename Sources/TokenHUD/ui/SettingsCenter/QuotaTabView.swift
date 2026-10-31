@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The same snapshot semantics power the main window, menu and floating panel.
+/// One snapshot contract is shared by the account window, menu and floating panel.
 struct QuotaPresentation {
     let state: ProviderState?
     var isOld: Bool {
@@ -31,7 +31,9 @@ struct QuotaMetric: Identifiable {
     let period: String?
     let resetsAt: Int?
     var value: String {
-        if let percentage { return "\(Int(percentage.rounded()))%" }
+        if let percentage {
+            return percentage.formatted(.number.precision(.fractionLength(0...1))) + "%"
+        }
         if let amount, let limit { return QuotaTabView.unitLabel(amount, limit, unit: unit) }
         if let amount { return "\(amount.formatted()) \(unit ?? "")" }
         if let limit { return "上限 \(limit.formatted()) \(unit ?? "")" }
@@ -39,36 +41,69 @@ struct QuotaMetric: Identifiable {
     }
 }
 
+struct QuotaMetricGrid: View {
+    let metrics: [QuotaMetric]
+    var old = false
+    var compact = false
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 18, alignment: .top),
+              count: metrics.count == 1 ? 1 : 2)
+    }
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: compact ? 14 : 22) {
+            ForEach(metrics) { metric in
+                QuotaMetricView(metric: metric, old: old, compact: compact)
+            }
+        }
+    }
+}
+
 struct QuotaMetricView: View {
     let metric: QuotaMetric
     var old = false
     var compact = false
+    private var meterColor: Color { (metric.percentage ?? 0) >= 90 ? Palette.warn : Palette.accent }
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(metric.label).foregroundStyle(.secondary).lineLimit(2)
-                Spacer(minLength: 8)
-                Text(metric.value).monospacedDigit().fontWeight(.medium)
-                if old { Text("旧值").font(.caption).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(metric.label).foregroundStyle(Palette.muted).lineLimit(2)
+                Spacer(minLength: 2)
+                Text(metric.value).fontWeight(.semibold).monospacedDigit()
+                    .foregroundStyle(old ? Palette.muted : Palette.ink)
+                    .fixedSize(horizontal: metric.percentage != nil, vertical: metric.percentage == nil)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: metric.percentage == nil ? .infinity : nil, alignment: .trailing)
             }
-            if !old, let percentage = metric.percentage {
-                ProgressView(value: min(max(percentage, 0), 100), total: 100)
-                    .tint(percentage >= 90 ? .orange : .accentColor)
-                    .accessibilityLabel("\(metric.label)已用")
-                    .accessibilityValue(metric.value)
+            .font(.system(size: compact ? 11.5 : 13))
+            if let percentage = metric.percentage {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Palette.barTrack)
+                        Capsule().fill(meterColor.opacity(old ? 0.4 : 1))
+                            .frame(width: geometry.size.width * CGFloat(min(max(percentage, 0), 100) / 100))
+                    }
+                }
+                .frame(height: 4)
+                .accessibilityLabel("\(metric.label)已用")
+                .accessibilityValue(metric.value + (old ? "，旧值" : ""))
             }
-            if !compact {
-                if metric.percentage != nil, let amount = metric.amount, let limit = metric.limit {
-                    Text(QuotaTabView.unitLabel(amount, limit, unit: metric.unit)).foregroundStyle(.secondary)
+            if !compact, metric.percentage != nil, let amount = metric.amount, let limit = metric.limit {
+                Text(QuotaTabView.unitLabel(amount, limit, unit: metric.unit))
+                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                if old {
+                    Text("旧值").foregroundStyle(Palette.warn)
                 }
-                if let reset = formatResetAt(metric.resetsAt) {
-                    Text(reset).font(.caption).foregroundStyle(.secondary)
-                } else if let period = metric.period {
-                    Text(period).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(formatResetAt(metric.resetsAt) ?? "重置时间未知")
+                    .foregroundStyle(Palette.muted).lineLimit(2)
+            }
+            .font(.system(size: compact ? 10.5 : 11.5))
+            if !compact, let period = metric.period, period != metric.label {
+                Text(period).font(.system(size: 11.5)).foregroundStyle(Palette.muted)
             }
         }
-        .font(compact ? .caption : .body)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }
@@ -79,29 +114,63 @@ struct QuotaTabView: View {
     private var presentation: QuotaPresentation { QuotaPresentation(state: row.state) }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("额度查询").font(.headline)
-                    Text("仅查询额度，不发送模型调用。").foregroundStyle(.secondary)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("额度").font(Typo.section).foregroundStyle(Palette.ink)
+                    Text("供应商返回的实际用量与重置时间")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
                 }
-                Spacer()
-                Button(model.running.contains(row.id) ? "查询中…" : "查询额度", systemImage: "arrow.clockwise") { model.query(row.id) }
-                    .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
-                    .keyboardShortcut("r", modifiers: .command)
+                Spacer(minLength: 12)
+                Button {
+                    model.query(row.id)
+                } label: {
+                    Label(model.running.contains(row.id) ? "查询中" : "刷新额度", systemImage: "arrow.clockwise")
+                }
+                .barButton()
+                .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
+                .keyboardShortcut("r", modifiers: .command)
             }
             if !row.canQuery {
-                ContentUnavailableView("未启用额度查询", systemImage: "chart.bar.xaxis",
-                                       description: Text("此账号可独立用于 API 调用。需要时可在连接配置中添加额度查询。"))
-            } else {
-                ResultBox(kind: model.running.contains(row.id) ? .info : (presentation.isOld ? .neutral : .ok),
-                          title: model.running.contains(row.id) ? "正在查询…" : presentation.status,
-                          detail: "最近成功查询：\(presentation.updated)" + (row.enabled ? "" : " · 账号已停用，手动查询不会恢复计划"))
-                if presentation.metrics.isEmpty {
-                    Text(model.quotaConfigured(row) ? "查询成功后显示服务实际返回的额度窗口。" : "额度查询尚未配置完整，请检查连接配置。")
-                        .foregroundStyle(.secondary).padding(.vertical, 20)
+                CardBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("未启用额度查询", systemImage: "chart.bar.xaxis")
+                            .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
+                        Text("此账号仍可测试 API 和执行调用计划。需要时，在连接中添加额度接口或查询凭证。")
+                            .font(Typo.small).foregroundStyle(Palette.muted)
+                        Button("配置额度查询") {
+                            model.tab = .config
+                            model.startEdit()
+                        }.barButton()
+                    }
                 }
-                ForEach(presentation.metrics) { metric in
-                    CardBox { QuotaMetricView(metric: metric, old: presentation.isOld || !row.enabled) }
+            } else {
+                CardBox {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(spacing: 7) {
+                            if model.running.contains(row.id) {
+                                ProgressView().controlSize(.mini)
+                                Text("正在查询").foregroundStyle(Palette.muted)
+                            } else {
+                                Circle().fill(presentation.isOld ? Palette.warn : Palette.accent)
+                                    .frame(width: 5, height: 5).accessibilityHidden(true)
+                                Text(presentation.status).foregroundStyle(presentation.isOld ? Palette.warn : Palette.muted)
+                            }
+                            Spacer(minLength: 8)
+                            Text(presentation.updated).foregroundStyle(Palette.muted).monospacedDigit()
+                        }
+                        .font(.system(size: 11.5))
+                        if presentation.metrics.isEmpty {
+                            Text(model.quotaConfigured(row) ? "查询后，这里会显示服务返回的额度窗口。" : "请先在连接中补全额度查询凭证。")
+                                .font(Typo.small).foregroundStyle(Palette.muted)
+                                .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                        } else {
+                            QuotaMetricGrid(metrics: presentation.metrics, old: presentation.isOld || !row.enabled)
+                        }
+                        if !row.enabled {
+                            Text("账号已停用。手动查询不会恢复调用计划。")
+                                .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
+                        }
+                    }
                 }
             }
         }
@@ -132,13 +201,16 @@ struct ResultBox: View {
     let kind: Kind
     let title: String
     let detail: String
+    private var color: Color { kind == .error ? Palette.danger : (kind == .ok ? Palette.accent : Palette.muted) }
     var body: some View {
-        Label {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(color).padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).fontWeight(.medium)
-                if !detail.isEmpty { Text(detail).font(.callout).foregroundStyle(.secondary) }
+                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.ink)
+                if !detail.isEmpty { Text(detail).font(.system(size: 11.5)).foregroundStyle(Palette.muted) }
             }
-        } icon: { Image(systemName: symbol).foregroundStyle(kind == .error ? Color.red : Color.secondary) }
+            Spacer(minLength: 0)
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12).background(Palette.badgeBg, in: RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .combine)
@@ -150,8 +222,17 @@ struct ResultBox: View {
 struct ProgressLine: View {
     let pct: Double?
     var body: some View {
-        ProgressView(value: min(max(pct ?? 0, 0), 100), total: 100)
-            .accessibilityLabel("已用额度").accessibilityValue(pct.map { "\(Int($0.rounded()))%" } ?? "未知")
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.barTrack)
+                if let pct {
+                    Capsule().fill(pct >= 90 ? Palette.warn : Palette.accent)
+                        .frame(width: geometry.size.width * CGFloat(min(max(pct, 0), 100) / 100))
+                }
+            }
+        }
+        .frame(height: 4)
+        .accessibilityLabel("已用额度").accessibilityValue(pct.map { "\(Int($0.rounded()))%" } ?? "未知")
     }
 }
 enum QuotaErrorPresentation {

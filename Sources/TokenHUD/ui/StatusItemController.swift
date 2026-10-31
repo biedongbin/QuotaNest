@@ -39,16 +39,16 @@ final class StatusItemController: ObservableObject {
     }
 
     @objc private func onClick(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else { return }
+        guard let event = NSApp.currentEvent else { togglePopover(); return }
         if event.type == .rightMouseUp {
             popover?.performClose(nil)
             showMenu()
-        } else if event.clickCount == 2 {
+        } else if event.type == .leftMouseUp && event.clickCount == 2 {
             // The first click opens immediately; the second closes that transient
             // preview and performs only the floating-panel command. No timer races.
             popover?.performClose(nil)
             panelController.toggle()
-        } else if event.clickCount == 1 {
+        } else {
             togglePopover()
         }
     }
@@ -159,7 +159,11 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         let w = SettingsMainWindow(contentViewController: host)
         w.title = "TokenHUD"
         w.styleMask.insert([.closable, .miniaturizable, .resizable])
-        w.minSize = NSSize(width: 640, height: 560)
+        w.setContentSize(NSSize(width: 1120, height: 760))
+        w.minSize = NSSize(width: 760, height: 560)
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.toolbarStyle = .unified
         w.delegate = self
         w.isReleasedWhenClosed = false
         if defaults === UserDefaults.standard {

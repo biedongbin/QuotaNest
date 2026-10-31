@@ -5,7 +5,7 @@ struct ConfigTabView: View {
     let row: AccountRow
     private var config: ProviderConfig { model.readConfig(row.plugin) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("连接配置").font(.headline)
                 Spacer()
@@ -13,7 +13,19 @@ struct ConfigTabView: View {
                     model.startEdit()
                 }.fixedSize().frame(height: 28)
             }
-            GroupBox("API 调用") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
+                apiConnection
+                quotaConnection
+            }
+            HStack {
+                Button("复制账号…", systemImage: "plus.square.on.square") { model.duplicateAccount(row.id) }
+                Spacer()
+                Button("删除账号…", role: .destructive) { model.delete(row.id) }
+            }
+        }
+    }
+    private var apiConnection: some View {
+        GroupBox("API 调用") {
                 VStack(alignment: .leading, spacing: 8) {
                     KeyValueRow("服务地址", mono: true) { Text(config.apiBaseURL.isEmpty ? "未配置" : config.apiBaseURL) }
                     KeyValueRow("协议") { Text(config.refreshProtocol == "anthropic" ? "Anthropic Messages" : "OpenAI Chat Completions") }
@@ -30,9 +42,11 @@ struct ConfigTabView: View {
                     }
                     Text("使用已保存配置发送一次请求，会消耗账号额度。").font(.caption).foregroundStyle(.secondary)
                     if let result = model.callTestResult(for: row.id) { CallTestResultView(result: result) }
-                }.padding(8)
+                }
             }
-            GroupBox("额度查询 · 可选") {
+    }
+    private var quotaConnection: some View {
+        GroupBox("额度查询 · 可选") {
                 VStack(alignment: .leading, spacing: 8) {
                     if row.canQuery {
                         KeyValueRow("查询地址", mono: true) { Text(config.queryUrl.isEmpty ? "供应商脚本" : config.queryUrl) }
@@ -45,14 +59,8 @@ struct ConfigTabView: View {
                         Text("API 调用和调用计划可独立使用。需要时编辑连接，选择额度查询方式。")
                             .font(.callout).foregroundStyle(.secondary)
                     }
-                }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack {
-                Button("复制账号…", systemImage: "plus.square.on.square") { model.duplicateAccount(row.id) }
-                Spacer()
-                Button("删除账号…", role: .destructive) { model.delete(row.id) }
-            }
-        }
     }
 }
 
@@ -61,7 +69,7 @@ struct TriggerTabView: View {
     let row: AccountRow
     private var config: ProviderConfig { model.readConfig(row.plugin) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("调用计划").font(.headline)
                 Spacer()
@@ -75,8 +83,8 @@ struct TriggerTabView: View {
                     }
                     Text("使用本机时区 \(TimeZone.current.identifier)。到点发送一次模型调用，会消耗该账号额度。")
                         .font(.callout).foregroundStyle(.secondary)
-                    Text("额度查询是否开启，不影响 API 调用计划。").font(.callout).foregroundStyle(.secondary)
-                }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    Text("计划独立于额度查询。").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if row.canQuery {
                 GroupBox("后台额度查询") {
@@ -89,7 +97,7 @@ struct TriggerTabView: View {
                             Button("恢复供应商默认间隔") { model.engine.clearIntervalOverride(row.id) }
                         }
                         Text("间隔立即生效。账号停用时后台查询暂停。").font(.callout).foregroundStyle(.secondary)
-                    }.padding(8)
+                    }
                 }
             }
         }

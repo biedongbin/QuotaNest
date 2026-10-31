@@ -13,10 +13,13 @@ struct SettingsCenterView: View {
             } else {
                 NavigationSplitView {
                     AccountSidebar(model: model, engine: engine)
-                        .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 320)
+                        .navigationSplitViewColumnWidth(min: 184, ideal: 208, max: 280)
                 } detail: {
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 0) {
+                        pageHeader
+                        detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .background(Palette.canvas)
                 }
                 .navigationSplitViewStyle(.balanced)
                 .toolbar {
@@ -44,10 +47,36 @@ struct SettingsCenterView: View {
                 }
             }
         }
+        .font(.system(size: 13))
+        .tint(Palette.ink)
+        .accentColor(Palette.ink)
+        .groupBoxStyle(QuietGroupBoxStyle())
         .onAppear { applyRenderScript() }
         .onExitCommand {
             if model.draft != nil { model.cancelEdit() }
             else if model.showingTemplates { model.closeTemplates() }
+        }
+    }
+
+    private var pageHeader: some View {
+        HStack(spacing: 8) {
+            Text("TokenHUD").foregroundStyle(Palette.muted)
+            Text("/").foregroundStyle(Palette.muted.opacity(0.6))
+            Text(pageName).fontWeight(.medium).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 20).frame(height: 42)
+    }
+    private var pageName: String {
+        switch model.navPage {
+        case .overview: return "账号 / 概览"
+        case .plan: return "调用计划"
+        case .settings: return "设置与外观"
+        case .detail:
+            if model.showingTemplates { return "添加账号" }
+            if model.draft?.isNew == true { return "新建账号" }
+            return model.current?.name ?? "账号"
         }
     }
 
@@ -91,55 +120,77 @@ struct SettingsCenterView: View {
 private struct AccountSidebar: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
-    private var selection: Binding<String?> {
-        Binding(get: {
-            if model.showingTemplates || model.draft?.isNew == true { return nil }
-            if model.navPage == .settings { return "page:settings" }
-            if model.navPage == .plan { return "page:plan" }
-            if model.navPage == .overview { return "page:accounts" }
-            return model.selected
-        }, set: { value in
-            switch value {
-            case "page:settings": model.navigate(to: .settings)
-            case "page:plan": model.navigate(to: .plan)
-            case "page:accounts": model.navigate(to: .overview)
-            case .some(let id): _ = model.selectAccount(id, tab: .config)
-            case .none: break
-            }
-        })
+    @State private var hovered: String?
+    @FocusState private var focusedRow: String?
+
+    private var selected: String? {
+        if model.showingTemplates || model.draft?.isNew == true { return nil }
+        switch model.navPage {
+        case .overview: return "page:accounts"
+        case .plan: return "page:plan"
+        case .settings: return "page:settings"
+        case .detail: return model.selected
+        }
+    }
+    private func choose(_ id: String) {
+        switch id {
+        case "page:accounts": model.navigate(to: .overview)
+        case "page:plan": model.navigate(to: .plan)
+        case "page:settings": model.navigate(to: .settings)
+        default: _ = model.selectAccount(id, tab: .config)
+        }
     }
     var body: some View {
-        List(selection: selection) {
-            Label("全部账号", systemImage: "person.2").tag("page:accounts")
-            Label("调用计划", systemImage: "calendar.badge.clock").tag("page:plan")
-            ForEach(model.overviewGroups, id: \.label) { group in
-                Section(group.fullName) {
-                    ForEach(group.rows) { row in
-                        HStack(spacing: 8) {
-                            ProviderBadge(icon: row.plugin.manifest.icon, label: row.name,
-                                          accent: brandColor(row.plugin.manifest.accent), size: 22)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(row.name).lineLimit(2)
-                                Text(row.enabled ? accountSummary(row) : "已停用")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    navRow("全部账号", icon: "person.2", id: "page:accounts")
+                    navRow("调用计划", icon: "calendar.badge.clock", id: "page:plan")
+                    ForEach(model.overviewGroups, id: \.label) { group in
+                        Text(group.fullName).font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.muted).padding(.horizontal, 10).padding(.top, 17).padding(.bottom, 3)
+                        ForEach(group.rows) { row in
+                            navRow(row.name, icon: row.plugin.manifest.icon ?? "network", id: row.id, disabled: !row.enabled)
+                                .contextMenu { AccountContextMenu(model: model, row: row) }
                         }
-                        .tag(row.id)
-                        .contextMenu { AccountContextMenu(model: model, row: row) }
                     }
-                }
+                }.padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 12)
             }
-            Section {
-                Label("设置与外观", systemImage: "gearshape").tag("page:settings")
-            }
+            navRow("设置与外观", icon: "gearshape", id: "page:settings")
+                .padding(10)
         }
-        .listStyle(.sidebar)
+        .background(Palette.canvas)
         .searchable(text: $model.search, prompt: "搜索账号或供应商")
         .navigationTitle("TokenHUD")
+        .onMoveCommand { direction in
+            let ids = ["page:accounts", "page:plan"] + model.overviewGroups.flatMap { $0.rows.map(\.id) } + ["page:settings"]
+            guard let current = (focusedRow ?? selected).flatMap({ ids.firstIndex(of: $0) }) else { return }
+            let next = direction == .down ? current + 1 : (direction == .up ? current - 1 : current)
+            guard ids.indices.contains(next), next != current else { return }
+            choose(ids[next])
+            if selected == ids[next] { focusedRow = ids[next] }
+        }
     }
-    private func accountSummary(_ row: AccountRow) -> String {
-        let call = model.callConfigured(row) ? "API 已配置" : "API 未配置"
-        return row.canQuery ? call + " · 可查额度" : call + " · 无额度查询"
+    private func navRow(_ text: String, icon: String, id: String, disabled: Bool = false) -> some View {
+        Button { choose(id) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 14)).frame(width: 17)
+                    .foregroundStyle(selected == id ? Palette.ink : Palette.controlText)
+                Text(text).font(.system(size: 13, weight: selected == id ? .medium : .regular)).lineLimit(1)
+                Spacer(minLength: 0)
+                if disabled { StatusDot(color: Palette.muted) }
+            }
+            .foregroundStyle(Palette.ink).padding(.horizontal, 10).frame(height: 32)
+            .background(selected == id ? Palette.surface : (hovered == id ? Palette.hover.opacity(0.5) : .clear),
+                        in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected == id ? Palette.border : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focused($focusedRow, equals: id)
+        .accessibilityLabel(text).accessibilityIdentifier("sidebar." + id)
+        .accessibilityValue(selected == id ? "已选择" : "")
+        .onHover { hovered = $0 ? id : nil }
     }
 }
 
@@ -147,59 +198,93 @@ struct OverviewPage: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
     var body: some View {
-        List {
-            Section {
-                Text("添加同一供应商的多个账号，分别管理 API 连接、额度查询与调用计划。")
-                    .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Button("添加账号", systemImage: "plus") { model.openTemplates() }
-                    Button("导入账号…", systemImage: "square.and.arrow.down") { model.openImport() }
+                    Text("额度与账号").foregroundStyle(Palette.muted)
                     Spacer()
                     Button("查询全部额度", systemImage: "arrow.clockwise") {
                         for row in model.allAccounts where row.enabled && row.canQuery && model.quotaConfigured(row) {
                             model.query(row.id)
                         }
                     }
+                    .barButton()
                     .disabled(!model.allAccounts.contains { $0.enabled && $0.canQuery && model.quotaConfigured($0) })
                 }
-            }
-            if model.accounts.isEmpty {
-                ContentUnavailableView(model.search.isEmpty ? "尚无账号" : "没有匹配的账号",
-                                       systemImage: "person.crop.circle.badge.plus",
-                                       description: Text(model.search.isEmpty ? "添加一个账号开始使用。" : "试试其他名称。"))
-            }
-            ForEach(model.overviewGroups, id: \.label) { group in
-                Section(group.fullName) {
-                    ForEach(group.rows) { row in
-                        HStack(spacing: 12) {
-                            Button { _ = model.selectAccount(row.id, tab: .config) } label: {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(row.name).font(.headline)
-                                    Text(accountState(row)).font(.callout).foregroundStyle(.secondary)
+                if model.accounts.isEmpty {
+                    ContentUnavailableView(model.search.isEmpty ? "尚无账号" : "没有匹配的账号",
+                                           systemImage: "person.crop.circle.badge.plus",
+                                           description: Text(model.search.isEmpty ? "添加一个账号开始使用。" : "试试其他名称。"))
+                }
+                LazyVGrid(columns: model.overviewGroups.count == 1 ? [GridItem(.flexible(), alignment: .top)] : [GridItem(.adaptive(minimum: 290), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
+                    ForEach(model.overviewGroups, id: \.label) { group in
+                        CardBox {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 7) {
+                                    Image(systemName: group.rows.first?.plugin.manifest.icon ?? "network")
+                                        .foregroundStyle(Palette.accent).frame(width: 17)
+                                    Text(group.fullName).font(.system(size: 13, weight: .semibold))
+                                    Spacer(minLength: 0)
+                                    Text("\(group.rows.count) 个账号").font(.system(size: 11)).foregroundStyle(Palette.muted)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+                                    if index > 0 { Divider().overlay(Palette.border) }
+                                    OverviewAccountCard(model: model, row: row)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            Toggle("启用", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
-                                .toggleStyle(.switch).fixedSize()
-                                .accessibilityLabel("启用 \(row.name)")
-                            Menu { AccountContextMenu(model: model, row: row) } label: {
-                                Label("更多操作", systemImage: "ellipsis.circle")
-                            }
-                            .menuStyle(.borderlessButton).labelsHidden().fixedSize()
                         }
-                        .padding(.vertical, 6)
-                        .contextMenu { AccountContextMenu(model: model, row: row) }
                     }
                 }
             }
+            .frame(maxWidth: 1200, alignment: .leading)
+            .frame(maxWidth: .infinity).padding(.horizontal, 20).padding(.bottom, 20)
         }
-        .navigationTitle("账号管理")
     }
-    private func accountState(_ row: AccountRow) -> String {
+}
+
+private struct OverviewAccountCard: View {
+    @ObservedObject var model: SettingsModel
+    let row: AccountRow
+    private var quota: QuotaPresentation { QuotaPresentation(state: row.state) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button { _ = model.selectAccount(row.id, tab: .config) } label: {
+                    Text(row.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                }.buttonStyle(.plain)
+                Spacer(minLength: 0)
+                Toggle("启用", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                    .accessibilityLabel("启用 \(row.name)")
+                Menu { AccountContextMenu(model: model, row: row) } label: {
+                    Image(systemName: "ellipsis").frame(width: 20, height: 20)
+                }.menuStyle(.borderlessButton).fixedSize().help("账号操作")
+            }
+            if row.canQuery && !quota.metrics.isEmpty {
+                QuotaMetricGrid(metrics: quota.metrics, old: quota.isOld || !row.enabled, compact: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(status).foregroundStyle(quota.isOld ? Palette.warn : Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if row.canQuery {
+                    Button { model.query(row.id) } label: { Image(systemName: "arrow.clockwise") }
+                        .buttonStyle(.plain).help("查询额度")
+                        .disabled(!model.quotaConfigured(row) || model.running.contains(row.id))
+                }
+            }.font(.system(size: 11))
+            if row.canQuery && !quota.metrics.isEmpty {
+                Text("更新于 \(quota.updated)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            }
+        }
+        .contextMenu { AccountContextMenu(model: model, row: row) }
+    }
+    private var status: String {
         if !row.enabled { return "已停用 · 配置和计划保留" }
-        let call = model.callConfigured(row) ? "API 可调用" : "API 待配置"
-        return call + (row.canQuery ? " · " + QuotaPresentation(state: row.state).status : " · 未启用额度查询")
+        if model.running.contains(row.id) { return "正在查询额度…" }
+        if !row.canQuery { return model.callConfigured(row) ? "API 已配置 · 无额度查询" : "API 待配置 · 无额度查询" }
+        if !model.quotaConfigured(row) { return "额度查询待配置" }
+        return quota.status
     }
 }
 

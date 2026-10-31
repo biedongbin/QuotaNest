@@ -10,57 +10,40 @@ struct AccountDetailView: View {
             if let row = model.current, model.draft?.isNew != true {
                 header(row)
             } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("新建账号").font(.title2.weight(.semibold))
-                        Spacer()
-                        Text("保存后加入账号列表").foregroundStyle(.secondary)
-                    }
-                    Picker("新账号详情", selection: $model.tab) {
-                        Text("连接").tag(SettingsModel.Tab.config)
-                        Text("计划").tag(SettingsModel.Tab.trigger)
-                    }.pickerStyle(.segmented)
-                }.padding(20)
+                HStack(spacing: 14) {
+                    QuietTabs(selection: sectionBinding, items: [("config", "连接"), ("trigger", "计划")])
+                    Spacer(minLength: 0)
+                    Text("保存后加入账号列表").font(Typo.small).foregroundStyle(Palette.muted)
+                }.padding(.horizontal, 20).padding(.vertical, 10)
             }
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 14) {
                     if !model.topError.isEmpty {
                         ResultBox(kind: .error, title: "请检查配置", detail: model.topError)
                     }
                     content
                 }
-                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: 1200, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(20)
             }
             if model.draft != nil { draftActions }
         }
-        .navigationTitle(model.draft?.isNew == true ? "新建账号" : (model.current?.name ?? "账号"))
+        .navigationTitle("TokenHUD")
         .onChange(of: model.selected) { _, _ in showDisplay = false }
         .onChange(of: model.tab) { _, _ in showDisplay = false }
         .onChange(of: model.draft?.isNew) { _, _ in showDisplay = false }
     }
 
     private func header(_ row: AccountRow) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(row.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-                    Text(model.providerName(for: row)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Toggle("启用账号", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
-                    .toggleStyle(.switch).fixedSize()
-                    .help("立即生效；停用后暂停后台查询和调用计划，保留配置。")
-            }
-            Picker("账号详情", selection: sectionBinding) {
-                Text("连接").tag("config")
-                Text("额度").tag("quota")
-                Text("计划").tag("trigger")
-                Text("展示").tag("display")
-            }.pickerStyle(.segmented)
-        }.padding(20)
+        HStack(spacing: 14) {
+            QuietTabs(selection: sectionBinding, items: [("config", "连接"), ("quota", "额度"), ("trigger", "计划"), ("display", "展示")])
+            Spacer(minLength: 0)
+            Toggle("启用账号", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
+                .toggleStyle(.switch).controlSize(.small).fixedSize().font(Typo.small)
+                .help("立即生效；停用后暂停后台查询和调用计划，保留配置。")
+        }.padding(.horizontal, 20).padding(.vertical, 10)
     }
 
     private var sectionBinding: Binding<String> {
@@ -94,11 +77,11 @@ struct AccountDetailView: View {
             HStack(spacing: 12) {
                 Label("未保存的更改", systemImage: "pencil.circle").font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Button("取消") { model.cancelEdit() }.keyboardShortcut(.cancelAction)
+                Button("取消") { model.cancelEdit() }.barButton().keyboardShortcut(.cancelAction)
                 Button("保存") { model.save() }
-                    .buttonStyle(.borderedProminent).keyboardShortcut("s", modifiers: .command)
+                    .barButton(.primary).keyboardShortcut("s", modifiers: .command)
                     .disabled(model.isTestingCurrentConfig)
-            }.padding(14).background(.bar)
+            }.padding(.horizontal, 20).frame(minHeight: 48).background(Palette.surface)
         }
     }
 }
