@@ -218,7 +218,9 @@ struct OverviewPage: View {
                 }
                 LazyVGrid(columns: model.overviewGroups.count == 1 ? [GridItem(.flexible(), alignment: .top)] : [GridItem(.adaptive(minimum: 290), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
                     ForEach(model.overviewGroups, id: \.label) { group in
-                        CardBox {
+                        CardBox(onDoubleClick: {
+                            if let row = group.rows.first { _ = model.selectAccount(row.id, tab: .config) }
+                        }) {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 7) {
                                     Image(systemName: group.rows.first?.plugin.manifest.icon ?? "network")
@@ -227,6 +229,11 @@ struct OverviewPage: View {
                                     Spacer(minLength: 0)
                                     Text("\(group.rows.count) 个账号").font(.system(size: 11)).foregroundStyle(Palette.muted)
                                 }
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) {
+                                    if let row = group.rows.first { _ = model.selectAccount(row.id, tab: .config) }
+                                }
+                                .help("双击打开账号详情")
                                 ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                                     if index > 0 { Divider().overlay(Palette.border) }
                                     OverviewAccountCard(model: model, row: row)
@@ -277,6 +284,9 @@ private struct OverviewAccountCard: View {
                 Text("更新于 \(quota.updated)").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { _ = model.selectAccount(row.id, tab: .config) }
+        .help("双击打开账号详情")
         .contextMenu { AccountContextMenu(model: model, row: row) }
     }
     private var status: String {

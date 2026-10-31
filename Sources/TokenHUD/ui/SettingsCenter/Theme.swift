@@ -43,11 +43,24 @@ enum Typo {
 }
 
 struct CardBox<Content: View>: View {
+    var onDoubleClick: (() -> Void)?
     @ViewBuilder var content: Content
+    init(onDoubleClick: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.onDoubleClick = onDoubleClick
+        self.content = content()
+    }
     var body: some View {
         content.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.border))
+            .background {
+                if let onDoubleClick {
+                    RoundedRectangle(cornerRadius: 10).fill(Palette.surface)
+                        .contentShape(RoundedRectangle(cornerRadius: 10))
+                        .onTapGesture(count: 2, perform: onDoubleClick)
+                } else {
+                    RoundedRectangle(cornerRadius: 10).fill(Palette.surface)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.border).allowsHitTesting(false))
     }
 }
 
