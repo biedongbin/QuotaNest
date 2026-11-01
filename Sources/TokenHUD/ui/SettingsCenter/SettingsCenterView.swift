@@ -205,7 +205,27 @@ private struct AccountSidebar: View {
 struct OverviewPage: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
-    @State private var draggedProvider: String?
+    @State private var dropTarget: String?
+    private func moveProviderCard(_ source: String, to target: String) -> Bool {
+        var labels: [String] = []
+        var accounts: [String: [String]] = [:]
+        for provider in engine.allPlugins {
+            let type = provider.manifest.template.flatMap { engine.template(bySlug: $0)?.manifest }
+                ?? provider.manifest
+            if accounts[type.label] == nil { labels.append(type.label) }
+            accounts[type.label, default: []].append(provider.slug)
+        }
+        guard let from = labels.firstIndex(of: source), let to = labels.firstIndex(of: target) else { return false }
+        if from != to {
+            let moved = labels.remove(at: from)
+            labels.insert(moved, at: to)
+            withAnimation(.easeInOut(duration: 0.18)) {
+                engine.setProviderOrder(labels.flatMap { accounts[$0] ?? [] })
+            }
+        }
+        dropTarget = nil
+        return true
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -250,18 +270,20 @@ struct OverviewPage: View {
                                 }
                             }
                         }
-                        .onDrag {
-                            draggedProvider = group.label
-                            let provider = NSItemProvider()
-                            let data = Data(group.label.utf8)
-                            provider.registerDataRepresentation(forTypeIdentifier: "com.tokenhud.provider-card", visibility: .ownProcess) { completion in
-                                completion(data, nil)
-                                return nil
-                            }
-                            return provider
+                        .draggable("tokenhud-provider-card:" + group.label)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("provider-card." + group.label)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let payload = items.first, payload.hasPrefix("tokenhud-provider-card:") else { return false }
+                            return moveProviderCard(String(payload.dropFirst("tokenhud-provider-card:".count)), to: group.label)
+                        } isTargeted: { targeted in
+                            if targeted { dropTarget = group.label }
+                            else if dropTarget == group.label { dropTarget = nil }
                         }
-                        .onDrop(of: ["com.tokenhud.provider-card"], delegate: ProviderCardDropDelegate(
-                            target: group.label, dragged: $draggedProvider, model: model))
+                        .overlay(RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(dropTarget == group.label ? Palette.accent : .clear, lineWidth: 2)
+                            .allowsHitTesting(false))
+
                     }
                 }
             }
@@ -340,33 +362,4 @@ struct RenderScript {
     var slug: String?
     var templateID: String?
     var importModel: ImportCenterModel? = nil
-}
-
-private struct ProviderCardDropDelegate: DropDelegate {
-    let target: String
-    @Binding var dragged: String?
-    let model: SettingsModel
-    func validateDrop(info: DropInfo) -> Bool { dragged != nil }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool {
-        MainActor.assumeIsolated {
-            guard let source = dragged else { return false }
-            defer { dragged = nil }
-            var labels: [String] = []
-            var accounts: [String: [String]] = [:]
-            for provider in model.engine.allPlugins {
-                let type = provider.manifest.template.flatMap { model.engine.template(bySlug: $0)?.manifest }
-                    ?? provider.manifest
-                if accounts[type.label] == nil { labels.append(type.label) }
-                accounts[type.label, default: []].append(provider.slug)
-            }
-            guard let from = labels.firstIndex(of: source), let to = labels.firstIndex(of: target) else { return false }
-            if from != to {
-                let moved = labels.remove(at: from)
-                labels.insert(moved, at: to)
-                model.engine.setProviderOrder(labels.flatMap { accounts[$0] ?? [] })
-            }
-            return true
-        }
-    }
 }
