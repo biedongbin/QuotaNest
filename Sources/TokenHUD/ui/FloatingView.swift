@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FloatingView: View {
@@ -102,9 +103,13 @@ struct FloatingView: View {
     }
     private var header: some View {
         HStack(spacing: 7) {
-            Circle().fill(Palette.accent).frame(width: 5, height: 5).accessibilityHidden(true)
-            Text("额度速览").font(.system(size: 11.5, weight: .medium))
-            Spacer(minLength: 0)
+            HStack(spacing: 7) {
+                Circle().fill(Palette.accent).frame(width: 5, height: 5).accessibilityHidden(true)
+                Text("额度速览").font(.system(size: 11.5, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 23)
+            .overlay { FloatingWindowDragArea(onDoubleClick: onToggle) }
             Menu {
                 styleChoices
                 Divider()
@@ -129,8 +134,6 @@ struct FloatingView: View {
                 .accessibilityLabel("关闭悬浮速览").help("关闭悬浮速览")
         }
         .padding(.leading, 13).padding(.trailing, 7).padding(.vertical, 7)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: onToggle)
     }
     @ViewBuilder private var displayControls: some View {
         Menu("显示样式") { styleChoices }
@@ -338,6 +341,33 @@ private struct FloatingQueryAction: View {
                     .accessibilityLabel("查询 \(name) 的额度")
             }
         }
+    }
+}
+
+private struct FloatingWindowDragArea: NSViewRepresentable {
+    let onDoubleClick: () -> Void
+    func makeNSView(context: Context) -> FloatingWindowDragView {
+        let view = FloatingWindowDragView()
+        view.onDoubleClick = onDoubleClick
+        view.toolTip = "拖动移动悬浮窗；双击展开或收起"
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.group)
+        view.setAccessibilityLabel("拖动悬浮窗")
+        view.setAccessibilityIdentifier("floating.drag-area")
+        return view
+    }
+    func updateNSView(_ view: FloatingWindowDragView, context: Context) {
+        view.onDoubleClick = onDoubleClick
+    }
+}
+
+private final class FloatingWindowDragView: NSView {
+    var onDoubleClick: (() -> Void)?
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { onDoubleClick?() }
+        else { window?.performDrag(with: event) }
     }
 }
 
