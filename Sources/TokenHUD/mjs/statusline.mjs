@@ -27,14 +27,12 @@ const GIT_CACHE = join(HUD_DIR, '.git-cache.json');
 const GIT_TTL_MS = 30_000;
 const USAGE_TTL_MS = 60_000;
 
-// ANSI 颜色
+// 普通文字跟随终端主题；不使用写死亮白或 faint，避免浅色背景下失去对比度。
 const C = {
-  reset: '\x1b[0m', dim: '\x1b[2m',
+  reset: '\x1b[0m', dim: '\x1b[39m', text: '\x1b[39m',
   red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-  cyan: '\x1b[36m', bYellow: '\x1b[93m', bGreen: '\x1b[92m',
-  bRed: '\x1b[91m', bCyan: '\x1b[96m', bBlue: '\x1b[94m', bMagenta: '\x1b[95m', bWhite: '\x1b[97m',
-  // 橙色用 256 色: 亮白(bWhite) 在白底主题下不可见, 橙在中/深/浅底都可读
-  orange: '\x1b[38;5;208m',};
+  cyan: '\x1b[36m', blue: '\x1b[34m', magenta: '\x1b[35m',
+};
 const wrap = (c, s) => (s === '' || s == null) ? '' : `${c}${s}${C.reset}`;
 const dim = (s) => wrap(C.dim, s);
 const SEP = dim(' | ');
@@ -105,14 +103,14 @@ function resolveModel(stdin, env) {
 }
 
 function envColor(env) {
-  if (env === 'Claude-Max') return C.bMagenta;
-  if (env === 'CC-GLM') return C.bCyan;
-  if (env === 'DeepSeek') return C.bBlue;
-  if (env === 'GPT') return C.bGreen;
-  if (env === 'Ollama') return C.bYellow;
-  if (env === 'OC-Go') return C.bRed;
-  if (env === 'Cline') return C.orange;
-  return C.bWhite;
+  if (env === 'Claude-Max') return C.magenta;
+  if (env === 'CC-GLM') return C.cyan;
+  if (env === 'DeepSeek') return C.blue;
+  if (env === 'GPT') return C.green;
+  if (env === 'Ollama') return C.yellow;
+  if (env === 'OC-Go') return C.red;
+  if (env === 'Cline') return C.yellow;
+  return C.text;
 }
 
 // 多环境限额注册表：source=rate_limits 读 stdin；source=cache 读缓存 + fire-and-forget provider
@@ -293,9 +291,9 @@ function buildLine1(stdin, env) {
   const cwd = stdin?.workspace?.current_dir || stdin?.cwd || process.cwd();
   const parts = [wrap(C.cyan, shortCwd(cwd)), ctxBar(stdin?.context_window?.used_percentage)];
   const model = resolveModel(stdin, env);
-  if (model && model !== '?') parts.push(wrap(C.bYellow, model));
+  if (model && model !== '?') parts.push(wrap(C.yellow, model));
   const br = getBranch(cwd);
-  if (br) parts.push(wrap(C.bGreen, br));
+  if (br) parts.push(wrap(C.green, br));
   return parts.join(SEP);
 }
 
