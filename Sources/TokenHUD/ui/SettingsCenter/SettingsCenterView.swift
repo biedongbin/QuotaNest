@@ -300,6 +300,9 @@ struct OverviewPage: View {
                         .font(Typo.small).foregroundStyle(Palette.muted)
                     Spacer(minLength: 0)
                 }
+                if model.allAccounts.contains(where: { $0.plugin.manifest.sourceReference != nil }) {
+                    SourceSyncControls(engine: engine)
+                }
                 if model.overviewGroups.isEmpty {
                     ContentUnavailableView(model.allAccounts.isEmpty ? "尚无账号" : "没有符合条件的账号",
                                            systemImage: "person.crop.circle.badge.plus",

@@ -28,6 +28,12 @@ struct ProviderSourceReference: Codable, Equatable, Sendable {
     var providerId: String? = nil
     var collection: String? = nil
     var credentialProviderId: String? = nil
+    var identityAnchor: String? = nil
+    var originalRecordId: String? = nil
+    var originalProviderId: String? = nil
+    var identityProtocol: String? = nil
+    var identityEndpoint: String? = nil
+    var identityProviderType: String? = nil
 }
 
 struct ProviderManifest: Codable {

@@ -150,6 +150,61 @@ enum ImportedSource {
         }
     }
 
+    /// Enumerates only the referenced container. Every returned record is re-read through `read`.
+    static func references(in reference: ProviderSourceReference) throws -> [ProviderSourceReference] {
+        let file = URL(fileURLWithPath: (reference.path as NSString).expandingTildeInPath)
+        func ref(_ id: String, _ provider: String, path: String? = nil) -> ProviderSourceReference {
+            ProviderSourceReference(source: reference.source, path: path ?? reference.path, recordId: id,
+                providerId: provider, collection: reference.collection, credentialProviderId: reference.credentialProviderId)
+        }
+        switch reference.source {
+        case "9router":
+            return try ReadonlySQLite.query(path: file.path, sql: "SELECT id, provider FROM providerConnections").map { row in
+                guard let id = row["id"] as? String, let provider = row["provider"] as? String else {
+                    throw failure("9router 来源记录身份格式无效")
+                }
+                return ref(id, provider)
+            }
+        case "cc-switch":
+            return try ReadonlySQLite.query(path: file.path, sql: "SELECT id, app_type FROM providers").map { row in
+                guard let id = row["id"] as? String, let provider = row["app_type"] as? String else {
+                    throw failure("cc-switch 来源记录身份格式无效")
+                }
+                return ref(id, provider)
+            }
+        case "cpamp":
+            let directory = file.deletingLastPathComponent()
+            return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "json" }.map { item in
+                    let object = try json(Data(contentsOf: item))
+                    guard let type = object["type"] as? String else { throw failure("CPA 来源文件类型无效") }
+                    return ref(item.lastPathComponent, type, path: item.path)
+                }
+        case "magpie":
+            let object = try json(Data(contentsOf: file))
+            if reference.collection == "plugin-auth" {
+                return object.keys.sorted().map { ref($0, reference.providerId ?? "") }
+            }
+            guard let records = object["providers"] as? [[String: Any]] else { throw failure("Magpie 来源供应商列表无效") }
+            return try records.map { item in
+                guard let id = item["id"] as? String else { throw failure("Magpie 来源记录身份无效") }
+                return ref(id, id)
+            }
+        default: throw failure("不支持的导入来源同步")
+        }
+    }
+
+    static func magpieRenameIDs(_ reference: ProviderSourceReference) throws -> [String] {
+        let file = URL(fileURLWithPath: (reference.path as NSString).expandingTildeInPath)
+        guard let records = try json(Data(contentsOf: file))["providers"] as? [[String: Any]] else {
+            throw failure("Magpie 来源供应商列表无效")
+        }
+        return records.compactMap { item in
+            let aliases = item["was"] as? [String] ?? (item["was"] as? String).map { [$0] } ?? []
+            return aliases.contains(reference.providerId ?? reference.recordId) ? item["id"] as? String : nil
+        }
+    }
+
     private static func jsonString(_ raw: Any?) throws -> [String: Any] {
         guard let raw = raw as? String else { throw failure("导入来源记录缺少 JSON") }
         return try json(Data(raw.utf8))

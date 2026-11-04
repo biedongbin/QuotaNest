@@ -363,6 +363,7 @@ struct ImportCenterSheet: View {
             Rectangle().fill(Palette.border).frame(height: 1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    SourceSyncControls(engine: engine).disabled(im.importing)
                     sourcePicker.disabled(im.importing)
                     bodyContent
                 }

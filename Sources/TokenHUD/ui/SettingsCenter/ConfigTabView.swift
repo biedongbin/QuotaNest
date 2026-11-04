@@ -89,6 +89,16 @@ struct ConfigTabView: View {
                     KeyValueRow("来源工具") { Text(source.source) }
                     KeyValueRow("记录 ID", mono: true) { Text(source.recordId) }
                     KeyValueRow("Provider ID", mono: true) { Text(source.providerId ?? "未记录") }
+                    if let original = source.originalRecordId, original != source.recordId {
+                        KeyValueRow("原始记录 ID", mono: true) { Text(original) }
+                    }
+                    if let original = source.originalProviderId, original != source.providerId {
+                        KeyValueRow("原始 Provider ID", mono: true) { Text(original) }
+                    }
+                    if let issue = model.engine.sourceSyncIssues[row.id] {
+                        Label("来源同步待处理：" + issue, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(Palette.warn)
+                    }
                     KeyValueRow("来源位置", mono: true) { Text(SettingsModel.safeSourceLocation(source.path)) }
                 } else {
                     KeyValueRow("旧来源标识", mono: true) { Text(row.plugin.manifest.origin ?? "未记录") }

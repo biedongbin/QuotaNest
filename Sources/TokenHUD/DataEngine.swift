@@ -152,6 +152,16 @@ final class DataEngine: ObservableObject {
     @Published private(set) var lastRefresh: Date?
     /// "立刻刷新"进行中 (状态栏图标显示 ⟳ 反馈)
     @Published private(set) var isRefreshingAll = false
+    @Published private(set) var sourceSyncing = false
+    @Published private(set) var sourceSyncLastAttempt: Date?
+    @Published private(set) var sourceSyncLastSuccess: Date?
+    @Published private(set) var sourceSyncMessage = "尚未检查来源"
+    @Published private(set) var sourceSyncIssues: [String: String] = [:]
+    @Published private(set) var sourceAutoSyncEnabled = true
+    private var sourceSyncTask: Task<Void, Never>?
+    /// Narrow seams for deterministic local-file concurrency and rollback tests.
+    var sourceSyncBeforeCommit: (() async -> Void)?
+    var sourceSyncWriteManifest: (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }
     /// 图标默认显示哪家 (slug); nil = 全部取最高
     @Published var iconProviderSlug: String?
     /// 关闭用量跟踪的供应商 (slug 集合), UserDefaults 持久化
@@ -187,6 +197,7 @@ final class DataEngine: ObservableObject {
     static let defaultsDeletedKey = "tokenhud.deletedTemplates"
     static let defaultsFloatingHiddenKey = "tokenhud.floatingHidden.slugs"
     static let defaultsHudHiddenKey = "tokenhud.hudHidden.slugs"
+    static let defaultsSourceAutoSyncKey = "tokenhud.sourceAutoSync.enabled"
 
     init(hudDir: URL, bundleProvidersDir: URL?, userProvidersDir: URL,
          runner: ProviderRunner, defaults: UserDefaults = .standard, settingsURL: URL? = nil) {
@@ -197,6 +208,8 @@ final class DataEngine: ObservableObject {
         self.defaults = defaults
         self.settingsURL = settingsURL ?? URL(fileURLWithPath:
             (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/settings.json")
+        self.sourceAutoSyncEnabled = defaults.object(forKey: Self.defaultsSourceAutoSyncKey) == nil
+            || defaults.bool(forKey: Self.defaultsSourceAutoSyncKey)
         try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
     }
 
@@ -224,13 +237,253 @@ final class DataEngine: ObservableObject {
         Self.installMjs(bundleDir: bundleDir, hudDir: hudDir)
         migrateAccounts()
         reloadRegistry()
+        Task { [weak self] in await self?.syncImportedSources(force: false) }
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.syncImportedSources(force: false) }
             Task { @MainActor in
                 self?.checkSchedules()
                 await self?.refreshNow()
             }
         }
         Task { await refreshNow() }
+    }
+
+    func setSourceAutoSyncEnabled(_ enabled: Bool) {
+        sourceAutoSyncEnabled = enabled
+        defaults.set(enabled, forKey: Self.defaultsSourceAutoSyncKey)
+        sourceSyncMessage = enabled ? "已开启每小时自动检查来源" : "已关闭自动同步，仍可立即同步"
+    }
+
+    nonisolated static func sourceSyncDue(lastAttempt: Date?, now: Date,
+                                          interval: TimeInterval = 3600) -> Bool {
+        guard let lastAttempt else { return true }
+        return now.timeIntervalSince(lastAttempt) >= interval
+    }
+
+    /// Independent of quota queries and paid model calls; concurrent callers share one operation.
+    func syncImportedSources(force: Bool = true, now: Date = Date()) async {
+        if let sourceSyncTask { await sourceSyncTask.value; return }
+        guard force || (sourceAutoSyncEnabled && Self.sourceSyncDue(lastAttempt: sourceSyncLastAttempt, now: now)) else { return }
+        sourceSyncLastAttempt = now
+        sourceSyncIssues = [:]
+        let imported = allPlugins.filter { $0.manifest.sourceReference != nil }
+        guard !imported.isEmpty else {
+            sourceSyncMessage = "没有可同步的来源引用账号"
+            return
+        }
+        sourceSyncing = true
+        sourceSyncMessage = "正在检查只读来源…"
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let templates = self.templates
+            let hudDir = self.hudDir
+            let plans = await Task.detached(priority: .utility) {
+                imported.map { Self.prepareSourceSync($0, templates: templates, hudDir: hudDir) }
+            }.value
+            await self.sourceSyncBeforeCommit?()
+            var updated = 0, registered = 0, unchanged = 0
+            for plan in plans {
+                do {
+                    guard let current = self.allPlugins.first(where: { $0.slug == plan.plugin.slug }),
+                          current.dir == plan.plugin.dir,
+                          current.manifest.sourceReference == plan.plugin.manifest.sourceReference else {
+                        throw ImportedSource.failure("扫描期间本地账号已删除或引用已变化，待下次重试")
+                    }
+                    if let issue = plan.issue { throw ImportedSource.failure(issue) }
+                    guard let reference = plan.reference else { continue }
+                    let changed = try Self.commitSourceSync(plan, userDir: self.userDir, hudDir: self.hudDir,
+                        writeManifest: self.sourceSyncWriteManifest)
+                    if changed {
+                        if plan.plugin.manifest.sourceReference?.sameSourceRecord(as: reference) == true {
+                            registered += 1
+                        } else {
+                            self.invalidateSnapshot(current.slug)
+                            updated += 1
+                        }
+                    } else { unchanged += 1 }
+                } catch { self.sourceSyncIssues[plan.plugin.slug] = error.localizedDescription }
+            }
+            if updated + registered > 0 {
+                self.reloadRegistry()
+                if case .failure(let error) = self.writeEnvsForHudSync() {
+                    self.sourceSyncIssues["HUD"] = "来源引用已保存，HUD 同步失败：\(error.localizedDescription)"
+                }
+            }
+            if self.sourceSyncIssues.isEmpty { self.sourceSyncLastSuccess = now }
+            self.sourceSyncMessage = "来源检查完成：订正 \(updated)，登记 \(registered)，未变 \(unchanged)"
+                + (self.sourceSyncIssues.isEmpty ? "" : "，需处理 \(self.sourceSyncIssues.count)")
+            self.sourceSyncing = false
+        }
+        sourceSyncTask = task
+        await task.value
+        sourceSyncTask = nil
+    }
+
+    private struct SourceSyncPlan {
+        let plugin: PluginProvider
+        var originalManifest: Data?
+        var originalAuth: Data?
+        var reference: ProviderSourceReference?
+        var revision: String?
+        var sourceFiles: [String: SourceFileStamp] = [:]
+        var issue: String?
+    }
+
+    private struct SourceFileStamp: Equatable {
+        let modified: Date?
+        let size: Int?
+        let identity: String?
+    }
+
+    nonisolated private static func sourceFileStamps(_ reference: ProviderSourceReference,
+                                                      original: ProviderSourceReference? = nil) throws -> [String: SourceFileStamp] {
+        var files = Set<URL>()
+        for ref in [reference, original].compactMap({ $0 }) {
+            files.formUnion(ImportedSource.dependencies(ref))
+            if ref.source == "cpamp" {
+                let directory = PluginGenerator.expandPath(ref.path).deletingLastPathComponent()
+                // The matcher searches this entire pool; every candidate must remain unchanged.
+                files.insert(directory)
+                files.formUnion(try FileManager.default.contentsOfDirectory(at: directory,
+                    includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" })
+            }
+        }
+        var result: [String: SourceFileStamp] = [:]
+        for file in files {
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                result[file.path] = SourceFileStamp(modified: nil, size: nil, identity: nil)
+                continue
+            }
+            let values = try file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey])
+            result[file.path] = SourceFileStamp(modified: values.contentModificationDate,
+                size: values.fileSize, identity: values.fileResourceIdentifier.map { String(describing: $0) })
+        }
+        return result
+    }
+
+    nonisolated private static func prepareSourceSync(_ plugin: PluginProvider,
+                                                      templates: [PluginProvider], hudDir: URL) -> SourceSyncPlan {
+        var plan = SourceSyncPlan(plugin: plugin)
+        do {
+            plan.originalManifest = try Data(contentsOf: plugin.dir.appendingPathComponent("manifest.json"))
+            let auth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
+                ?? hudDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
+            plan.originalAuth = try Data(contentsOf: auth)
+            guard let reference = plugin.manifest.sourceReference else { return plan }
+            let template = templates.first { $0.slug == plugin.manifest.template }
+            let protocolName = template == nil ? plugin.manifest.refreshProtocol : nil
+            let before = try sourceFileStamps(reference)
+            let result = SourceSynchronizer.scan(reference: reference, template: template,
+                authMode: plugin.manifest.authMode ?? "apikey", protocolName: protocolName)
+            switch result {
+            case .unavailable(let message), .ambiguous(let message): plan.issue = message
+            case .correctedRef(let value), .unchanged(let value):
+                plan.reference = value
+                let candidateBefore = try sourceFileStamps(value)
+                var manifest = plugin.manifest
+                manifest.sourceReference = value
+                var config = ProviderConfigStore.applyingManifest(manifest, to: ProviderConfig())
+                config.authMode = manifest.authMode ?? "apikey"
+                let resolved = try ProviderAuthentication.resolveBase(config)
+                let record = try ImportedSource.read(value)
+                try SourceSynchronizer.validate(record, reference: value, template: template,
+                    authMode: config.authMode, protocolName: protocolName)
+                guard resolved.sourceRevision == record.revision else {
+                    throw ImportedSource.failure("来源在验证期间变化，待下次重试")
+                }
+                plan.revision = record.revision
+                let confirmed = SourceSynchronizer.scan(reference: reference, template: template,
+                    authMode: config.authMode, protocolName: protocolName)
+                guard confirmed.reference == value else {
+                    throw ImportedSource.failure("来源身份在扫描期间变化，待下次重试")
+                }
+                let after = try sourceFileStamps(value)
+                guard before == (try sourceFileStamps(reference)), candidateBefore == after else {
+                    throw ImportedSource.failure("扫描期间来源已变化，待下次重试")
+                }
+                plan.sourceFiles = before.merging(after) { _, latest in latest }
+            }
+        } catch { plan.issue = error.localizedDescription }
+        return plan
+    }
+
+    /// No suspension between the MainActor's ownership check and the two-file commit.
+    nonisolated private static func commitSourceSync(_ plan: SourceSyncPlan, userDir: URL, hudDir: URL,
+                                                    writeManifest: (Data, URL) throws -> Void) throws -> Bool {
+        guard let reference = plan.reference, let original = plan.originalManifest else { return false }
+        let plugin = plan.plugin
+        let manifestURL = plugin.dir.appendingPathComponent("manifest.json").standardizedFileURL
+        let authURL = plugin.manifest.authFile.map(PluginGenerator.expandPath)
+            ?? hudDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
+        let fm = FileManager.default
+        let expectedDir = userDir.appendingPathComponent(plugin.slug).standardizedFileURL
+        guard plugin.dir.standardizedFileURL == expectedDir,
+              expectedDir.deletingLastPathComponent() == userDir.standardizedFileURL,
+              manifestURL.resolvingSymlinksInPath() == userDir.resolvingSymlinksInPath()
+                .appendingPathComponent(plugin.slug).appendingPathComponent("manifest.json"),
+              authURL.standardizedFileURL.deletingLastPathComponent() == hudDir.standardizedFileURL,
+              authURL.resolvingSymlinksInPath() == hudDir.resolvingSymlinksInPath().appendingPathComponent(authURL.lastPathComponent),
+              authURL.lastPathComponent == ".\(plugin.slug)-usage-auth.json",
+              try fm.attributesOfItem(atPath: manifestURL.path)[.type] as? FileAttributeType == .typeRegular,
+              try fm.attributesOfItem(atPath: authURL.path)[.type] as? FileAttributeType == .typeRegular else {
+            throw ImportedSource.failure("账号文件不属于当前应用的独立配置目录，同步未写入")
+        }
+        guard try Data(contentsOf: manifestURL) == original,
+              try sourceFileStamps(reference, original: plugin.manifest.sourceReference) == plan.sourceFiles else {
+            throw ImportedSource.failure("扫描期间来源或本地配置已变化，待下次重试")
+        }
+        guard reference != plugin.manifest.sourceReference else { return false }
+        let oldAuth = try Data(contentsOf: authURL)
+        guard oldAuth == plan.originalAuth else {
+            throw ImportedSource.failure("扫描期间本地引用配置已变化，待下次重试")
+        }
+        let identityChanged = plugin.manifest.sourceReference?.sameSourceRecord(as: reference) != true
+        let cacheURL = Self.cachePath(for: plugin, hudDir: hudDir).standardizedFileURL
+        var oldCache: Data?
+        if identityChanged && fm.fileExists(atPath: cacheURL.path) {
+            guard cacheURL == hudDir.standardizedFileURL.appendingPathComponent(".\(plugin.slug)-usage-cache.json"),
+                  cacheURL.resolvingSymlinksInPath() == hudDir.resolvingSymlinksInPath().appendingPathComponent(cacheURL.lastPathComponent),
+                  try fm.attributesOfItem(atPath: cacheURL.path)[.type] as? FileAttributeType == .typeRegular else {
+                throw ImportedSource.failure("旧缓存不属于当前账号，无法安全订正引用")
+            }
+            oldCache = try Data(contentsOf: cacheURL)
+        }
+        guard var object = try JSONSerialization.jsonObject(with: original) as? [String: Any] else {
+            throw ImportedSource.failure("本地账号 manifest 不是 JSON 对象")
+        }
+        object["sourceReference"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(reference))
+        object["origin"] = reference.source == "cc-switch" && reference.collection != nil
+            ? "\(reference.source):\(reference.collection ?? ""):\(reference.recordId)"
+            : "\(reference.source):\(reference.recordId)"
+        let output = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        var manifest = plugin.manifest
+        manifest.sourceReference = reference
+        let config = ProviderConfigStore.read(authFile: authURL, manifest: manifest)
+        guard try sourceFileStamps(reference, original: plugin.manifest.sourceReference) == plan.sourceFiles else {
+            throw ImportedSource.failure("来源在验证期间变化，待下次重试")
+        }
+        do {
+            try ProviderConfigStore.write(config, manifest: manifest, to: authURL)
+            try writeManifest(output, manifestURL)
+            if oldCache != nil { try fm.removeItem(at: cacheURL) }
+        } catch {
+            var rollbackErrors: [String] = []
+            let restores: [() throws -> Void] = [
+                { try oldAuth.write(to: authURL, options: .atomic) },
+                { try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path) },
+                { try original.write(to: manifestURL, options: .atomic) },
+                { if let oldCache { try oldCache.write(to: cacheURL, options: .atomic) } }
+            ]
+            for restore in restores {
+                do { try restore() }
+                catch { rollbackErrors.append(error.localizedDescription) }
+            }
+            if !rollbackErrors.isEmpty {
+                throw ImportedSource.failure("来源同步写入失败且回滚失败：\(rollbackErrors.joined(separator: "；"))")
+            }
+            throw error
+        }
+        return true
     }
 
     /// 固化脚本安装: bundle 的 mjs/ 目录覆盖安装到 hudDir (App 分发固化引擎, 幂等升级)

@@ -226,6 +226,7 @@ enum ProviderImporter {
         var effectiveBase = base
         var effectiveProtocol = proto
         var reason: String?
+        var initializedReference = reference
         if let template {
             let manifest = template.manifest
             if !manifest.supportsQuota || (manifest.quotaAuthModes.map { !$0.contains(mode) } ?? false)
@@ -254,6 +255,9 @@ enum ProviderImporter {
             if record.authMode == "apikey", record.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 reason = "源里这条没有可用的 API Key"
             }
+            if reason == nil {
+                initializedReference = SourceSynchronizer.register(reference, record: record, template: template)
+            }
         } catch { reason = error.localizedDescription }
         let name = maskIfAccount(label)
         return ImportCandidate(source: reference.source, name: name, template: template?.slug,
@@ -261,7 +265,7 @@ enum ProviderImporter {
             note: "\(reference.providerId ?? provider) / \(mode == "auth" ? "OAuth" : "apikey")",
             unsupportedReason: reason, enabled: enabled, slugHint: PluginGenerator.slugify(template?.slug ?? provider),
             sourceAccount: isAccountId(rawAccount) ? maskAccount(rawAccount) : "",
-            sourceRecordId: reference.recordId, sourceReference: reference, sourceAuthMode: mode)
+            sourceRecordId: reference.recordId, sourceReference: initializedReference, sourceAuthMode: mode)
     }
 
     static func matchingTemplate(provider: String, base: String, templates: [PluginProvider]) -> PluginProvider? {
@@ -350,7 +354,7 @@ enum ProviderImporter {
             throw ImportedSource.failure(c.unsupportedReason ?? "导入缺少经过验证的来源引用")
         }
         let existing = ProviderRegistry.scan(dir: userDir)
-        guard !existing.contains(where: { $0.manifest.sourceReference == reference }) else {
+        guard !existing.contains(where: { $0.manifest.sourceReference?.sameSourceRecord(as: reference) == true }) else {
             throw ImportedSource.failure("该来源账号已导入，不会覆盖现有配置")
         }
         let record = try ImportedSource.read(reference)
@@ -509,7 +513,7 @@ enum ProviderImporter {
     }
 
     static func matchesExisting(_ c: ImportCandidate, manifest: ProviderManifest) -> Bool {
-        if let reference = c.sourceReference, manifest.sourceReference == reference { return true }
+        if let reference = c.sourceReference, manifest.sourceReference?.sameSourceRecord(as: reference) == true { return true }
         // A modern reference from another path/collection is a distinct source instance.
         guard manifest.sourceReference == nil, !c.sourceRecordId.isEmpty else { return false }
         return manifest.origin == c.origin || manifest.origin == "\(c.source):\(c.sourceRecordId)"
