@@ -1,0 +1,35 @@
+{
+  "name": "minimax-code-cn",
+  "displayName": "MiniMax Code 中国",
+  "label": "MiniMax Code 中国",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.minimax-code-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.minimax-code-cn-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://agent.minimaxi.com/matrix/api/v1/commerce/get_membership_info",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "accessToken",
+    "requiredValues": {
+      "provider": "minimax-code"
+    },
+    "contextPaths": {
+      "sourceProvider": "provider",
+      "expiresAt": "expiresAt",
+      "realUserID": "providerSpecificData.realUserID"
+    }
+  },
+  "buckets": {}
+}

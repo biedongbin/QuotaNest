@@ -31,7 +31,19 @@
     "requiredValues": {
       "auth_mode": "chatgpt"
     },
-    "fileConfigKey": "codexAuthFile"
+    "fileConfigKey": "codexAuthFile",
+    "alternatives": [
+      {
+        "tokenPath": "access_token",
+        "headerPaths": { "chatgpt-account-id": "account_id" },
+        "requiredValues": { "type": "codex" }
+      },
+      {
+        "tokenPath": "accessToken",
+        "headerPaths": { "chatgpt-account-id": "providerSpecificData.accountId" },
+        "requiredValues": { "provider": "codex" }
+      }
+    ]
   },
   "authCallUrl": "https://chatgpt.com/backend-api/codex/responses",
   "authCallProtocol": "responses",

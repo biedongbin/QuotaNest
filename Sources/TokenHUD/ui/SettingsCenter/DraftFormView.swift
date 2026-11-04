@@ -12,6 +12,10 @@ struct DraftFormView: View {
     @State private var choosingAuthFile = false
     private var manifest: ProviderManifest? { model.draftManifest() }
     private var builtin: Bool { model.draftBuiltin() }
+    private var capability: ProviderCapabilityPresentation {
+        ProviderCapabilityPresentation(manifest: manifest, generic: !builtin)
+    }
+    private var canCall: Bool { capability.canCall(using: draft.values.authMode) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -52,34 +56,48 @@ struct DraftFormView: View {
             VStack(alignment: .leading, spacing: 12) {
                 labeled("认证方式") {
                     Picker("认证方式", selection: bind(\.authMode)) {
-                        Text(manifest?.credentialSource == nil ? "Auth · 此类型未接入" : "Auth · 本机授权")
-                            .tag("auth").disabled(manifest?.credentialSource == nil)
-                        Text("API Key").tag("apikey")
+                        Text(capability.allowsAuth ? "Auth · 授权文件" : "Auth · 此类型未接入")
+                            .tag("auth").disabled(!capability.allowsAuth)
+                        Text(capability.allowsAPIKey ? "API Key" : "API Key · 此类型未接入")
+                            .tag("apikey").disabled(!capability.allowsAPIKey)
+                        if !["auth", "apikey"].contains(draft.values.authMode) {
+                            Text("已保存：" + draft.values.authMode).tag(draft.values.authMode).disabled(true)
+                        }
                     }.labelsHidden()
                 }
-                labeled("服务地址") {
-                    if draft.values.authMode == "auth" {
-                        Text(model.baseAddressDescription(model.callConfigForDraft(draft.values))).font(.callout)
-                    } else {
-                        TextField("https://api.example.com/v1", text: bind(\.url))
-                            .fieldBox().disabled(builtin).accessibilityLabel("API 服务地址")
-                    }
+                if let issue = capability.authenticationIssue(for: draft.values.authMode) {
+                    Text(issue).font(.callout).foregroundStyle(Palette.warn).textSelection(.enabled)
                 }
-                labeled("调用协议") {
-                    if draft.values.authMode == "auth" {
-                        Text(model.baseProtocolDescription(model.callConfigForDraft(draft.values))).font(.callout)
-                    } else {
-                        Picker("调用协议", selection: bind(\.proto)) {
-                            Text("OpenAI Chat Completions").tag("openai")
-                            Text("Anthropic Messages").tag("anthropic")
-                        }.labelsHidden().disabled(builtin)
+                if canCall {
+                    labeled("服务地址") {
+                        if draft.values.authMode == "auth" {
+                            Text(model.baseAddressDescription(model.callConfigForDraft(draft.values))).font(.callout)
+                        } else {
+                            TextField("https://api.example.com/v1", text: bind(\.url))
+                                .fieldBox().disabled(builtin).accessibilityLabel("API 服务地址")
+                        }
                     }
-                }
-                if builtin {
-                    Label("地址与协议由供应商类型提供", systemImage: "lock")
+                    labeled("调用协议") {
+                        if draft.values.authMode == "auth" {
+                            Text(model.baseProtocolDescription(model.callConfigForDraft(draft.values))).font(.callout)
+                        } else {
+                            Picker("调用协议", selection: bind(\.proto)) {
+                                Text("OpenAI Chat Completions").tag("openai")
+                                Text("Anthropic Messages").tag("anthropic")
+                            }.labelsHidden().disabled(builtin)
+                        }
+                    }
+                    if builtin {
+                        Label("地址与协议由供应商类型提供", systemImage: "lock")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Label("当前认证的模型测试与 API 调度未接入", systemImage: "info.circle")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text("可配置已接入的用量查询；此处不会为该类型生成模型调用接口。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if draft.values.authMode == "auth" {
+                if draft.values.authMode == "auth", capability.allowsAuth {
                     labeled("Auth 文件") {
                         HStack(spacing: 8) {
                             TextField("留空使用供应商默认来源", text: bind(\.authCredentialFile))
@@ -95,34 +113,36 @@ struct DraftFormView: View {
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     Text("读取已有本机授权；本页不提供浏览器 OAuth 登录，也无需另填 API Key。")
                         .font(.caption).foregroundStyle(.secondary)
-                    if let issue = model.authenticationIssue(model.callConfigForDraft(draft.values)) {
+                    if canCall, let issue = model.authenticationIssue(model.callConfigForDraft(draft.values)) {
                         Text(issue).font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
                     }
-                } else {
+                } else if draft.values.authMode == "apikey", capability.allowsAPIKey {
                     secret("API Key", value: bind(\.key), revealed: $revealCallKey)
                     credentialActions
                 }
-                labeled("模型") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
-                            .fieldBox().accessibilityLabel("调用模型")
-                        ModelCatalogControls(model: model)
+                if canCall {
+                    labeled("模型") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
+                                .fieldBox().accessibilityLabel("调用模型")
+                            ModelCatalogControls(model: model)
+                        }
                     }
-                }
-                DisclosureGroup("测试选项") {
-                    labeled("测试提示词") {
-                        TextField("只回复 OK", text: bind(\.prompt)).fieldBox()
-                            .accessibilityLabel("测试提示词")
-                    }.padding(.top, 6)
-                }.font(.system(size: 12)).foregroundStyle(Palette.muted)
-                HStack {
-                    Text("测试使用当前输入，不保存；会消耗额度。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    AccountActionButton(title: model.isTestingCurrentConfig ? "测试中…" : "测试当前 API 配置",
-                                        identifier: "account.test-draft", enabled: !model.isTestingCurrentConfig) {
-                        model.testCallDraft(values: model.draft?.values ?? draft.values)
-                    }.fixedSize().frame(height: 28)
+                    DisclosureGroup("测试选项") {
+                        labeled("测试提示词") {
+                            TextField("只回复 OK", text: bind(\.prompt)).fieldBox()
+                                .accessibilityLabel("测试提示词")
+                        }.padding(.top, 6)
+                    }.font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    HStack {
+                        Text("测试使用当前输入，不保存；会消耗额度。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        AccountActionButton(title: model.isTestingCurrentConfig ? "测试中…" : "测试当前 API 配置",
+                                            identifier: "account.test-draft", enabled: !model.isTestingCurrentConfig) {
+                            model.testCallDraft(values: model.draft?.values ?? draft.values)
+                        }.fixedSize().frame(height: 28)
+                    }
                 }
                 if let result = model.callTestResult(for: nil) { CallTestResultView(result: result) }
             }
@@ -134,7 +154,7 @@ struct DraftFormView: View {
                 labeled("查询方式") {
                     Picker("查询方式", selection: bind(\.quotaMode)) {
                         Text("关闭用量查询").tag("none")
-                        if builtin { Text("供应商查询").tag("script") }
+                        if builtin { Text("供应商查询").tag("script").disabled(manifest?.supportsQuota != true) }
                         else { Text("查询接口").tag("endpoint") }
                     }.labelsHidden()
                 }
@@ -208,7 +228,12 @@ struct DraftFormView: View {
         GroupBox("③ API 调度 · 启动 5h 使用窗口") {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("启用 API 调度", isOn: bind(\.autoTrigger)).toggleStyle(.switch)
-                Text("在所设时间首次调用以启动动态 5h 使用窗口，尽量覆盖工作时段。使用基础接入认证，每次会消耗套餐额度。按本机时区 \(TimeZone.current.identifier) 执行多个时间点；仅按用户设置调用，不推断或自动重置窗口。")
+                    .disabled(!canCall && !draft.values.autoTrigger)
+                if !canCall {
+                    Text("当前认证的模型调用与调度未接入。已有计划可关闭；用量查询可独立使用。")
+                        .font(.callout).foregroundStyle(Palette.warn)
+                }
+                Text("在所设时间尝试主动开启动态 5h 使用窗口，不保证供应商必然开窗。使用基础接入认证，每次会消耗套餐额度。按本机时区 \(TimeZone.current.identifier) 执行多个时间点；仅按用户设置调用，不推断或自动重置窗口。")
                     .font(.callout).foregroundStyle(.secondary)
                 Text("调度使用当前选择模型：\(draft.values.model.isEmpty ? "尚未指定" : draft.values.model)。模型必须在目标账号套餐内可调用；请在基础接入中选择并测试。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -217,7 +242,7 @@ struct DraftFormView: View {
                         .fieldBox().frame(width: 100).accessibilityLabel("添加调用时间，24小时制")
                         .onSubmit { model.addTime() }
                     Button("添加时间") { model.addTime() }
-                }
+                }.disabled(!canCall)
                 ForEach(["time", "times"], id: \.self) { key in
                     if let error = model.errors[key] { Text(error).font(.callout).foregroundStyle(.red) }
                 }

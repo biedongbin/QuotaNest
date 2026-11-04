@@ -265,6 +265,7 @@ final class DataEngine: ObservableObject {
             if fm.fileExists(atPath: manifestPath.path) {
                 Self.mergeManifestCapabilities(template: t.manifest, into: manifestPath)
             } else {
+                guard t.manifest.autoCreateDefault ?? true else { continue }
                 let instanceAuth = PluginGenerator.expandPath(PluginGenerator.authPath(slug: t.slug, hudDir: hudDir))
                 let hadInstanceAuth = fm.fileExists(atPath: instanceAuth.path)
                 let legacyAuth = t.manifest.authFile.map {
@@ -429,6 +430,13 @@ final class DataEngine: ObservableObject {
         }
         for k in mergeKeys where obj[k] == nil {
             if let v = tmpl[k] { obj[k] = v; changed = true }
+        }
+        if var source = obj["credentialSource"] as? [String: Any],
+           let declared = tmpl["credentialSource"] as? [String: Any] {
+            for key in ["alternatives", "contextPaths"] where source[key] == nil {
+                if let value = declared[key] { source[key] = value; changed = true }
+            }
+            obj["credentialSource"] = source
         }
         // Header 模板按名称补新增声明，已有值（含用户自定义认证）始终保留。
         if let existing = obj["refreshHeader"] as? String, let declared = template.refreshHeader {
@@ -1011,6 +1019,7 @@ final class DataEngine: ObservableObject {
             var snapshot = fetched
             if fetched.error != nil, var previous = states[i].cache,
                fetched.accountId == previous.accountId,
+               cacheMatchesAuthSource(previous, slug: slug, manifest: states[i].manifest),
                fetched.accountId != nil || (states[i].manifest.authStyle != "local" && states[i].manifest.queryAuth != "header") {
                 previous.error = fetched.error
                 previous.stale = true
@@ -1031,7 +1040,9 @@ final class DataEngine: ObservableObject {
         } else {
             // local/header 的当前身份无法证实：进程失败不能沿用上一 CLI 账号的数据。
             let local = states[i].manifest.authStyle == "local" || states[i].manifest.queryAuth == "header"
-            let previous = local ? nil : states[i].cache
+            let previous = local ? nil : states[i].cache.flatMap {
+                cacheMatchesAuthSource($0, slug: slug, manifest: states[i].manifest) ? $0 : nil
+            }
             var old = previous ?? UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil,
                                             monthly: nil, error: "fetch", stale: true)
             old.stale = true

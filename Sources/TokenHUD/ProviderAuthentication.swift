@@ -11,15 +11,20 @@ enum ProviderAuthentication {
                                   environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
         guard let source = config.credentialSource else { return nil }
         let path: String
-        if !config.authCredentialFile.isEmpty { path = config.authCredentialFile }
-        else if let variable = source.environmentDirectory, let directory = environment[variable], !directory.isEmpty {
-            path = URL(fileURLWithPath: directory).appendingPathComponent(URL(fileURLWithPath: source.file).lastPathComponent).path
-        } else { path = source.file }
+        if !config.authCredentialFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            path = config.authCredentialFile
+        } else {
+            guard !source.file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            if let variable = source.environmentDirectory, let directory = environment[variable], !directory.isEmpty {
+                path = URL(fileURLWithPath: directory).appendingPathComponent(URL(fileURLWithPath: source.file).lastPathComponent).path
+            } else { path = source.file }
+        }
         return URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
     }
 
     static func sourceDescription(_ config: ProviderConfig) -> String {
-        credentialFileURL(for: config)?.path ?? "该供应商尚未声明本机 Auth 授权来源"
+        guard config.credentialSource != nil else { return "该供应商尚未声明本机 Auth 授权来源" }
+        return credentialFileURL(for: config)?.path ?? "请选择本机 Auth 授权文件"
     }
 
     static func resolveCall(_ config: ProviderConfig) throws -> ProviderConfig {
@@ -63,25 +68,36 @@ enum ProviderAuthentication {
                 throw ProviderAuthenticationError(message: "请填写基础接入的 API Key")
             }
         case "auth":
-            guard let source = config.credentialSource, let file = credentialFileURL(for: config) else {
+            guard let source = config.credentialSource else {
                 throw ProviderAuthenticationError(message: "此供应商未提供本机 Auth 适配，请选择 API Key 或使用支持 Auth 的类型")
+            }
+            guard let file = credentialFileURL(for: config) else {
+                throw ProviderAuthenticationError(message: "未指定本机 Auth 授权文件，请选择文件")
             }
             guard let data = try? Data(contentsOf: file),
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw ProviderAuthenticationError(message: "无法读取本机授权文件，请先在对应客户端登录")
             }
-            for (path, expected) in source.requiredValues ?? [:] {
-                guard string(at: path, in: object) == expected else {
-                    throw ProviderAuthenticationError(message: "本机授权文件不是此供应商支持的登录模式，请重新登录")
-                }
-            }
-            guard let token = string(at: source.tokenPath, in: object), !token.isEmpty,
-                  token.rangeOfCharacter(from: .controlCharacters) == nil else {
-                throw ProviderAuthenticationError(message: "本机授权缺少有效访问令牌，请重新登录")
+            let formats = [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
+                requiredValues: source.requiredValues, contextPaths: source.contextPaths)] + (source.alternatives ?? [])
+            guard let format = formats.first(where: { format in
+                (format.requiredValues ?? [:]).allSatisfy { string(at: $0.key, in: object) == $0.value }
+                    && validString(at: format.tokenPath, in: object) != nil
+            }), let token = validString(at: format.tokenPath, in: object) else {
+                throw ProviderAuthenticationError(message: "本机授权文件缺少受支持登录格式的有效访问令牌，请重新登录")
             }
             resolved.refreshKey = token
+            resolved.authContext = [:]
+            for (key, path) in format.contextPaths ?? [:] {
+                if let value = string(at: path, in: object), !value.isEmpty {
+                    guard value.rangeOfCharacter(from: .controlCharacters) == nil else {
+                        throw ProviderAuthenticationError(message: "授权身份字段格式无效，请重新登录")
+                    }
+                    resolved.authContext[key] = value
+                }
+            }
             resolved.refreshHeader = config.authCallHeader ?? "Authorization: Bearer <key>"
-            for (header, path) in (source.headerPaths ?? [:]).sorted(by: { $0.key < $1.key }) {
+            for (header, path) in (format.headerPaths ?? [:]).sorted(by: { $0.key < $1.key }) {
                 if let value = string(at: path, in: object), !value.isEmpty {
                     guard value.rangeOfCharacter(from: .controlCharacters) == nil else {
                         throw ProviderAuthenticationError(message: "授权身份字段格式无效，请重新登录")
@@ -96,9 +112,24 @@ enum ProviderAuthentication {
         return resolved
     }
 
+    private static func validString(at path: String, in object: [String: Any]) -> String? {
+        guard let value = string(at: path, in: object),
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              value.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        return value
+    }
+
     private static func string(at path: String, in object: [String: Any]) -> String? {
-        path.split(separator: ".").reduce(object as Any?) { value, key in
-            (value as? [String: Any])?[String(key)]
+        let keys: [String]
+        if path.hasPrefix("/") {
+            keys = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map {
+                String($0).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+            }
+        } else {
+            keys = path.split(separator: ".").map(String.init)
+        }
+        return keys.reduce(object as Any?) { value, key in
+            (value as? [String: Any])?[key]
         } as? String
     }
 }

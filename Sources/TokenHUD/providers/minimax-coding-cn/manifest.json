@@ -1,0 +1,32 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.minimax-coding-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.minimax-coding-cn-usage-cache.json",
+  "displayName": "MiniMax Coding 中国",
+  "label": "MiniMax Coding 中国",
+  "name": "MiniMax Coding 中国",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "autoCreateDefault": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.minimaxi.com/v1/token_plan/remains",
+  "inheritQueryHeader": "Authorization: Bearer <key>",
+  "refreshAuth": "bearer",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.minimaxi.com/v1/chat/completions",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "testModel": "",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周",
+    "monthly": "月"
+  }
+}

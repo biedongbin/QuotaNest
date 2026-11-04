@@ -1,0 +1,31 @@
+{
+  "name": "loomy",
+  "displayName": "Loomy",
+  "label": "Lo",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.loomy-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.loomy-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://loomyad.xunfei.cn/api/v2/points/records?pageNo=1&pageSize=1&direction=debit&granularity=chat",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "requiredValues": {
+      "type": "oauth"
+    }
+  },
+  "inheritQueryHeader": "Authorization: Bearer <key>\ntoken: <key>\nAccept: application/json"
+}

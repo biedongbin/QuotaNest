@@ -1,0 +1,32 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.kimi-code-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.kimi-code-usage-cache.json",
+  "displayName": "Kimi Code 国际",
+  "label": "Kimi Code 国际",
+  "name": "Kimi Code 国际",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "autoCreateDefault": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.kimi.ai/coding/v1/usages",
+  "inheritQueryHeader": "Authorization: Bearer <key>",
+  "refreshAuth": "bearer",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.kimi.ai/coding/v1/chat/completions",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "testModel": "",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周",
+    "monthly": "月"
+  }
+}

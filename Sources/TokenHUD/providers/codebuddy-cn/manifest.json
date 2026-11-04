@@ -1,0 +1,32 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.codebuddy-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.codebuddy-cn-usage-cache.json",
+  "displayName": "CodeBuddy 中国",
+  "label": "CodeBuddy 中国",
+  "name": "CodeBuddy 中国",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "autoCreateDefault": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://copilot.tencent.com/v2/billing/meter/get-user-resource",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nUser-Agent: CLI/2.108.1 CodeBuddy/2.108.1\nX-Product: SaaS\nX-IDE-Type: CLI\nX-IDE-Name: CLI\nx-requested-with: XMLHttpRequest\nx-codebuddy-request: 1\nContent-Type: application/json",
+  "refreshAuth": "bearer",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://copilot.tencent.com/v2/chat/completions",
+  "refreshHeader": "Authorization: Bearer <key>\nUser-Agent: CLI/2.108.1 CodeBuddy/2.108.1\nX-Product: SaaS\nX-IDE-Type: CLI\nX-IDE-Name: CLI\nx-requested-with: XMLHttpRequest\nx-codebuddy-request: 1",
+  "testModel": "",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周",
+    "monthly": "月"
+  }
+}

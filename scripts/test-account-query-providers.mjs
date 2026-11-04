@@ -39,7 +39,7 @@ function run(name, auth, body, status = 200, extra = {}) {
 }
 function args() { return JSON.parse(readFileSync(argsFile, 'utf8')); }
 try {
-  const quotaAuth = { quotaMode: 'endpoint', queryUrl: 'https://quota.invalid/exact?scope=one', queryKey: 'quota-only-key', refreshApiKey: 'model-call-key' };
+  const quotaAuth = { tokenhudResolvedAuth: true, quotaMode: 'endpoint', queryUrl: 'https://quota.invalid/exact?scope=one', queryKey: 'quota-only-key', refreshApiKey: 'model-call-key' };
   let result = run('generic', quotaAuth, { data: { '5h': { used_percentage: 12 }, week: { used_percentage: '24' }, month: { used_percentage: 36 } } });
   assert.equal(result.five_hour.used_percentage, 12);
   assert.equal(result.seven_day.used_percentage, 24);

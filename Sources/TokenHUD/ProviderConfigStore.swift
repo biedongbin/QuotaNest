@@ -6,6 +6,7 @@ struct ProviderConfig {
     var authCredentialFile = ""
     // Read-only capability metadata from the supplier declaration, never persisted credentials.
     var credentialsResolved = false
+    var authContext: [String: String] = [:]
     var quotaAuthModes: [String]?
     var credentialSource: ProviderCredentialSource?
     var authCallURL: String?
@@ -145,7 +146,7 @@ enum ProviderConfigStore {
     /// Strip obsolete query identities while preserving unrelated user configuration.
     static func removingQueryCredentials(from original: [String: Any], manifest: ProviderManifest) -> [String: Any] {
         var object = original
-        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "token", "cookie"]
+        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "token", "cookie", "authContext", "tokenhudAuthContext"]
             where key != manifest.credentialSource?.fileConfigKey {
             object.removeValue(forKey: key)
         }

@@ -1,0 +1,39 @@
+{
+  "name": "qwenwork-enterprise",
+  "displayName": "QwenWork Enterprise",
+  "label": "QwenWork Enterprise",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.qwenwork-enterprise-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.qwenwork-enterprise-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "deviceToken",
+    "contextPaths": {
+      "enterpriseHost": "enterpriseHost"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "requiredValues": {
+          "type": "qwenwork-enterprise"
+        },
+        "contextPaths": {
+          "enterpriseHost": "enterpriseHost"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

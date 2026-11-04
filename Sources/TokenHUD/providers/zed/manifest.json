@@ -1,0 +1,36 @@
+{
+  "name": "zed",
+  "displayName": "Zed",
+  "label": "Zed",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.zed-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.zed-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://cloud.zed.dev/client/users/me",
+  "inheritQueryHeader": "Accept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "accessToken",
+    "requiredValues": {
+      "provider": "zed"
+    },
+    "contextPaths": {
+      "sourceProvider": "provider",
+      "expiresAt": "expiresAt",
+      "userId": "providerSpecificData.userId",
+      "systemId": "providerSpecificData.systemId"
+    }
+  },
+  "buckets": {}
+}

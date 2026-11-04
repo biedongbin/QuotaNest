@@ -78,7 +78,8 @@ enum PluginGenerator {
             accent: t.accent, icon: t.icon, authMode: t.authMode, quotaMode: "script",
             quotaAuthModes: t.quotaAuthModes, credentialSource: t.credentialSource,
             authCallUrl: t.authCallUrl, authCallProtocol: t.authCallProtocol, authCallHeader: t.authCallHeader,
-            authModelsUrl: t.authModelsUrl, inheritQueryUrl: t.inheritQueryUrl, inheritQueryHeader: t.inheritQueryHeader)
+            authModelsUrl: t.authModelsUrl, inheritQueryUrl: t.inheritQueryUrl, inheritQueryHeader: t.inheritQueryHeader,
+            autoCreateDefault: t.autoCreateDefault)
         // fetch.sh: 读模板脚本, {SLUG} 替换后写入实例目录
         let script = (try? String(contentsOf: template.dir.appendingPathComponent("fetch.sh"), encoding: .utf8))
             .map { $0.replacingOccurrences(of: "{SLUG}", with: slug) }

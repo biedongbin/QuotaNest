@@ -1,0 +1,28 @@
+{
+  "name": "deepseek",
+  "displayName": "DeepSeek",
+  "label": "De",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.deepseek-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.deepseek-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.deepseek.com/user/balance",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.deepseek.com/v1/chat/completions",
+  "testModel": "",
+  "buckets": {}
+}

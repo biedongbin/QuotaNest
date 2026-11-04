@@ -1,0 +1,39 @@
+{
+  "name": "catpaw",
+  "displayName": "妙手 CatPaw",
+  "label": "Ca",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.catpaw-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.catpaw-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://catx.nocode.cn/api/gateway/credit/balance",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "~/.meituan-catpaw/auth.json",
+    "tokenPath": "auth.accessToken",
+    "contextPaths": {
+      "userId": "account.uid"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "requiredValues": {
+          "type": "oauth"
+        }
+      }
+    ]
+  },
+  "inheritQueryHeader": "X-Auth-Token: <key>\nAccept: application/json\ngray-set: new-agent-sdk"
+}

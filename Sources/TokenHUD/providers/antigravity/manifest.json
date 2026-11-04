@@ -1,0 +1,33 @@
+{
+  "name": "antigravity",
+  "displayName": "Antigravity",
+  "label": "AG",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.antigravity-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.antigravity-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access_token",
+    "requiredValues": {
+      "type": "antigravity"
+    },
+    "contextPaths": {
+      "projectId": "project_id"
+    }
+  },
+  "buckets": {}
+}

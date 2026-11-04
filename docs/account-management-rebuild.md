@@ -73,6 +73,8 @@ GPT/Codex Auth 的调用／订阅模型端点与 API Key 模式的基础 API 地
 
 ## 六、验收清单与状态
 
+以下数字保留此前批次的历史记录，不作为新增56类型的最终验收汇总；本轮供应商目录扩展的最终测试结果由主线程补充。离线解析、保存和传输回归不等于真实服务联通或窗口机制验证。
+
 本轮已执行 238 项 Swift 回归、8 项 Node 适配/HUD 测试，以及独立启用的 4 项原生测试，均通过；Release 构建通过。原生编辑测试实际找到可编辑的 Auth 路径输入控件并将新路径写入草稿，同时确认未保存到磁盘。文件选择使用系统 NSOpenPanel，支持隐藏目录和 JSON 文件；不将该标准控件的代码接线宣称为人工选择流程已验。日志：[Swift](../.build/auth-path-cleanup-tests.log)、[Node](../.build/auth-path-cleanup-node.log)、[原生编辑](../.build/auth-path-native-editor.log)、[原生窗口](../.build/auth-path-native-window.log)、[Release](../.build/auth-path-cleanup-release.log)。默认跳过项不算已验。
 
 | 条目 | 必须观察到的结果 | 本轮状态 |
@@ -101,6 +103,20 @@ Auth 在线联通、外部授权续期、模型所属套餐和供应商真实窗
 
 Auth 选项只在类型声明授权来源时可用；未声明来源的类型禁用并标明未接入，不能以可选 UI 假装已经支持。编辑与详情须展示统一解析器的真实用量认证原因，不能把不支持认证模式一律说成 Key 配错。支持 Auth 的类型继续允许自定义授权文件路径。
 
-本次逐项核对覆盖五家的 manifest、fetch 启动脚本、临时快照及实际 mjs 请求。Ollama/OpenCode Go 源码仍有旧页面分支，但当前 App 快照先清 Cookie/token 再投影基础认证，不能因此误报当前路径仍在读取独立凭证。五家均有离线实际适配器请求测试，设置相冲突的旧环境来源，验证只读指定快照、使用准确 URL/Header，不发送 Cookie，也不读取另一个账号。
+本节五家是扩展前的历史逐项核对；当前内置类型与真实能力以[供应商目录](provider-catalog.md)及下节为准。本次逐项核对覆盖五家的 manifest、fetch 启动脚本、临时快照及实际 mjs 请求。Ollama/OpenCode Go 源码仍有旧页面分支，但当前 App 快照先清 Cookie/token 再投影基础认证，不能因此误报当前路径仍在读取独立凭证。五家均有离线实际适配器请求测试，设置相冲突的旧环境来源，验证只读指定快照、使用准确 URL/Header，不发送 Cookie，也不读取另一个账号。
 
 增量验证：[239 项 Swift 回归](../.build/all-supplier-auth-tests.log)、[11 项 Node 回归](../.build/all-supplier-adapters.log)、[Release 构建](../.build/all-supplier-release.log)通过。本次原生编辑测试进程未产出完整汇总，不按退出码 0 计为成功；不沿用前轮 GUI 通过数作为本次新证据。未使用真实凭证或发送真实模型请求。
+
+## 八、供应商目录扩展：当前资源能力
+
+当前[供应商目录](provider-catalog.md)主表有72个去重候选：55个已实现查询资源、17个不启用。按实际manifest中的 `refreshUrl` / `authCallUrl` 核对，22个声明查询加模型调用，33个仅查询。保持原有 `gpt`、`glm`、`cline`、`ollama`、`opencode-go` 五个slug；资源存在只证明源码接线，不能证明供应商账号联通或动态窗口机制。
+
+用户路径为“添加账号 → 搜索并选择内置类型 → 名称 + 基础API Key或填写／选择Auth文件 → 保存”，默认查询由类型提供，不要求用户填写查询脚本、独立查询Token或Cookie。模板新增不会自动创建账号。类型的认证模式以 `quotaAuthModes` 为准，Auth只读来源由 `credentialSource` 的主映射、`alternatives` 与 `contextPaths` 声明；留空仅在存在默认来源时有效。已支持明文JSON导出不等于自动导入原生Keychain、SQLite、TOML或加密客户端数据库；无默认来源必须明确选择已支持格式的文件。
+
+仅查询类型尚未实现模型调用协议，模型测试和调度应明确不可用，不得误报为漏填Key。支持模型调用的新模板默认模型为空，用户必须选定目标套餐／用量池实际可用的模型，计划仍默认关闭。浏览器OAuth、自动Token刷新和外部授权写回不在当前能力内。
+
+显示遵循供应商原始单位：多币种余额分币种展示，period balance和钱包不制造百分比、总上限或reset；缺字段保持未知，到期不等于自动重置。旧缓存只能由核心在同账号身份关联明确时继承，适配器错误不能把另一账号的磁盘缓存重新带回。
+
+本轮最终Swift、Node、构建和安装结果由主线程据实际日志统一补充，不合并不同suite为猜测总数。真实Auth/APIKey联通、套餐模型归属、供应商窗口机制和实际客户端来源导入须逐项留证；离线保存／格式回归不能替代这些验收。
+
+最新纳入规则：没有真实额度查询的供应商不加入内置类型。Groq仅提供速率响应头，改为不启用，55个固定额度类型之外保留自定义OpenAI兼容／Anthropic兼容两个通用入口；自定义仅支持基础API Key，不支持Auth文件。用户提供完整额度URL，默认HTTP GET并复用同一基础Key，按通用标准JSON normalize契约解析；不添加独立查询认证、不猜测billing路径、不要求用户自写查询脚本。自定义入口不计入72个固定品牌候选。

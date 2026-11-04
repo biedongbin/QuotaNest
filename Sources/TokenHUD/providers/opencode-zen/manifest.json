@@ -1,0 +1,29 @@
+{
+  "name": "opencode-zen",
+  "displayName": "OpenCode Zen 套餐窗口",
+  "label": "OZ",
+  "icon": "globe",
+  "accent": "purple",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.opencode-zen-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.opencode-zen-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://opencode.ai/zen/v1/usage",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json\nUser-Agent: TokenHUD/1.0",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>\nx-opencode-session: tokenhud-<session>\nx-opencode-session-id: tokenhud-<session>\nUser-Agent: TokenHUD/1.0",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://opencode.ai/zen/v1/chat/completions",
+  "testModel": "",
+  "requiresSession": true,
+  "buckets": {}
+}

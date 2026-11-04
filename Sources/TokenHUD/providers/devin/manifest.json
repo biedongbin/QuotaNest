@@ -1,0 +1,38 @@
+{
+  "name": "devin",
+  "displayName": "Devin CLI",
+  "label": "Dv",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.devin-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.devin-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+  "inheritQueryHeader": "Content-Type: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "api_key",
+    "requiredValues": {
+      "type": "devin"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "session_token",
+        "requiredValues": {
+          "type": "devin"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

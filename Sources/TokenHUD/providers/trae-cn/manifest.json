@@ -1,0 +1,57 @@
+{
+  "name": "trae-cn",
+  "displayName": "Trae 中国",
+  "label": "Trae 中国",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.trae-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.trae-cn-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.trae.cn/trae/api/v2/pay/ide_user_ent_usage",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "requiredValues": {
+      "type": "oauth"
+    },
+    "contextPaths": {
+      "userId": "uid",
+      "deviceId": "deviceId",
+      "machineId": "machineId",
+      "region": "region",
+      "api": "api",
+      "authHost": "authHost",
+      "expiresAt": "expires",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "/trae-cn/access",
+        "requiredValues": {
+          "/trae-cn/type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "/trae-cn/uid",
+          "deviceId": "/trae-cn/deviceId",
+          "machineId": "/trae-cn/machineId",
+          "region": "/trae-cn/region",
+          "api": "/trae-cn/api",
+          "authHost": "/trae-cn/authHost",
+          "expiresAt": "/trae-cn/expires",
+          "sourceProvider": "/trae-cn/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

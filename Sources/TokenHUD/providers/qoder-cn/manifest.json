@@ -1,0 +1,54 @@
+{
+  "name": "qoder-cn",
+  "displayName": "Qoder 中国",
+  "label": "Qoder 中国",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.qoder-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.qoder-cn-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://openapi.qoder.com.cn/api/v2/quota/usage",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "accessToken",
+    "requiredValues": {
+      "provider": "qoder-cn"
+    },
+    "contextPaths": {
+      "sourceProvider": "provider",
+      "expiresAt": "expiresAt",
+      "region": "providerSpecificData.region",
+      "userId": "providerSpecificData.userId",
+      "machineId": "providerSpecificData.machineId",
+      "authMethod": "providerSpecificData.authMethod"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "apiKey",
+        "requiredValues": {
+          "provider": "qoder-cn"
+        },
+        "contextPaths": {
+          "sourceProvider": "provider",
+          "expiresAt": "expiresAt",
+          "region": "providerSpecificData.region",
+          "userId": "providerSpecificData.userId",
+          "machineId": "providerSpecificData.machineId",
+          "authMethod": "providerSpecificData.authMethod"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

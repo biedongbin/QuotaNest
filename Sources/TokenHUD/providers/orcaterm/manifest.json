@@ -1,0 +1,34 @@
+{
+  "name": "orcaterm",
+  "displayName": "OrcaTerm",
+  "label": "OrcaTerm",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.orcaterm-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.orcaterm-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://orcaterm.com/cgi/api",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "alternatives": [
+      {
+        "tokenPath": "key"
+      },
+      {
+        "tokenPath": "metadata.accessToken"
+      }
+    ]
+  },
+  "buckets": {}
+}

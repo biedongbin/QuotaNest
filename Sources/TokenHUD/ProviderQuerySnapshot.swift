@@ -16,6 +16,7 @@ struct ProviderQuerySnapshot {
         object = ProviderConfigStore.removingQueryCredentials(from: object, manifest: manifest)
         object["authMode"] = config.authMode
         object["tokenhudResolvedAuth"] = true
+        object["tokenhudAuthContext"] = resolved.authContext
         object["queryKey"] = resolved.queryKey
         object["apiKey"] = resolved.queryKey
         object["refreshApiKey"] = resolved.queryKey
@@ -41,7 +42,8 @@ struct ProviderQuerySnapshot {
             throw error
         }
         return ProviderQuerySnapshot(file: file, queryURL: resolved.queryUrl,
-                                     secrets: [resolved.refreshKey, resolved.queryKey], directory: directory)
+                                     secrets: [resolved.refreshKey, resolved.queryKey] + Array(resolved.authContext.values)
+                                        + Array(headers.values), directory: directory)
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: directory) }

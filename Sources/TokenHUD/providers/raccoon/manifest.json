@@ -1,0 +1,45 @@
+{
+  "name": "raccoon",
+  "displayName": "商汤小浣熊",
+  "label": "商汤",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.raccoon-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.raccoon-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://xiaohuanxiong.com/api/web/points/v1/balance",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access_token",
+    "contextPaths": {},
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "contextPaths": {
+          "expiresAt": "expires"
+        },
+        "requiredValues": {
+          "type": "oauth"
+        }
+      },
+      {
+        "tokenPath": "accessToken",
+        "contextPaths": {
+          "expiresAt": "expiresAt"
+        }
+      }
+    ]
+  }
+}

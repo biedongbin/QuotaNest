@@ -1,0 +1,32 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.commandcode-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.commandcode-usage-cache.json",
+  "displayName": "Command Code",
+  "label": "Command Code",
+  "name": "Command Code",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "autoCreateDefault": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.commandcode.ai/alpha/billing/credits",
+  "inheritQueryHeader": "Authorization: Bearer <key>",
+  "refreshAuth": "bearer",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.commandcode.ai/provider/v1/chat/completions",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "testModel": "",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周",
+    "monthly": "月"
+  }
+}

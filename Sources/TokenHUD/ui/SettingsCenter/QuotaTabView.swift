@@ -30,6 +30,10 @@ struct QuotaMetric: Identifiable {
     let unit: String?
     let period: String?
     let resetsAt: Int?
+    var resetDescription: String? {
+        if let reset = formatResetAt(resetsAt) { return reset }
+        return period == "balance" ? nil : "重置时间未知"
+    }
     var value: String {
         if let percentage {
             return percentage.formatted(.number.precision(.fractionLength(0...1))) + "%"
@@ -95,11 +99,12 @@ struct QuotaMetricView: View {
                 if old {
                     Text("旧值").foregroundStyle(Palette.warn)
                 }
-                Text(formatResetAt(metric.resetsAt) ?? "重置时间未知")
-                    .foregroundStyle(Palette.muted).lineLimit(2)
+                if let reset = metric.resetDescription {
+                    Text(reset).foregroundStyle(Palette.muted).lineLimit(2)
+                }
             }
             .font(.system(size: compact ? 10.5 : 11.5))
-            if !compact, let period = metric.period, period != metric.label {
+            if !compact, let period = metric.period, period != "balance", period != metric.label {
                 Text(period).font(.system(size: 11.5)).foregroundStyle(Palette.muted)
             }
         }
@@ -117,7 +122,7 @@ struct QuotaTabView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("额度").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("供应商返回的实际用量与重置时间")
+                    Text("供应商返回的实际用量、余额与周期信息")
                         .font(Typo.small).foregroundStyle(Palette.muted)
                 }
                 Spacer(minLength: 12)
@@ -135,7 +140,7 @@ struct QuotaTabView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("未启用额度查询", systemImage: "chart.bar.xaxis")
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
-                        Text("此账号仍可测试 API 和执行调用计划。需要时，在连接中添加额度接口或查询凭证。")
+                        Text("需要时，在连接中配置额度接口；用量查询统一继承基础认证。模型测试与调用计划取决于供应商类型的接入能力。")
                             .font(Typo.small).foregroundStyle(Palette.muted)
                         Button("配置额度查询") {
                             model.tab = .config
@@ -160,7 +165,7 @@ struct QuotaTabView: View {
                         }
                         .font(.system(size: 11.5))
                         if presentation.metrics.isEmpty {
-                            Text(model.quotaConfigured(row) ? "查询后，这里会显示服务返回的额度窗口。" : "请先在连接中补全额度查询凭证。")
+                            Text(model.quotaConfigured(row) ? "查询后，这里会显示服务返回的额度窗口。" : "请先在连接中补全基础认证与用量查询配置。")
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                                 .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
                         } else {

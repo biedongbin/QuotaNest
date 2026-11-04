@@ -1,5 +1,13 @@
 import Foundation
 
+/// One complete credential layout, selected atomically from a single authorization file.
+struct ProviderCredentialFormat: Codable, Equatable, Sendable {
+    var tokenPath: String
+    var headerPaths: [String: String]?
+    var requiredValues: [String: String]?
+    var contextPaths: [String: String]?
+}
+
 /// Declares an existing CLI authorization file; no token is copied into account settings.
 struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var file: String
@@ -8,6 +16,8 @@ struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var headerPaths: [String: String]?
     var requiredValues: [String: String]?
     var fileConfigKey: String?
+    var contextPaths: [String: String]?
+    var alternatives: [ProviderCredentialFormat]?
 }
 
 struct ProviderManifest: Codable {
@@ -52,6 +62,8 @@ struct ProviderManifest: Codable {
     var authModelsUrl: String?
     var inheritQueryUrl: String?
     var inheritQueryHeader: String?
+    /// nil preserves automatic default account creation for existing templates.
+    var autoCreateDefault: Bool?
 
     var supportsQuota: Bool {
         if let quotaMode { return quotaMode != "none" }
@@ -69,7 +81,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader, autoCreateDefault
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -83,7 +95,8 @@ struct ProviderManifest: Codable {
          authMode: String? = nil, origin: String? = nil, quotaMode: String? = nil,
          quotaAuthModes: [String]? = nil, credentialSource: ProviderCredentialSource? = nil,
          authCallUrl: String? = nil, authCallProtocol: String? = nil, authCallHeader: String? = nil,
-         authModelsUrl: String? = nil, inheritQueryUrl: String? = nil, inheritQueryHeader: String? = nil) {
+         authModelsUrl: String? = nil, inheritQueryUrl: String? = nil, inheritQueryHeader: String? = nil,
+         autoCreateDefault: Bool? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -118,6 +131,7 @@ struct ProviderManifest: Codable {
         self.authModelsUrl = authModelsUrl
         self.inheritQueryUrl = inheritQueryUrl
         self.inheritQueryHeader = inheritQueryHeader
+        self.autoCreateDefault = autoCreateDefault
     }
 
     init(from decoder: Decoder) throws {
@@ -156,6 +170,7 @@ struct ProviderManifest: Codable {
         authModelsUrl = try c.decodeIfPresent(String.self, forKey: .authModelsUrl)
         inheritQueryUrl = try c.decodeIfPresent(String.self, forKey: .inheritQueryUrl)
         inheritQueryHeader = try c.decodeIfPresent(String.self, forKey: .inheritQueryHeader)
+        autoCreateDefault = try c.decodeIfPresent(Bool.self, forKey: .autoCreateDefault)
     }
 }
 
@@ -194,7 +209,7 @@ struct WindowBucket: Codable, Equatable {
     var label: String?             // 中文窗口名 ("5小时"/"本周"/"本月"/"滚动"/…)
     var usedPercentage: Double?
     var remainingPercentage: Double?
-    var amount: Double?            // 已用量 (按 unit)
+    var amount: Double?            // 按 unit 的测量值；周期表示已用量，period=balance 表示 label 明确的剩余余额
     var limit: Double?             // 总额度 (按 unit)
     var unit: String?              // "USD" / "requests" / …
     var period: String?            // 周期描述

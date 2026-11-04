@@ -1,0 +1,24 @@
+{
+  "name": "factory",
+  "displayName": "Factory / Droid",
+  "label": "Fa",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.factory-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.factory-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.factory.ai/api/billing/limits",
+  "testModel": "",
+  "buckets": {},
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json\nX-Factory-Client: cli\nX-Client-Version: 0.242.0\nUser-Agent: factory-cli/0.242.0"
+}

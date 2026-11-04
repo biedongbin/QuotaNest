@@ -1,0 +1,61 @@
+{
+  "name": "workbuddy",
+  "displayName": "WorkBuddy 国际",
+  "label": "WorkBuddy 国际",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.workbuddy-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.workbuddy-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://www.workbuddy.ai/billing/meter/get-user-resource-summary",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "auth.accessToken",
+    "contextPaths": {
+      "userId": "account.uid",
+      "domain": "auth.domain",
+      "enterpriseId": "account.enterpriseId",
+      "expiresAt": "auth.expiresAt",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "requiredValues": {
+          "type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "uid",
+          "domain": "domain",
+          "enterpriseId": "enterpriseId",
+          "expiresAt": "expires",
+          "sourceProvider": "provider"
+        }
+      },
+      {
+        "tokenPath": "/workbuddy-ai/access",
+        "requiredValues": {
+          "/workbuddy-ai/type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "/workbuddy-ai/uid",
+          "domain": "/workbuddy-ai/domain",
+          "enterpriseId": "/workbuddy-ai/enterpriseId",
+          "expiresAt": "/workbuddy-ai/expires",
+          "sourceProvider": "/workbuddy-ai/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

@@ -1,0 +1,28 @@
+{
+  "name": "openrouter",
+  "displayName": "OpenRouter",
+  "label": "Op",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.openrouter-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.openrouter-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://openrouter.ai/api/v1/credits",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://openrouter.ai/api/v1/chat/completions",
+  "testModel": "",
+  "buckets": {}
+}

@@ -1,0 +1,35 @@
+{
+  "name": "github-copilot",
+  "displayName": "GitHub Copilot",
+  "label": "GH",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.github-copilot-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.github-copilot-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.github.com/copilot_internal/user",
+  "inheritQueryHeader": "Authorization: token <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "oauth_token",
+    "alternatives": [
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "provider": "github"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

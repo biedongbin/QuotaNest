@@ -1,0 +1,111 @@
+{
+  "name": "kiro",
+  "displayName": "Kiro",
+  "label": "Kiro",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.kiro-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.kiro-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://codewhisperer.us-east-1.amazonaws.com",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "accessToken",
+    "requiredValues": {
+      "provider": "kiro"
+    },
+    "contextPaths": {
+      "sourceProvider": "provider",
+      "expiresAt": "expiresAt",
+      "region": "providerSpecificData.region",
+      "authMethod": "providerSpecificData.authMethod",
+      "profileArn": "providerSpecificData.profileArn"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "authMethod": "builder-id"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "authMethod",
+          "profileArn": "profileArn",
+          "expiresAt": "expiresAt"
+        }
+      },
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "authMethod": "idc"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "authMethod",
+          "profileArn": "profileArn",
+          "expiresAt": "expiresAt"
+        }
+      },
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "authMethod": "api_key"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "authMethod",
+          "profileArn": "profileArn",
+          "expiresAt": "expiresAt"
+        }
+      },
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "authMethod": "google"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "authMethod",
+          "profileArn": "profileArn",
+          "expiresAt": "expiresAt"
+        }
+      },
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "authMethod": "github"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "authMethod",
+          "profileArn": "profileArn",
+          "expiresAt": "expiresAt"
+        }
+      },
+      {
+        "tokenPath": "access_token",
+        "requiredValues": {
+          "auth_method": "external_idp"
+        },
+        "contextPaths": {
+          "region": "region",
+          "authMethod": "auth_method",
+          "profileArn": "profile_arn",
+          "expiresAt": "expired"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

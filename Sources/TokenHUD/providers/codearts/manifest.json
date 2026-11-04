@@ -1,0 +1,39 @@
+{
+  "name": "codearts",
+  "displayName": "CodeArts",
+  "label": "CodeArts",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.codearts-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.codearts-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://snap-access.cn-north-4.myhuaweicloud.com/snap-manager/v1/statistics/plugin",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access_key_id",
+    "contextPaths": {
+      "secretAccessKey": "secret_access_key",
+      "securityToken": "security_token"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "credentials.access_key_id",
+        "contextPaths": {
+          "secretAccessKey": "credentials.secret_access_key",
+          "securityToken": "credentials.security_token"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

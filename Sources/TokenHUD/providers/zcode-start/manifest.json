@@ -1,0 +1,50 @@
+{
+  "name": "zcode-start",
+  "displayName": "ZCode Start",
+  "label": "ZC",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.zcode-start-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.zcode-start-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.17.2",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "zcodejwttoken",
+    "contextPaths": {
+      "device": "device",
+      "expiresAt": "expires"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "jwt",
+        "contextPaths": {
+          "device": "device",
+          "expiresAt": "expires"
+        }
+      },
+      {
+        "tokenPath": "access",
+        "contextPaths": {
+          "device": "device",
+          "expiresAt": "expires"
+        },
+        "requiredValues": {
+          "type": "oauth"
+        }
+      }
+    ]
+  }
+}

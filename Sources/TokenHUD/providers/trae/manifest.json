@@ -1,0 +1,57 @@
+{
+  "name": "trae",
+  "displayName": "Trae 国际",
+  "label": "Trae 国际",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.trae-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.trae-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api-sg-central.trae.ai/trae/api/v1/pay/user_current_entitlement_list",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "requiredValues": {
+      "type": "oauth"
+    },
+    "contextPaths": {
+      "userId": "uid",
+      "deviceId": "deviceId",
+      "machineId": "machineId",
+      "region": "region",
+      "api": "api",
+      "authHost": "authHost",
+      "expiresAt": "expires",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "/trae-global/access",
+        "requiredValues": {
+          "/trae-global/type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "/trae-global/uid",
+          "deviceId": "/trae-global/deviceId",
+          "machineId": "/trae-global/machineId",
+          "region": "/trae-global/region",
+          "api": "/trae-global/api",
+          "authHost": "/trae-global/authHost",
+          "expiresAt": "/trae-global/expires",
+          "sourceProvider": "/trae-global/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

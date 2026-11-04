@@ -1,0 +1,32 @@
+{
+  "accent": "blue",
+  "authFile": "~/.claude/hud/.zai-coding-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.zai-coding-usage-cache.json",
+  "displayName": "Z.ai Coding",
+  "label": "Z.ai Coding",
+  "name": "Z.ai Coding",
+  "enabled": true,
+  "fetch": "./fetch.sh",
+  "icon": "globe",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "autoCreateDefault": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.z.ai/api/monitor/usage/quota/limit",
+  "inheritQueryHeader": "Authorization: <key>",
+  "refreshAuth": "bearer",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "testModel": "",
+  "buckets": {
+    "five_hour": "5h",
+    "seven_day": "周",
+    "monthly": "月"
+  }
+}

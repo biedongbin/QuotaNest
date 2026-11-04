@@ -1,0 +1,35 @@
+{
+  "name": "claude-code",
+  "displayName": "Claude Code",
+  "label": "Cl",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.claude-code-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.claude-code-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.anthropic.com/api/oauth/usage",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "~/.claude/.credentials.json",
+    "tokenPath": "claudeAiOauth.accessToken",
+    "alternatives": [
+      {
+        "tokenPath": "access_token",
+        "requiredValues": {
+          "type": "claude"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

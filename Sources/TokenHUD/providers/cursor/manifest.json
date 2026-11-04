@@ -1,0 +1,58 @@
+{
+  "name": "cursor",
+  "displayName": "Cursor",
+  "label": "Cursor",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.cursor-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.cursor-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "accessToken",
+    "contextPaths": {
+      "authId": "authInfo.authId",
+      "teamId": "authInfo.activeTeamId",
+      "expiresAt": "expiresAt",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "requiredValues": {
+          "type": "oauth"
+        },
+        "contextPaths": {
+          "authId": "authInfo.authId",
+          "teamId": "authInfo.activeTeamId",
+          "expiresAt": "expires",
+          "sourceProvider": "provider"
+        }
+      },
+      {
+        "tokenPath": "/cursor/access",
+        "requiredValues": {
+          "/cursor/type": "oauth"
+        },
+        "contextPaths": {
+          "authId": "/cursor/authInfo/authId",
+          "teamId": "/cursor/authInfo/activeTeamId",
+          "expiresAt": "/cursor/expires",
+          "sourceProvider": "/cursor/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

@@ -1,0 +1,36 @@
+{
+  "name": "autoclaw",
+  "displayName": "AutoClaw 国际",
+  "label": "Au",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.autoclaw-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.autoclaw-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://autoglm-api.autoglm.ai/agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "contextPaths": {
+      "expiresAt": "expires"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access_token",
+        "contextPaths": {}
+      }
+    ]
+  }
+}

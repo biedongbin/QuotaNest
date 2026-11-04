@@ -1,0 +1,44 @@
+{
+  "name": "grok-cli",
+  "displayName": "Grok CLI",
+  "label": "Gr",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.grok-cli-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.grok-cli-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access_token",
+    "requiredValues": {
+      "type": "xai"
+    },
+    "contextPaths": {
+      "userId": "sub"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "provider": "grok-cli"
+        },
+        "contextPaths": {
+          "userId": "providerSpecificData.userId"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

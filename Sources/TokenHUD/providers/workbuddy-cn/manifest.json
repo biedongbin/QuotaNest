@@ -1,0 +1,61 @@
+{
+  "name": "workbuddy-cn",
+  "displayName": "WorkBuddy 中国",
+  "label": "WorkBuddy 中国",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.workbuddy-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.workbuddy-cn-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://copilot.tencent.com/billing/meter/get-user-resource-summary",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "auth.accessToken",
+    "contextPaths": {
+      "userId": "account.uid",
+      "domain": "auth.domain",
+      "enterpriseId": "account.enterpriseId",
+      "expiresAt": "auth.expiresAt",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "access",
+        "requiredValues": {
+          "type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "uid",
+          "domain": "domain",
+          "enterpriseId": "enterpriseId",
+          "expiresAt": "expires",
+          "sourceProvider": "provider"
+        }
+      },
+      {
+        "tokenPath": "/workbuddy/access",
+        "requiredValues": {
+          "/workbuddy/type": "oauth"
+        },
+        "contextPaths": {
+          "userId": "/workbuddy/uid",
+          "domain": "/workbuddy/domain",
+          "enterpriseId": "/workbuddy/enterpriseId",
+          "expiresAt": "/workbuddy/expires",
+          "sourceProvider": "/workbuddy/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

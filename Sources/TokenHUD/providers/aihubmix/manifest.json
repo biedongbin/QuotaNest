@@ -1,0 +1,28 @@
+{
+  "name": "aihubmix",
+  "displayName": "AiHubmix",
+  "label": "Ai",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.aihubmix-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.aihubmix-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://aihubmix.com/dashboard/billing/remain",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://aihubmix.com/v1/chat/completions",
+  "testModel": "",
+  "buckets": {}
+}

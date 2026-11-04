@@ -1,0 +1,32 @@
+{
+  "name": "agnes-code",
+  "displayName": "Agnes Code",
+  "label": "Ag",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.agnes-code-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.agnes-code-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey",
+    "auth"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.agnes-ai.com/api/v2/subscription/credits-balance",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "key",
+    "requiredValues": {
+      "type": "api"
+    }
+  },
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json"
+}

@@ -36,7 +36,7 @@ struct GeneratorTests {
             try FileManager.default.copyItem(at: source.appendingPathComponent(name), to: hud.appendingPathComponent(name))
         }
         let auth = hud.appendingPathComponent(".my-relay-usage-auth.json")
-        try Data(#"{"quotaMode":"endpoint","queryUrl":"https://quota.example.test/exact","queryKey":"fixture-quota","refreshApiKey":"must-not-be-used"}"#.utf8).write(to: auth)
+        try Data(#"{"tokenhudResolvedAuth":true,"quotaMode":"endpoint","queryUrl":"https://quota.example.test/exact","queryKey":"fixture-quota","headers":{"Authorization":"Bearer fixture-quota"},"refreshApiKey":"must-not-be-used"}"#.utf8).write(to: auth)
         let curl = root.appendingPathComponent("curl")
         try """
         #!/bin/zsh

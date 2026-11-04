@@ -37,7 +37,9 @@ enum ProviderRegistry {
         }
 
         var merged: [String: PluginProvider] = [:]
-        for p in (bundleDir.map(scan(dir:)) ?? []) { merged[p.slug] = p }
+        for p in (bundleDir.map(scan(dir:)) ?? []) where p.manifest.autoCreateDefault != false {
+            merged[p.slug] = p
+        }
         for p in scan(dir: userDir) { merged[p.slug] = p }
         return (Array(merged.values).sorted { $0.slug < $1.slug }, errors)
     }

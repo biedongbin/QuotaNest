@@ -1,0 +1,31 @@
+{
+  "name": "cloudflare-workers-ai",
+  "displayName": "Cloudflare Workers AI",
+  "label": "Cloudflare Workers AI",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.cloudflare-workers-ai-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.cloudflare-workers-ai-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": true,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "auth",
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.cloudflare.com/client/v4/graphql",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "key",
+    "contextPaths": {
+      "accountId": "accountId",
+      "metadataAccountId": "metadata.accountId"
+    }
+  },
+  "buckets": {}
+}

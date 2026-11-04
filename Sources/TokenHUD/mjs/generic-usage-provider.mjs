@@ -14,6 +14,7 @@ function main() {
   let auth;
   try { auth = JSON.parse(readFileSync(authFile, 'utf8')); }
   catch { emit({ error: 'no-auth', stale: true }); return; }
+  if (auth?.tokenhudResolvedAuth !== true) { emit({ error: 'no-auth', stale: true }); return; }
   const mode = process.env.TOKENHUD_QUOTA_MODE || auth.quotaMode;
   if (mode !== 'endpoint') { emit({ error: 'no-query', stale: true }); return; }
   const endpoint = process.env.TOKENHUD_QUERY_URL || auth.queryUrl || '';
@@ -23,10 +24,21 @@ function main() {
     emit({ error: 'no-query', stale: true }); return;
   }
   const key = typeof auth.queryKey === 'string' ? auth.queryKey.trim() : '';
-  if (!key || /[\r\n]/.test(key)) { emit({ error: 'no-auth', stale: true }); return; }
+  if (!key || /[\x00-\x1f\x7f]/.test(key)) { emit({ error: 'no-auth', stale: true }); return; }
+  const projected = auth.headers;
+  if (Object.hasOwn(auth, 'headers') && (!projected || typeof projected !== 'object' || Array.isArray(projected))) {
+    emit({ error: 'no-auth', stale: true }); return;
+  }
+  const headers = Object.entries(projected || {});
+  if (headers.some(([name, value]) => !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)
+      || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value))) {
+    emit({ error: 'no-auth', stale: true }); return;
+  }
+  if (!headers.length) headers.push(['Authorization', `Bearer ${key}`]);
+  if (!headers.some(([name]) => name.toLowerCase() === 'accept')) headers.push(['Accept', 'application/json']);
   const response = spawnSync(process.env.TOKENHUD_CURL || '/usr/bin/curl', [
-    '-sS', '--connect-timeout', '6', '--max-time', '12', '--proto', '=https,http',
-    '-H', `Authorization: Bearer ${key}`, '-H', 'Accept: application/json',
+    '-q', '-sS', '--connect-timeout', '6', '--max-time', '12', '--proto', '=https,http',
+    ...headers.flatMap(([name, value]) => ['-H', `${name}: ${value}`]),
     '-w', '\n%{http_code}', '--url', url.href,
   ], { encoding: 'utf8', timeout: 15000, maxBuffer: 2_000_000, stdio: ['ignore', 'pipe', 'pipe'] });
   if (response.error || response.status !== 0) { emit({ error: 'network', stale: true }); return; }

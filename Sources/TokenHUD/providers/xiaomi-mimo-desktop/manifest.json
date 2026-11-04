@@ -1,0 +1,49 @@
+{
+  "name": "xiaomi-mimo-desktop",
+  "displayName": "Xiaomi MiMo 桌面",
+  "label": "Xiaomi MiMo 桌面",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.xiaomi-mimo-desktop-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.xiaomi-mimo-desktop-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://mimo-server-sgp.xiaomimimo.com/api/user/usage",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "access",
+    "requiredValues": {
+      "type": "oauth"
+    },
+    "contextPaths": {
+      "xiaomiCredentials": "refresh",
+      "expiresAt": "expires",
+      "region": "region",
+      "sourceProvider": "provider"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "/mimo-app/access",
+        "requiredValues": {
+          "/mimo-app/type": "oauth"
+        },
+        "contextPaths": {
+          "xiaomiCredentials": "/mimo-app/refresh",
+          "expiresAt": "/mimo-app/expires",
+          "region": "/mimo-app/region",
+          "sourceProvider": "/mimo-app/provider"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

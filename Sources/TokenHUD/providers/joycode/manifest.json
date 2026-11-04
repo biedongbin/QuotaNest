@@ -1,0 +1,42 @@
+{
+  "name": "joycode",
+  "displayName": "JoyCode",
+  "label": "Jo",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.joycode-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.joycode-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api-ai.jd.com/api",
+  "testModel": "",
+  "buckets": {},
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "key",
+    "contextPaths": {
+      "tenant": "metadata.tenant",
+      "loginType": "metadata.loginType",
+      "expiresAt": "expires"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "ptKey",
+        "contextPaths": {
+          "tenant": "tenant",
+          "loginType": "loginType",
+          "expiresAt": "expires"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "gemini-cli",
+  "displayName": "Gemini CLI",
+  "label": "Ge",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.gemini-cli-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.gemini-cli-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "queryAuth": "header",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "credentialSource": {
+    "file": "~/.gemini/oauth_creds.json",
+    "tokenPath": "access_token",
+    "contextPaths": {
+      "projectId": "project"
+    },
+    "alternatives": [
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "provider": "gemini-cli"
+        },
+        "contextPaths": {
+          "projectId": "projectId",
+          "providerProjectId": "providerSpecificData.projectId"
+        }
+      }
+    ]
+  },
+  "buckets": {}
+}

@@ -1,0 +1,28 @@
+{
+  "name": "stepfun-cn",
+  "displayName": "StepFun 中国",
+  "label": "St",
+  "icon": "globe",
+  "accent": "blue",
+  "enabled": true,
+  "autoCreateDefault": false,
+  "authFile": "~/.claude/hud/.stepfun-cn-usage-auth.json",
+  "cacheFile": "~/.claude/hud/.stepfun-cn-usage-cache.json",
+  "fetch": "./fetch.sh",
+  "intervalSec": 60,
+  "needsCredential": false,
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "queryAuth": "bearer",
+  "quotaMode": "script",
+  "inheritQueryUrl": "https://api.stepfun.com/v1/accounts",
+  "inheritQueryHeader": "Authorization: Bearer <key>\nAccept: application/json",
+  "refreshAuth": "bearer",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshProtocol": "openai",
+  "refreshUrl": "https://api.stepfun.com/v1/chat/completions",
+  "testModel": "",
+  "buckets": {}
+}
