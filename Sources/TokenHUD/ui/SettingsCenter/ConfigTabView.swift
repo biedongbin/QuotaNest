@@ -67,7 +67,7 @@ struct ConfigTabView: View {
                     if row.canQuery && config.quotaMode != "none" {
                         KeyValueRow("查询地址", mono: true) { Text(quotaAddress) }
                         KeyValueRow("查询认证") { Text("跟随基础接入") }
-                        Text(model.quotaConfigured(row) ? "用量查询配置已就绪。" : "请检查基础接入的认证配置。")
+                        Text(model.quotaConfigured(row) ? "用量查询配置已就绪。" : (model.quotaAuthenticationIssue(config) ?? "请检查基础接入的查询地址配置。"))
                             .font(.callout).foregroundStyle(.secondary)
                         Button("查看额度", systemImage: "chart.bar") { model.tab = .quota }
                     } else {

@@ -88,3 +88,19 @@ GPT/Codex Auth 的调用／订阅模型端点与 API Key 模式的基础 API 地
 | 展示一致性 | 同一快照、缺失与旧值明确、仅 API 账号不假装加载 | HUD身份与API-only读端回归、原生悬浮尺寸回归通过 |
 
 Auth 在线联通、外部授权续期、模型所属套餐和供应商真实窗口机制须逐供应商留证。HUD 应拒绝授权来源变更／消失后的旧快照；睡眠／离线错过计划不擅自补发。
+
+## 七、内置供应商逐项核对
+
+| 类型 | 当前基础接入能力 | 用量认证与接口 |
+| --- | --- | --- |
+| GPT | Auth；API Key 也可用于独立的 OpenAI API 调用 | ChatGPT/Codex 订阅用量只支持 Auth，同一文件解析出的 token/accountId 调用 wham；API Key 不能用于该订阅查询 |
+| GLM | API Key | 同一基础 Key，官方 monitor/usage/quota/limit，Authorization 为裸 Key |
+| Cline | API Key | 同一基础 Key，官方 usage-limits，Bearer |
+| Ollama | API Key | 同一基础 Key，balance，Bearer |
+| OpenCode Go | API Key | 同一基础 Key，Zen Go usage，Bearer |
+
+Auth 选项只在类型声明授权来源时可用；未声明来源的类型禁用并标明未接入，不能以可选 UI 假装已经支持。编辑与详情须展示统一解析器的真实用量认证原因，不能把不支持认证模式一律说成 Key 配错。支持 Auth 的类型继续允许自定义授权文件路径。
+
+本次逐项核对覆盖五家的 manifest、fetch 启动脚本、临时快照及实际 mjs 请求。Ollama/OpenCode Go 源码仍有旧页面分支，但当前 App 快照先清 Cookie/token 再投影基础认证，不能因此误报当前路径仍在读取独立凭证。五家均有离线实际适配器请求测试，设置相冲突的旧环境来源，验证只读指定快照、使用准确 URL/Header，不发送 Cookie，也不读取另一个账号。
+
+增量验证：[239 项 Swift 回归](../.build/all-supplier-auth-tests.log)、[11 项 Node 回归](../.build/all-supplier-adapters.log)、[Release 构建](../.build/all-supplier-release.log)通过。本次原生编辑测试进程未产出完整汇总，不按退出码 0 计为成功；不沿用前轮 GUI 通过数作为本次新证据。未使用真实凭证或发送真实模型请求。

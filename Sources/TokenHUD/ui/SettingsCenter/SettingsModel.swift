@@ -522,6 +522,12 @@ final class SettingsModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
+    func quotaAuthenticationIssue(_ config: ProviderConfig) -> String? {
+        guard config.quotaMode != "none" else { return nil }
+        do { _ = try ProviderAuthentication.resolveQuota(config); return nil }
+        catch { return error.localizedDescription }
+    }
+
     func authSourceDescription(_ config: ProviderConfig) -> String {
         ProviderAuthentication.sourceDescription(config)
     }

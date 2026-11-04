@@ -65,6 +65,32 @@ struct ProviderAuthenticationTests {
         #expect(fresh.authMode == "auth")
     }
 
+    @Test(arguments: ["glm", "cline", "ollama", "opencode-go"])
+    func supplierAPIKeyCallAndQuotaShareTheSameBase(_ supplier: String) throws {
+        let dir = try root(); defer { try? FileManager.default.removeItem(at: dir) }
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let manifestURL = repository.appendingPathComponent("Sources/TokenHUD/providers/\(supplier)/manifest.json")
+        let manifest = try JSONDecoder().decode(ProviderManifest.self, from: Data(contentsOf: manifestURL))
+        var config = ProviderConfigStore.read(authFile: dir.appendingPathComponent("account.json"), manifest: manifest)
+        config.authMode = "apikey"
+        config.refreshKey = "fixture-shared-base-A"
+        let call = try ProviderAuthentication.resolveCall(config)
+        let quota = try ProviderAuthentication.resolveQuota(config)
+        #expect(call.refreshKey == config.refreshKey)
+        #expect(quota.queryKey == config.refreshKey)
+        let urls = ["glm": "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+                    "cline": "https://api.cline.bot/api/v1/users/me/plan/usage-limits",
+                    "ollama": "https://ollama.com/api/balance", "opencode-go": "https://opencode.ai/zen/go/v1/usage"]
+        #expect(quota.queryUrl == urls[supplier])
+        var request = URLRequest(url: try #require(URL(string: quota.queryUrl)))
+        RefreshTrigger.applyHeaders(&request, quota.queryHeader, key: quota.queryKey, protocol: quota.refreshProtocol)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == (supplier == "glm" ? config.refreshKey : "Bearer \(config.refreshKey)"))
+        #expect(manifest.credentialSource == nil)
+        config.authMode = "auth"
+        #expect(throws: ProviderAuthenticationError.self) { try ProviderAuthentication.resolveCall(config) }
+    }
+
     @Test func apiKeyQuotaInheritsBaseInsteadOfStaleWebCredentials() throws {
         var c = ProviderConfig()
         c.refreshKey = "base-api-key"

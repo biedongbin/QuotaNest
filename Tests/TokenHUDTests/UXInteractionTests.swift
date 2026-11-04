@@ -19,11 +19,16 @@ struct UXInteractionTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         let auth = hud.appendingPathComponent(".sample-usage-auth.json")
-        let manifest = ProviderManifest(name: "Fixture", label: "演示服务", displayName: "演示账号",
+        var manifest = ProviderManifest(name: "Fixture", label: "演示服务", displayName: "演示账号",
                                         authFile: auth.path, testModel: "fixture-model",
                                         queryUrl: "https://example.invalid/usage", queryAuth: "bearer",
                                         queryKeyField: "apiKey", refreshUrl: "https://example.invalid/v1/chat/completions",
                                         refreshProtocol: "openai", refreshAuth: "bearer", authMode: "apikey")
+        let login = root.appendingPathComponent("fixture-auth.json")
+        try Data(#"{"access_token":"fixture-auth-only"}"#.utf8).write(to: login)
+        manifest.credentialSource = ProviderCredentialSource(file: login.path, tokenPath: "access_token")
+        manifest.authCallUrl = "https://auth.example.invalid/v1/chat/completions"
+        manifest.authCallProtocol = "openai"
         try PluginGenerator.writePlugin(slug: "sample", manifest: manifest, script: "exit 1", into: providers)
         try Data("{\"apiKey\":\"query-fixture\",\"refreshApiKey\":\"call-fixture\",\"testModel\":\"fixture-model\"}".utf8).write(to: auth)
         let before = try Data(contentsOf: auth)

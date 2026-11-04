@@ -52,7 +52,8 @@ struct DraftFormView: View {
             VStack(alignment: .leading, spacing: 12) {
                 labeled("认证方式") {
                     Picker("认证方式", selection: bind(\.authMode)) {
-                        Text("Auth · 本机授权").tag("auth")
+                        Text(manifest?.credentialSource == nil ? "Auth · 此类型未接入" : "Auth · 本机授权")
+                            .tag("auth").disabled(manifest?.credentialSource == nil)
                         Text("API Key").tag("apikey")
                     }.labelsHidden()
                 }
@@ -143,6 +144,9 @@ struct DraftFormView: View {
                     }
                     Text("使用基础接入的同一认证，不需要额外填写查询凭证。")
                         .font(.callout).foregroundStyle(.secondary)
+                    if let issue = model.quotaAuthenticationIssue(model.callConfigForDraft(draft.values)) {
+                        Text(issue).font(.callout).foregroundStyle(Palette.warn).textSelection(.enabled)
+                    }
                     if draft.values.quotaMode == "endpoint" {
                         labeled("用量查询地址") {
                             TextField("https://example.com/api/usage", text: bind(\.queryURL))
