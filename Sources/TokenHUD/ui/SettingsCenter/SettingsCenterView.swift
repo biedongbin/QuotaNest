@@ -154,7 +154,19 @@ private struct AccountSidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     navRow("全部账号", icon: "person.2", id: "page:accounts")
                     navRow("调用计划", icon: "calendar.badge.clock", id: "page:plan")
-                    ForEach(model.overviewGroups, id: \.label) { group in
+                    HStack {
+                        Text("账号列表").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                        Spacer(minLength: 2)
+                        Picker("账号列表状态", selection: $model.sidebarStatusFilter) {
+                            ForEach(AccountStatusFilter.allCases) { filter in Text(filter.label).tag(filter) }
+                        }.labelsHidden().pickerStyle(.menu)
+                            .accessibilityIdentifier("sidebar.status-filter")
+                    }.padding(.horizontal, 8).padding(.top, 12)
+                    if model.sidebarGroups.isEmpty {
+                        Text("没有符合条件的账号")
+                            .font(.caption).foregroundStyle(Palette.muted).padding(.horizontal, 10).padding(.vertical, 8)
+                    }
+                    ForEach(model.sidebarGroups, id: \.label) { group in
                         Text(group.fullName).font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Palette.muted).padding(.horizontal, 10).padding(.top, 17).padding(.bottom, 3)
                         ForEach(group.rows) { row in
@@ -171,7 +183,7 @@ private struct AccountSidebar: View {
         .searchable(text: $model.search, prompt: "搜索账号或供应商")
         .navigationTitle("TokenHUD")
         .onMoveCommand { direction in
-            let ids = ["page:accounts", "page:plan"] + model.overviewGroups.flatMap { $0.rows.map(\.id) } + ["page:settings"]
+            let ids = ["page:accounts", "page:plan"] + model.sidebarGroups.flatMap { $0.rows.map(\.id) } + ["page:settings"]
             guard let current = (focusedRow ?? selected).flatMap({ ids.firstIndex(of: $0) }) else { return }
             let next = direction == .down ? current + 1 : (direction == .up ? current - 1 : current)
             guard ids.indices.contains(next), next != current else { return }
@@ -241,10 +253,19 @@ struct OverviewPage: View {
                     .barButton()
                     .disabled(!model.allAccounts.contains { $0.enabled && $0.canQuery && model.quotaConfigured($0) })
                 }
-                if model.accounts.isEmpty {
-                    ContentUnavailableView(model.search.isEmpty ? "尚无账号" : "没有匹配的账号",
+                HStack(spacing: 12) {
+                    Picker("账号状态", selection: $model.overviewStatusFilter) {
+                        ForEach(AccountStatusFilter.allCases) { filter in Text(filter.label).tag(filter) }
+                    }.pickerStyle(.segmented).frame(maxWidth: 560)
+                        .accessibilityIdentifier("overview.status-filter")
+                    Text("\(model.overviewGroups.reduce(0) { $0 + $1.rows.count }) 个账号")
+                        .font(Typo.small).foregroundStyle(Palette.muted)
+                    Spacer(minLength: 0)
+                }
+                if model.overviewGroups.isEmpty {
+                    ContentUnavailableView(model.allAccounts.isEmpty ? "尚无账号" : "没有符合条件的账号",
                                            systemImage: "person.crop.circle.badge.plus",
-                                           description: Text(model.search.isEmpty ? "添加一个账号开始使用。" : "试试其他名称。"))
+                                           description: Text(model.allAccounts.isEmpty ? "添加一个账号开始使用。" : "调整状态过滤或搜索条件。"))
                 }
                 LazyVGrid(columns: model.overviewGroups.count == 1 ? [GridItem(.flexible(), alignment: .top)] : [GridItem(.adaptive(minimum: 290), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
                     ForEach(model.overviewGroups, id: \.label) { group in
@@ -315,7 +336,7 @@ private struct OverviewAccountCard: View {
                 QuotaMetricGrid(metrics: quota.metrics, old: quota.isOld || !row.enabled, compact: true)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(status).foregroundStyle(quota.isOld ? Palette.warn : Palette.muted)
+                Text(status).foregroundStyle(!row.health.isHealthy ? Palette.danger : (quota.isOld ? Palette.warn : Palette.muted))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if row.canQuery {
@@ -334,7 +355,10 @@ private struct OverviewAccountCard: View {
         .contextMenu { AccountContextMenu(model: model, row: row) }
     }
     private var status: String {
-        if !row.enabled { return "已停用 · 配置和计划保留" }
+        if !row.enabled {
+            return row.health.issueReason.map { "已停用 · 账号异常：" + $0 } ?? "已停用 · 配置和计划保留"
+        }
+        if let issue = row.health.issueReason { return "账号异常 · " + issue }
         if model.running.contains(row.id) { return "正在查询额度…" }
         if !row.canQuery { return model.callConfigured(row) ? "API 已配置 · 无额度查询" : "API 待配置 · 无额度查询" }
         if !model.quotaConfigured(row) { return "额度查询待配置" }

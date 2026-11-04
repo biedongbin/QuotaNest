@@ -183,6 +183,7 @@ struct AccountRow: Identifiable {
     /// P1-10 执行性配置完整 (key/url 齐) — false = 「未配置」徽章, 依赖配置的开关已强制 off
     let isConfigured: Bool
     let baseAuthenticationMode: String
+    var health: AccountHealth = .healthy
 
     var id: String { plugin.slug }
     var name: String { plugin.manifest.fullName }
@@ -203,9 +204,10 @@ struct AccountRow: Identifiable {
     /// 列表状态点: (色, 文案) — 停用优先于一切
     var status: (Color, String) {
         if !enabled { return (Palette.muted, "已停用") }
+        if let reason = health.issueReason { return (Palette.danger, "账号异常：\(reason)") }
         if !isConfigured { return (Palette.warn, "未配置") }
         guard let c = state?.cache else { return (Palette.muted, "未查询") }
-        if c.error != nil { return (Palette.danger, "异常") }
+        if c.error != nil { return (Palette.warn, "暂时查询失败 / 旧值") }
         return (Palette.ok, "正常")
     }
 }
@@ -352,6 +354,8 @@ final class SettingsModel: ObservableObject {
     }
 
     @Published var scope: ScopeFilter = .all
+    @Published var overviewStatusFilter: AccountStatusFilter = .all
+    @Published var sidebarStatusFilter: AccountStatusFilter = .healthyEnabled
     /// v0.2 左栏当前页: 总览 / 调用计划 / 全局设置 / 账号详情 (selected != nil 或模板/草稿)
     enum NavPage: Equatable { case overview, plan, settings, detail }
     @Published var navPage: NavPage = .overview
@@ -364,6 +368,8 @@ final class SettingsModel: ObservableObject {
     @Published var running: Set<String> = []
     @Published private(set) var callRunning: Set<String> = []
     @Published private(set) var callTestResults: [String: CallTestResult] = [:]
+    /// Saved-account evidence survives draft-only tests, whose inputs may differ from disk.
+    @Published private var savedCallHealthResults: [String: CallTestResult] = [:]
     @Published private(set) var pendingTestConfirmation: CallTestConfirmation?
     private struct PendingTestCall {
         let config: ProviderConfig
@@ -428,14 +434,8 @@ final class SettingsModel: ObservableObject {
 
     /// 全部账号独立于总览搜索, 供计划页和全局设置使用。
     var allAccounts: [AccountRow] {
-        engine.allPlugins.map { p in
-            AccountRow(plugin: p,
-                       state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
-                       autoQuery: !engine.disabledSlugs.contains(p.slug),
-                       enabled: !engine.disabledSlugs.contains(p.slug),
-                       isConfigured: Self.configured(p, readConfig: readConfig),
-                       baseAuthenticationMode: readConfig(p).authMode)
-        }
+        engine.allPlugins.map(makeRow)
+
     }
 
     var accounts: [AccountRow] {
@@ -457,10 +457,19 @@ final class SettingsModel: ObservableObject {
         case .enabled: scoped = all.filter { $0.enabled }
         case .disabled: scoped = all.filter { !$0.enabled }
         }
+        return providerGroups(scoped.filter(overviewStatusFilter.includes))
+    }
+
+    /// Sidebar search and status are independent of overview scope/status.
+    var sidebarGroups: [(label: String, fullName: String, accent: String?, icon: String?, rows: [AccountRow])] {
+        providerGroups(accounts.filter(sidebarStatusFilter.includes))
+    }
+
+    private func providerGroups(_ rows: [AccountRow]) -> [(label: String, fullName: String, accent: String?, icon: String?, rows: [AccountRow])] {
         var order: [String] = []
         var byLabel: [String: [AccountRow]] = [:]
         var info: [String: (String, String?, String?)] = [:]
-        for r in scoped {
+        for r in rows {
             let template = r.plugin.manifest.template.flatMap { engine.template(bySlug: $0)?.manifest }
             let provider = template ?? r.plugin.manifest
             let key = provider.label
@@ -484,21 +493,21 @@ final class SettingsModel: ObservableObject {
 
     func row(_ slug: String?) -> AccountRow? {
         guard let slug, let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return nil }
-        return AccountRow(plugin: p,
-                          state: engine.states.first { $0.slug == slug } ?? cachedState(for: p),
-                          autoQuery: !engine.disabledSlugs.contains(slug),
-                          enabled: !engine.disabledSlugs.contains(slug),
-                          isConfigured: Self.configured(p, readConfig: readConfig),
-                          baseAuthenticationMode: readConfig(p).authMode)
+        return makeRow(p)
     }
 
-    /// P1-10 执行性配置完整判定 (静态, 供 AccountRow 构建)
-    nonisolated private static func configured(_ p: PluginProvider,
-                                               readConfig: (PluginProvider) -> ProviderConfig) -> Bool {
-        let cfg = readConfig(p)
-        let callable = Self.callReady(cfg)
-        let queryReady = Self.queryReady(p.manifest, config: cfg)
-        return callable || queryReady
+    private func makeRow(_ plugin: PluginProvider) -> AccountRow {
+        let config = readConfig(plugin)
+        let state = engine.states.first { $0.slug == plugin.slug } ?? cachedState(for: plugin)
+        let readiness = AccountHealthAssessment.configuration(manifest: plugin.manifest, config: config,
+            scheduleEnabled: !engine.triggerDisabledSlugs.contains(plugin.slug))
+        let health = AccountHealthAssessment.assess(configuration: readiness, cache: state?.cache,
+            callResult: savedCallHealthResults[plugin.slug], lastSuccess: lastSuccess[plugin.slug])
+        return AccountRow(plugin: plugin, state: state,
+                          autoQuery: !engine.disabledSlugs.contains(plugin.slug),
+                          enabled: !engine.disabledSlugs.contains(plugin.slug),
+                          isConfigured: readiness.isHealthy,
+                          baseAuthenticationMode: config.authMode, health: health)
     }
 
     nonisolated private static func queryReady(_ manifest: ProviderManifest, config: ProviderConfig) -> Bool {
@@ -976,6 +985,8 @@ final class SettingsModel: ObservableObject {
             || cfg.queryUrl != previous.queryUrl || cfg.quotaMode != previous.quotaMode
             || cfg.authMode != previous.authMode || cfg.authCredentialFile != previous.authCredentialFile
             || cfg.refreshKey != previous.refreshKey
+        let changedCall = cfg.apiBaseURL != previous.apiBaseURL || cfg.refreshUrl != previous.refreshUrl
+            || cfg.testModel != previous.testModel || cfg.refreshProtocol != previous.refreshProtocol
         var manifest = p.manifest
         if manifest.template == nil {
             let generated = PluginGenerator.customManifest(name: values.name, config: cfg,
@@ -988,7 +999,9 @@ final class SettingsModel: ObservableObject {
             : try String(contentsOf: p.dir.appendingPathComponent("fetch.sh"), encoding: .utf8)
         try PluginGenerator.writePlugin(slug: slug, manifest: manifest, script: script, into: userDir)
         try ProviderConfigStore.write(cfg, manifest: manifest, to: af)
-        if changedQuota {
+        if changedQuota || changedCall {
+            callTestResults[slug] = nil
+            savedCallHealthResults[slug] = nil
             let cache = DataEngine.cachePath(for: p, hudDir: hudDir)
             if AccountFileOwnership.canRemoveHUDFile(cache, slug: slug, kind: .cache, hudDir: hudDir),
                FileManager.default.fileExists(atPath: cache.path) {
@@ -1142,7 +1155,14 @@ final class SettingsModel: ObservableObject {
                     .replacingOccurrences(of: config.refreshKey, with: "[已隐藏]")
                     .replacingOccurrences(of: config.refreshUrl, with: target)
             }
-            callTestResults[key] = result(phase, message)
+            let completed = result(phase, message)
+            callTestResults[key] = completed
+            if source == "已保存配置",
+               phase == .success || (phase == .failure && AccountHealthAssessment.persistentIssue(message) != nil),
+               let row = row(key), currentAuthenticationMatches(config, row: row),
+               readConfig(row.plugin).testModel == config.testModel {
+                savedCallHealthResults[key] = completed
+            }
             let summary = phase == .success ? message
                 : (phase == .uncertain ? "测试结果不确定，可能已消费；请查看下方完整详情" : "测试调用未成功，请查看下方完整详情")
             flash(summary, error: phase != .success)
