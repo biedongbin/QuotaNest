@@ -6,13 +6,13 @@ enum APIEndpoint {
         let base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !base.isEmpty else { return "" }
-        let suffix = protocolName == "anthropic" ? "/messages" : "/chat/completions"
+        let suffix = protocolName == "anthropic" ? "/messages" : (protocolName == "responses" ? "/responses" : "/chat/completions")
         if base.hasSuffix(suffix) { return base }
         return base.hasSuffix("/v1") ? base + suffix : base + "/v1" + suffix
     }
 
     static func baseURL(from endpoint: String) -> String {
-        for suffix in ["/chat/completions", "/messages"] where endpoint.hasSuffix(suffix) {
+        for suffix in ["/chat/completions", "/messages", "/responses"] where endpoint.hasSuffix(suffix) {
             return String(endpoint.dropLast(suffix.count))
         }
         return endpoint

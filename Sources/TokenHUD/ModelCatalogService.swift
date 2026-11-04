@@ -6,6 +6,16 @@ struct ModelCatalogConnection: Equatable, Sendable {
     let protocolName: String
     let apiKey: String
     let headers: String
+    var modelsURL: String? = nil
+}
+
+extension ModelCatalogConnection {
+    /// Consumes an already resolved call snapshot; Auth metadata never routes an API Key request.
+    init(callConfig config: ProviderConfig) {
+        self.init(baseURL: config.apiBaseURL, protocolName: config.refreshProtocol,
+                  apiKey: config.refreshKey, headers: config.refreshHeader,
+                  modelsURL: config.authMode == "auth" ? config.authModelsURL : nil)
+    }
 }
 
 struct ModelRecommendation: Equatable, Sendable {
@@ -32,7 +42,7 @@ enum ModelCatalogError: LocalizedError, Equatable, Sendable {
         case .http(let status, let body):
             let explanation: String
             switch status {
-            case 401: explanation = "模型列表认证失败（HTTP 401），请检查当前调用 API Key。"
+            case 401: explanation = "模型列表认证失败（HTTP 401），请检查当前调用凭证。"
             case 403: explanation = "供应商拒绝访问模型列表（HTTP 403），请检查当前调用凭证的权限。"
             case 404: explanation = "供应商未提供此标准模型列表接口（HTTP 404），可手动填写测试模型。"
             case 429: explanation = "模型列表请求受到限流（HTTP 429），请稍后重试。"
@@ -121,15 +131,16 @@ enum ModelCatalogService {
 
     private static func request(for connection: ModelCatalogConnection) throws -> URLRequest {
         let protocolName = connection.protocolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard ["openai", "anthropic"].contains(protocolName) else {
-            throw ModelCatalogError.invalidConnection("请先选择 OpenAI 或 Anthropic 调用协议。")
+        guard ["openai", "anthropic", "responses"].contains(protocolName) else {
+            throw ModelCatalogError.invalidConnection("当前调用协议未提供模型列表支持。")
         }
         let key = connection.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { throw ModelCatalogError.invalidConnection("请先填写当前调用 API Key，再拉取模型列表。") }
+        guard !key.isEmpty else { throw ModelCatalogError.invalidConnection("请先填写当前调用凭证，再拉取模型列表。") }
         guard key.rangeOfCharacter(from: .controlCharacters) == nil else {
-            throw ModelCatalogError.invalidConnection("调用 API Key 包含非法控制字符，请检查凭证。")
+            throw ModelCatalogError.invalidConnection("调用凭证 包含非法控制字符，请检查凭证。")
         }
-        var request = URLRequest(url: try modelsURL(connection.baseURL), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 12)
+        let target = try modelsURL(connection.modelsURL ?? connection.baseURL)
+        var request = URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 12)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
         let suppliedHeaders = connection.headers.replacingOccurrences(of: "\r\n", with: "\n")
@@ -144,7 +155,7 @@ enum ModelCatalogService {
                 throw ModelCatalogError.invalidConnection("调用请求头模板格式错误，应为每行“名称: 值”。")
             }
             if parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "cookie" {
-                throw ModelCatalogError.invalidConnection("模型列表仅使用调用 API Key，不使用网页 Cookie；请检查调用认证请求头。")
+                throw ModelCatalogError.invalidConnection("模型列表仅使用调用凭证，不使用网页 Cookie；请检查调用认证请求头。")
             }
         }
         RefreshTrigger.applyHeaders(&request, headers, key: key, protocol: protocolName)
@@ -162,7 +173,7 @@ enum ModelCatalogService {
         }
         var path = components.percentEncodedPath
         while path.hasSuffix("/") { path.removeLast() }
-        for endpoint in ["/chat/completions", "/messages"] where path.hasSuffix(endpoint) {
+        for endpoint in ["/chat/completions", "/messages", "/responses"] where path.hasSuffix(endpoint) {
             path.removeLast(endpoint.count)
             break
         }
@@ -191,7 +202,7 @@ enum ModelCatalogService {
         let ids = rows.compactMap { item -> String? in
             if let value = item as? String { return value }
             guard let object = item as? [String: Any] else { return nil }
-            return object["id"] as? String ?? object["name"] as? String ?? object["model"] as? String
+            return object["id"] as? String ?? object["name"] as? String ?? object["model"] as? String ?? object["slug"] as? String
         }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         let result = Array(Set(ids)).sorted()
         guard !result.isEmpty else { throw ModelCatalogError.emptyModels }

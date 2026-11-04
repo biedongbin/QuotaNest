@@ -5,7 +5,13 @@ import Foundation
 /// 协议: anthropic (Messages API) / openai (Chat Completions), 由 config.refreshProtocol 决定
 enum RefreshTrigger {
     /// 上栏测试: 发查询请求 (GET url + header), 看是否返回数据
-    static func testQuery(config: ProviderConfig) async -> String? {
+    static func testQuery(config original: ProviderConfig) async -> String? {
+        let target = original.quotaCredentialMode == "inherit" ? (original.inheritQueryURL ?? original.queryUrl) : original.queryUrl
+        guard !target.isEmpty else { return "未配置查询 url" }
+        guard validHTTPURL(target) != nil else { return "查询 url 非法" }
+        let config: ProviderConfig
+        do { config = try ProviderAuthentication.resolveQuota(original) }
+        catch { return error.localizedDescription }
         guard !config.queryUrl.isEmpty else { return "未配置查询 url" }
         // 凭证: jwt/cookie 用 queryToken/queryCookie, 其他用 queryKey
         let key = config.queryToken.isEmpty ? (config.queryCookie.isEmpty ? config.queryKey : config.queryCookie) : config.queryToken
@@ -20,21 +26,52 @@ enum RefreshTrigger {
 
     /// 下栏测试/触发刷新: 发 chat 请求 (POST url + header + model + prompt)
     static func testRefresh(config: ProviderConfig) async -> String? {
-        guard !config.refreshUrl.isEmpty else { return "未配置刷新 url" }
-        guard !config.refreshKey.isEmpty else { return "未配置刷新 apiKey" }
-        guard !config.testModel.isEmpty else { return "未配置测试模型" } // model 空则供应商拒绝, 窗口不推进
-        guard let u = URL(string: config.refreshUrl) else { return "刷新 url 非法" }
-        var req = URLRequest(url: u)
-        req.httpMethod = "POST"
-        applyHeaders(&req, config.refreshHeader, key: config.refreshKey, protocol: config.refreshProtocol)
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
-            "model": config.testModel,
-            "max_tokens": config.testMaxTokens,
-            "messages": [["role": "user", "content": config.testPrompt]],
-        ]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        return await send(req, redacting: [config.refreshKey])
+        await testRefresh(config: config, session: nil)
+    }
+
+    static func callRequest(config: ProviderConfig) throws -> URLRequest {
+        let config = try ProviderAuthentication.resolveCall(config)
+        guard !config.refreshUrl.isEmpty else { throw ProviderAuthenticationError(message: "未配置刷新 url") }
+        guard let url = validHTTPURL(config.refreshUrl) else { throw ProviderAuthenticationError(message: "刷新 url 非法") }
+        guard !config.testModel.isEmpty else { throw ProviderAuthenticationError(message: "未配置测试模型") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyHeaders(&request, config.refreshHeader, key: config.refreshKey, protocol: config.refreshProtocol)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any]
+        if config.refreshProtocol == "responses" {
+            body = ["model": config.testModel, "instructions": "Reply briefly to the user.",
+                "input": [["type": "message", "role": "user", "content": [["type": "input_text", "text": config.testPrompt]]]],
+                "store": false, "stream": true]
+            // The subscription Responses endpoint rejects max_output_tokens (Magpie codexBody).
+            if config.authMode != "auth" { body["max_output_tokens"] = config.testMaxTokens }
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        } else if ["anthropic", "openai"].contains(config.refreshProtocol) {
+            body = ["model": config.testModel, "max_tokens": config.testMaxTokens,
+                    "messages": [["role": "user", "content": config.testPrompt]]]
+        } else { throw ProviderAuthenticationError(message: "该调用协议尚未支持") }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
+    }
+
+    /// Session injection is for offline URLProtocol tests; regular calls share this same path.
+    static func testRefresh(config: ProviderConfig, session: URLSession?) async -> String? {
+        if config.authMode == "apikey" {
+            guard !config.refreshUrl.isEmpty else { return "未配置刷新 url" }
+            guard validHTTPURL(config.refreshUrl) != nil else { return "刷新 url 非法" }
+        }
+        do {
+            let resolved = try ProviderAuthentication.resolveCall(config)
+            let request = try callRequest(config: resolved)
+            return await send(request, redacting: [resolved.refreshKey], session: session,
+                              responsesStream: resolved.refreshProtocol == "responses")
+        } catch { return error.localizedDescription }
+    }
+
+    private static func validHTTPURL(_ value: String) -> URL? {
+        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil else { return nil }
+        return url
     }
 
     /// 触发额度刷新 (兼容旧调用: 用 auth 文件读配置)
@@ -65,16 +102,41 @@ enum RefreshTrigger {
         }
     }
 
-    private static func send(_ req: URLRequest, redacting credentials: [String]) async -> String? {
+    private static func send(_ req: URLRequest, redacting credentials: [String], session supplied: URLSession? = nil,
+                             responsesStream: Bool = false) async -> String? {
         var r = req
         r.timeoutInterval = 20  // P1-5: 显式超时 (默认 60s 太久, 请求可能已发出但回包迟到)
         do {
-            let (data, resp) = try await URLSession.shared.data(for: r)
+            let session = supplied ?? URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
+            defer { if supplied == nil { session.invalidateAndCancel() } }
+            let (data, resp) = try await session.data(for: r)
             guard let http = resp as? HTTPURLResponse else { return "无响应" }
+            if responsesStream && http.statusCode == 200 {
+                return responsesMessage(data, redacting: credentials)
+            }
             return responseMessage(statusCode: http.statusCode, body: data, redacting: credentials)
         } catch {
             return Self.describe(error: error)  // 网络类 → 结果不确定 (可能已消费)
         }
+    }
+
+    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+    }
+
+    static func responsesMessage(_ data: Data, redacting credentials: [String]) -> String {
+        var completed = false
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") where line.hasPrefix("data:") {
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            guard let object = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
+            let type = object["type"] as? String
+            if ["error", "response.failed", "response.incomplete"].contains(type ?? "") {
+                return "模型调用未完成：" + responseMessage(statusCode: 400, body: data, redacting: credentials)
+            }
+            if type == "response.completed" { completed = true }
+        }
+        return completed ? "✓ Responses 调用完成" : "结果不确定，可能已消费：未收到完整 Responses 完成事件，请查询真实额度确认"
     }
 
     /// Display up to 1 MiB of response text; make the bound explicit when exceeded.

@@ -5,12 +5,14 @@ struct EnvsEntry: Codable {
     var source: String
     var cache: String
     var buckets: [String: String]
+    var authSourceFile: String?
 
-    init(label: String, source: String, cache: String, buckets: [String: String]) {
+    init(label: String, source: String, cache: String, buckets: [String: String], authSourceFile: String? = nil) {
         self.label = label
         self.source = source
         self.cache = cache
         self.buckets = buckets
+        self.authSourceFile = authSourceFile
     }
 
     /// P2-3: 顶层 `_schemaVersion` 元数据 key 容错解码为空 entry, 读端过滤掉
@@ -20,6 +22,7 @@ struct EnvsEntry: Codable {
         source = try c.decodeIfPresent(String.self, forKey: .source) ?? ""
         cache = try c.decodeIfPresent(String.self, forKey: .cache) ?? ""
         buckets = try c.decodeIfPresent([String: String].self, forKey: .buckets) ?? [:]
+        authSourceFile = try c.decodeIfPresent(String.self, forKey: .authSourceFile)
     }
 }
 
@@ -44,11 +47,16 @@ enum HUDSync {
                          builtinNames: Set<String>) -> [String: EnvsEntry] {
         var d: [String: EnvsEntry] = [:]
         for p in plugins where p.manifest.isEnabled {
+            let file = p.manifest.authFile.map(PluginGenerator.expandPath)
+                ?? hudDir.appendingPathComponent(".\(p.slug)-usage-auth.json")
+            let config = ProviderConfigStore.read(authFile: file, manifest: p.manifest)
+            let authSource = config.authMode == "auth" && config.quotaCredentialMode == "inherit"
+                ? ProviderAuthentication.credentialFileURL(for: config)?.path : nil
             d[accountKey(p)] = EnvsEntry(
                 label: p.manifest.fullName,
-                source: "cache",
+                source: p.manifest.quotaMode == "none" || (p.manifest.quotaMode != nil && config.quotaMode == "none") ? "api" : "cache",
                 cache: DataEngine.cachePath(for: p, hudDir: hudDir).path,
-                buckets: p.manifest.buckets)
+                buckets: p.manifest.buckets, authSourceFile: authSource)
         }
         return d
     }

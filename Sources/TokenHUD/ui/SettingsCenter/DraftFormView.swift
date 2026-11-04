@@ -16,7 +16,7 @@ struct DraftFormView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("连接与计划保存后生效。API 调用与额度查询使用独立凭证。")
+            Text("基础接入、用量查询与 API 调度分别设置，保存后生效。")
                 .font(.callout).foregroundStyle(.secondary)
             if section != .trigger {
                 identity
@@ -41,7 +41,7 @@ struct DraftFormView: View {
             }
             Button("取消", role: .cancel) { clearing = nil }
         } message: {
-            Text("另一组凭证不会改变；保存前可以撤销。")
+            Text("清除基础 API Key 后，跟随基础接入的查询也将不可用。旧版独立查询凭证会保留；保存前可以撤销。")
         }
     }
     private var identity: some View {
@@ -57,25 +57,49 @@ struct DraftFormView: View {
         }
     }
     private var callConnection: some View {
-        GroupBox("API 调用") {
+        GroupBox("① 基础接入") {
             VStack(alignment: .leading, spacing: 12) {
+                labeled("认证方式") {
+                    Picker("认证方式", selection: bind(\.authMode)) {
+                        Text("Auth · 本机授权").tag("auth")
+                        Text("API Key").tag("apikey")
+                    }.labelsHidden()
+                }
                 labeled("服务地址") {
-                    TextField("https://api.example.com/v1", text: bind(\.url))
-                        .fieldBox().disabled(builtin)
-                        .accessibilityLabel("API 服务地址")
+                    if draft.values.authMode == "auth" {
+                        Text(model.baseAddressDescription(model.callConfigForDraft(draft.values))).font(.callout)
+                    } else {
+                        TextField("https://api.example.com/v1", text: bind(\.url))
+                            .fieldBox().disabled(builtin).accessibilityLabel("API 服务地址")
+                    }
                 }
                 labeled("调用协议") {
-                    Picker("调用协议", selection: bind(\.proto)) {
-                        Text("OpenAI Chat Completions").tag("openai")
-                        Text("Anthropic Messages").tag("anthropic")
-                    }.labelsHidden().disabled(builtin)
+                    if draft.values.authMode == "auth" {
+                        Text(model.baseProtocolDescription(model.callConfigForDraft(draft.values))).font(.callout)
+                    } else {
+                        Picker("调用协议", selection: bind(\.proto)) {
+                            Text("OpenAI Chat Completions").tag("openai")
+                            Text("Anthropic Messages").tag("anthropic")
+                        }.labelsHidden().disabled(builtin)
+                    }
                 }
                 if builtin {
                     Label("地址与协议由供应商类型提供", systemImage: "lock")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                secret("API Key", value: bind(\.key), revealed: $revealCallKey)
-                credentialActions(query: false)
+                if draft.values.authMode == "auth" {
+                    labeled("授权来源 / 文件") {
+                        Text(model.draftAuthSourceDescription()).font(.callout).textSelection(.enabled)
+                    }
+                    Text("读取已有本机授权；本页不提供浏览器 OAuth 登录，也无需另填 API Key。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let issue = model.authenticationIssue(model.callConfigForDraft(draft.values)) {
+                        Text(issue).font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
+                    }
+                } else {
+                    secret("API Key", value: bind(\.key), revealed: $revealCallKey)
+                    credentialActions(query: false)
+                }
                 labeled("模型") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("例如 claude-sonnet 或 gpt-4.1", text: bind(\.model))
@@ -103,40 +127,52 @@ struct DraftFormView: View {
         }
     }
     private var quotaConnection: some View {
-        GroupBox("额度查询 · 可选") {
+        GroupBox("② 用量查询 · 可选") {
             VStack(alignment: .leading, spacing: 12) {
                 labeled("查询方式") {
                     Picker("查询方式", selection: bind(\.quotaMode)) {
-                        Text("不查询额度").tag("none")
-                        Text("查询接口").tag("endpoint")
-                        if builtin { Text("供应商脚本").tag("script") }
-                    }.labelsHidden().disabled(builtin)
+                        Text("关闭用量查询").tag("none")
+                        if builtin { Text("供应商查询").tag("script") }
+                        else { Text("查询接口").tag("endpoint") }
+                    }.labelsHidden()
                 }
-                if draft.values.quotaMode == "none" {
-                    Text("此账号只用于 API 调用与计划。不开启额度查询也可保存和使用。")
+                if draft.values.quotaMode != "none" {
+                    labeled("查询认证") {
+                        Picker("查询认证", selection: bind(\.quotaCredentialMode)) {
+                            Text("跟随基础接入（默认）").tag("inherit")
+                            if model.draftHasLegacyCredentials() || draft.values.quotaCredentialMode == "legacy" {
+                                Text("旧版独立凭证").tag("legacy")
+                            }
+                        }.labelsHidden()
+                    }
+                    Text(draft.values.quotaCredentialMode == "inherit"
+                         ? "使用基础接入的同一认证；基础凭证失效或被清除后，查询也不可用。"
+                         : "当前仍使用旧版独立查询凭证，可切换为跟随基础接入；切换不会删除旧凭证。")
                         .font(.callout).foregroundStyle(.secondary)
-                } else {
                     if draft.values.quotaMode == "endpoint" {
-                        labeled("额度查询地址") {
+                        labeled("用量查询地址") {
                             TextField("https://example.com/api/usage", text: bind(\.queryURL))
-                                .fieldBox().disabled(builtin)
-                                .accessibilityLabel("额度查询地址")
+                                .fieldBox().disabled(builtin).accessibilityLabel("用量查询地址")
                         }
                     } else {
-                        Label("查询逻辑由内置供应商脚本提供", systemImage: "lock")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
-                    quotaCredentials
-                    credentialActions(query: true)
-                    if !builtin {
-                        Text("使用独立 Bearer Key；接口返回额度 JSON，窗口与重置时间可缺省。")
+                        Label("查询地址与解析由供应商类型提供", systemImage: "lock")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if let slug = draft.slug {
                         Button(model.running.contains(slug) ? "查询中…" : "查询已保存配置") { model.query(slug) }
                             .disabled(model.running.contains(slug) || model.current.map { !model.quotaConfigured($0) } != false)
-                        Text("额度查询使用已保存配置；先保存新凭证，再查询。")
+                        Text("查询使用已保存配置；先保存当前更改，再查询。")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if model.draftHasLegacyCredentials() || draft.values.quotaCredentialMode == "legacy" {
+                    DisclosureGroup("旧版查询兼容") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("仅保留历史网页 Access Token / Cookie 等独立凭证。建议切换为跟随基础接入；不会静默删除旧值。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            quotaCredentials
+                            credentialActions(query: true)
+                        }.padding(.top, 8)
                     }
                 }
             }
@@ -175,11 +211,13 @@ struct DraftFormView: View {
         }
     }
     private var schedule: some View {
-        GroupBox("模型定时调用") {
+        GroupBox("③ API 调度 · 启动 5h 使用窗口") {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("启用调用计划", isOn: bind(\.autoTrigger)).toggleStyle(.switch)
-                Text("使用 API 调用配置，独立于额度查询；按本机时区 \(TimeZone.current.identifier) 执行。每次调用会消耗额度。")
+                Toggle("启用 API 调度", isOn: bind(\.autoTrigger)).toggleStyle(.switch)
+                Text("在所设时间首次调用以启动动态 5h 使用窗口，尽量覆盖工作时段。使用基础接入认证，每次会消耗套餐额度。按本机时区 \(TimeZone.current.identifier) 执行多个时间点；仅按用户设置调用，不推断或自动重置窗口。")
                     .font(.callout).foregroundStyle(.secondary)
+                Text("调度使用当前选择模型：\(draft.values.model.isEmpty ? "尚未指定" : draft.values.model)。模型必须在目标账号套餐内可调用；请在基础接入中选择并测试。")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     TextField("09:00", text: Binding(get: { model.draft?.timeInput ?? "" }, set: { model.draft?.timeInput = $0 }))
                         .fieldBox().frame(width: 100).accessibilityLabel("添加调用时间，24小时制")

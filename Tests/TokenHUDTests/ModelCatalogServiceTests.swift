@@ -37,6 +37,26 @@ struct ModelCatalogServiceTests {
         #expect(request.httpBody == nil)
     }
 
+    @Test(arguments: ["apikey", "auth"])
+    func callSnapshotRoutesCatalogBySelectedAuthenticationMode(mode: String) async throws {
+        var config = ProviderConfig()
+        config.authMode = mode
+        config.apiBaseURL = "https://api.openai.com/v1"
+        config.refreshProtocol = mode == "auth" ? "responses" : "openai"
+        config.refreshKey = mode == "auth" ? "offline-auth-token" : "offline-api-key"
+        config.refreshHeader = "Authorization: Bearer <key>"
+        config.authModelsURL = "https://chatgpt.com/backend-api/codex/models?client_version=fixture"
+        let catalog = ModelCatalogConnection(callConfig: config)
+        #expect(catalog.modelsURL == (mode == "auth" ? config.authModelsURL : nil))
+        _ = try await fetch(catalog)
+        let request = try #require(CatalogURLProtocol.state.requests.first)
+        let expectedURL = mode == "auth" ? config.authModelsURL : "https://api.openai.com/v1/models"
+        #expect(request.url?.absoluteString == expectedURL)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(config.refreshKey)")
+        #expect(request.httpMethod == "GET")
+        #expect(CatalogURLProtocol.state.requests.count == 1)
+    }
+
     @Test func anthropicUsesTheCurrentCallKeyAndProtocolHeaders() async throws {
         _ = try await fetch(connection("https://catalog.example.invalid/api/anthropic/v1", protocolName: "anthropic"))
         let request = try #require(CatalogURLProtocol.state.requests.first)

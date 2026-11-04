@@ -23,7 +23,10 @@ enum PluginGenerator {
             refreshProtocol: config.refreshProtocol,
             refreshAuth: "bearer",
             refreshHeader: config.refreshHeader.isEmpty ? nil : config.refreshHeader,
-            quotaMode: config.quotaMode)
+            authMode: config.authMode, quotaMode: config.quotaMode,
+            quotaAuthModes: config.quotaAuthModes, credentialSource: config.credentialSource,
+            authCallUrl: config.authCallURL, authCallProtocol: config.authCallProtocol, authCallHeader: config.authCallHeader,
+            authModelsUrl: config.authModelsURL, inheritQueryUrl: config.inheritQueryURL, inheritQueryHeader: config.inheritQueryHeader)
     }
 
     // MARK: - 类型模板 → 账号实例
@@ -72,7 +75,10 @@ enum PluginGenerator {
             refreshAuth: t.refreshAuth,
             refreshHeader: t.refreshHeader,
             template: template.slug,
-            accent: t.accent, icon: t.icon, authMode: t.authMode, quotaMode: "script")
+            accent: t.accent, icon: t.icon, authMode: t.authMode, quotaMode: "script",
+            quotaAuthModes: t.quotaAuthModes, credentialSource: t.credentialSource,
+            authCallUrl: t.authCallUrl, authCallProtocol: t.authCallProtocol, authCallHeader: t.authCallHeader,
+            authModelsUrl: t.authModelsUrl, inheritQueryUrl: t.inheritQueryUrl, inheritQueryHeader: t.inheritQueryHeader)
         // fetch.sh: 读模板脚本, {SLUG} 替换后写入实例目录
         let script = (try? String(contentsOf: template.dir.appendingPathComponent("fetch.sh"), encoding: .utf8))
             .map { $0.replacingOccurrences(of: "{SLUG}", with: slug) }

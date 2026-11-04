@@ -52,6 +52,10 @@ const writeFailure = (kind, detail, accountId) => {
 // ---------- 认证: 只读本机 Codex 登录 ----------
 function codexAuth() {
   const pointer = readJson(AUTH_FILE) || {};
+  if (pointer.tokenhudResolvedAuth === true && pointer.authMode === 'auth') {
+    const token = String(pointer.queryKey || '').trim();
+    return token ? { accessToken: token, accountId: pointer.accountId || null } : null;
+  }
   const authPath = (typeof pointer.codexAuthFile === 'string' && pointer.codexAuthFile.startsWith('/'))
     ? pointer.codexAuthFile
     : join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json');

@@ -1,4 +1,7 @@
 {
   "_note": "GPT 直查 ChatGPT 官方额度 (GET /backend-api/wham/usage)。凭证只读本机 Codex 登录 (~/.codex/auth.json), codexAuthFile 可覆盖; 本文件不含任何凭证, 凭证过期时运行 codex login 重新登录",
-  "codexAuthFile": ""
+  "codexAuthFile": "",
+  "schemaVersion": 3,
+  "authMode": "auth",
+  "quotaCredentialMode": "inherit"
 }

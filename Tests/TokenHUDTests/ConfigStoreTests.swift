@@ -503,7 +503,7 @@ struct ConfigP2Tests {
         c.queryKey = "k"; c.refreshKey = "k"
         try ProviderConfigStore.write(c, manifest: m, to: f)
         let obj = try readBack(f)
-        #expect(obj["schemaVersion"] as? Int == 2)
+        #expect(obj["schemaVersion"] as? Int == 3)
     }
 
     @Test func defaultTestPromptAndMaxTokens() throws {

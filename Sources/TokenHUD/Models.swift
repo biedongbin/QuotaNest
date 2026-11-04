@@ -1,5 +1,15 @@
 import Foundation
 
+/// Declares an existing CLI authorization file; no token is copied into account settings.
+struct ProviderCredentialSource: Codable, Equatable, Sendable {
+    var file: String
+    var environmentDirectory: String?
+    var tokenPath: String
+    var headerPaths: [String: String]?
+    var requiredValues: [String: String]?
+    var fileConfigKey: String?
+}
+
 struct ProviderManifest: Codable {
     let name: String
     let label: String
@@ -34,6 +44,14 @@ struct ProviderManifest: Codable {
     var origin: String?
     /// none: 仅管理与调用；endpoint: 标准 JSON 额度接口；script: 类型提供的解析器。
     var quotaMode: String?
+    var quotaAuthModes: [String]?
+    var credentialSource: ProviderCredentialSource?
+    var authCallUrl: String?
+    var authCallProtocol: String?
+    var authCallHeader: String?
+    var authModelsUrl: String?
+    var inheritQueryUrl: String?
+    var inheritQueryHeader: String?
 
     var supportsQuota: Bool {
         if let quotaMode { return quotaMode != "none" }
@@ -51,7 +69,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -62,7 +80,10 @@ struct ProviderManifest: Codable {
          refreshUrl: String? = nil, refreshProtocol: String? = nil, refreshAuth: String? = nil,
          refreshHeader: String? = nil, builtin: Bool? = nil, template: String? = nil,
          accent: String? = nil, icon: String? = nil, enabled: Bool? = true,
-         authMode: String? = nil, origin: String? = nil, quotaMode: String? = nil) {
+         authMode: String? = nil, origin: String? = nil, quotaMode: String? = nil,
+         quotaAuthModes: [String]? = nil, credentialSource: ProviderCredentialSource? = nil,
+         authCallUrl: String? = nil, authCallProtocol: String? = nil, authCallHeader: String? = nil,
+         authModelsUrl: String? = nil, inheritQueryUrl: String? = nil, inheritQueryHeader: String? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -89,6 +110,14 @@ struct ProviderManifest: Codable {
         self.authMode = authMode
         self.origin = origin
         self.quotaMode = quotaMode
+        self.quotaAuthModes = quotaAuthModes
+        self.credentialSource = credentialSource
+        self.authCallUrl = authCallUrl
+        self.authCallProtocol = authCallProtocol
+        self.authCallHeader = authCallHeader
+        self.authModelsUrl = authModelsUrl
+        self.inheritQueryUrl = inheritQueryUrl
+        self.inheritQueryHeader = inheritQueryHeader
     }
 
     init(from decoder: Decoder) throws {
@@ -119,6 +148,14 @@ struct ProviderManifest: Codable {
         authMode = try c.decodeIfPresent(String.self, forKey: .authMode)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         quotaMode = try c.decodeIfPresent(String.self, forKey: .quotaMode)
+        quotaAuthModes = try c.decodeIfPresent([String].self, forKey: .quotaAuthModes)
+        credentialSource = try c.decodeIfPresent(ProviderCredentialSource.self, forKey: .credentialSource)
+        authCallUrl = try c.decodeIfPresent(String.self, forKey: .authCallUrl)
+        authCallProtocol = try c.decodeIfPresent(String.self, forKey: .authCallProtocol)
+        authCallHeader = try c.decodeIfPresent(String.self, forKey: .authCallHeader)
+        authModelsUrl = try c.decodeIfPresent(String.self, forKey: .authModelsUrl)
+        inheritQueryUrl = try c.decodeIfPresent(String.self, forKey: .inheritQueryUrl)
+        inheritQueryHeader = try c.decodeIfPresent(String.self, forKey: .inheritQueryHeader)
     }
 }
 

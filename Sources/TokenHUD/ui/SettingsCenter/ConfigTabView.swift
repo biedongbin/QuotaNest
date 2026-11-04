@@ -4,6 +4,18 @@ struct ConfigTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
     private var config: ProviderConfig { model.readConfig(row.plugin) }
+    private var quotaAddress: String {
+        let saved = config
+        if saved.quotaCredentialMode == "inherit" {
+            do {
+                let resolved = try ProviderAuthentication.resolveQuota(saved)
+                return resolved.queryUrl.isEmpty ? "供应商脚本" : resolved.queryUrl
+            } catch {
+                return "基础认证解析失败，查询地址暂不可用"
+            }
+        }
+        return saved.queryUrl.isEmpty ? "供应商脚本" : saved.queryUrl
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -25,11 +37,19 @@ struct ConfigTabView: View {
         }
     }
     private var apiConnection: some View {
-        GroupBox("API 调用") {
+        GroupBox("① 基础接入") {
                 VStack(alignment: .leading, spacing: 8) {
-                    KeyValueRow("服务地址", mono: true) { Text(config.apiBaseURL.isEmpty ? "未配置" : config.apiBaseURL) }
-                    KeyValueRow("协议") { Text(config.refreshProtocol == "anthropic" ? "Anthropic Messages" : "OpenAI Chat Completions") }
-                    KeyValueRow("调用凭证") { Text(maskKey(config.refreshKey)) }
+                    KeyValueRow("服务地址", mono: true) { Text(model.baseAddressDescription(config)) }
+                    KeyValueRow("协议") { Text(model.baseProtocolDescription(config)) }
+                    KeyValueRow("认证方式") { Text(config.authMode == "auth" ? "Auth · 本机授权" : "API Key") }
+                    if config.authMode == "auth" {
+                        KeyValueRow("有效来源") { Text(model.authSourceDescription(config)) }
+                        if let issue = model.authenticationIssue(config) {
+                            Text(issue).font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
+                        }
+                    } else {
+                        KeyValueRow("调用凭证") { Text(maskKey(config.refreshKey)) }
+                    }
                     KeyValueRow("模型", mono: true) { Text(config.testModel.isEmpty ? "未指定" : config.testModel) }
                     if row.builtin { Label("供应商类型固定服务地址与协议", systemImage: "lock").font(.callout).foregroundStyle(.secondary) }
                     HStack {
@@ -46,12 +66,12 @@ struct ConfigTabView: View {
             }
     }
     private var quotaConnection: some View {
-        GroupBox("额度查询 · 可选") {
+        GroupBox("② 用量查询 · 可选") {
                 VStack(alignment: .leading, spacing: 8) {
-                    if row.canQuery {
-                        KeyValueRow("查询地址", mono: true) { Text(config.queryUrl.isEmpty ? "供应商脚本" : config.queryUrl) }
-                        KeyValueRow("查询凭证") { Text(config.queryKey.isEmpty ? "独立配置或本机凭证" : maskKey(config.queryKey)) }
-                        Text(model.quotaConfigured(row) ? "独立查询配置已就绪。" : "请补全额度查询配置。")
+                    if row.canQuery && config.quotaMode != "none" {
+                        KeyValueRow("查询地址", mono: true) { Text(quotaAddress) }
+                        KeyValueRow("查询认证") { Text(config.quotaCredentialMode == "inherit" ? "跟随基础接入" : "旧版独立凭证") }
+                        Text(model.quotaConfigured(row) ? "用量查询配置已就绪。" : "请检查基础认证或旧版查询兼容配置。")
                             .font(.callout).foregroundStyle(.secondary)
                         Button("查看额度", systemImage: "chart.bar") { model.tab = .quota }
                     } else {
@@ -75,15 +95,16 @@ struct TriggerTabView: View {
                 Spacer()
                 Button("编辑计划", systemImage: "pencil") { model.startEdit() }
             }
-            GroupBox("模型定时调用") {
+            GroupBox("③ API 调度 · 启动 5h 使用窗口") {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(planState, systemImage: "calendar.badge.clock")
+                    KeyValueRow("调用模型", mono: true) { Text(config.testModel.isEmpty ? "未指定" : config.testModel) }
                     if !config.scheduleTimes.isEmpty {
                         Text(config.scheduleTimes.joined(separator: "、")).monospacedDigit().textSelection(.enabled)
                     }
-                    Text("使用本机时区 \(TimeZone.current.identifier)。到点发送一次模型调用，会消耗该账号额度。")
+                    Text("在设置时间首次调用，启动动态 5h 使用窗口，以覆盖工作时段。使用本机时区 \(TimeZone.current.identifier)，到点发送一次调用并消耗额度。")
                         .font(.callout).foregroundStyle(.secondary)
-                    Text("计划独立于额度查询。").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    Text("使用基础接入认证及目标套餐可调用模型。仅执行用户设置的时间，不推断或自动重置窗口。").font(.system(size: 11)).foregroundStyle(Palette.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if row.canQuery {

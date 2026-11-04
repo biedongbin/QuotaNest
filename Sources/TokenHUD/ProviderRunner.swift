@@ -52,6 +52,22 @@ final class ProviderRunner {
         let script = plugin.dir.appendingPathComponent(plugin.manifest.fetch).standardizedFileURL.path
         guard FileManager.default.fileExists(atPath: script) else { return nil }
 
+        let originalAuth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
+            ?? logDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
+        var snapshot: ProviderQuerySnapshot?
+        if FileManager.default.fileExists(atPath: originalAuth.path) || plugin.manifest.credentialSource != nil {
+            do {
+                let config = ProviderConfigStore.read(authFile: originalAuth, manifest: plugin.manifest)
+                if config.quotaCredentialMode == "inherit" {
+                    snapshot = try ProviderQuerySnapshot.make(config: config, manifest: plugin.manifest, originalAuth: originalAuth)
+                }
+            } catch {
+                return UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil, monthly: nil,
+                    error: "配置错误：" + error.localizedDescription, stale: true,
+                    lastAttemptAt: Date().timeIntervalSince1970 * 1000)
+            }
+        }
+        defer { snapshot?.cleanup() }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")
         p.arguments = [script]
@@ -60,10 +76,9 @@ final class ProviderRunner {
         if let nodePath { env["TOKENHUD_NODE"] = nodePath }
         env["TOKENHUD_STDOUT_ONLY"] = "1"
         env["TOKENHUD_HUD_DIR"] = logDir.path
-        env["TOKENHUD_AUTH_FILE"] = plugin.manifest.authFile.map(PluginGenerator.expandPath)?.path
-            ?? logDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json").path
+        env["TOKENHUD_AUTH_FILE"] = snapshot?.file.path ?? originalAuth.path
         env["TOKENHUD_CACHE_FILE"] = DataEngine.cachePath(for: plugin, hudDir: logDir).path
-        env["TOKENHUD_QUERY_URL"] = plugin.manifest.queryUrl ?? ""
+        env["TOKENHUD_QUERY_URL"] = snapshot?.queryURL ?? plugin.manifest.queryUrl ?? ""
         env["TOKENHUD_QUOTA_MODE"] = plugin.manifest.quotaMode ?? ""
         p.environment = env
 
@@ -92,27 +107,29 @@ final class ProviderRunner {
             while p.isRunning && Date() < reapDeadline {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
-            dumpStderr(stderr.finish(within: 1), plugin: plugin)
+            dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? [])
             return nil
         }
         guard p.terminationStatus == 0 else {
-            dumpStderr(stderr.finish(within: 1), plugin: plugin)
+            dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? [])
             return nil
         }
 
         let data = stdout.finish(within: 2)
         let cache = UsageCache.make(body: data, now: Date().timeIntervalSince1970 * 1000)
-        if cache == nil { dumpStderr(stderr.finish(within: 1), plugin: plugin) } // stdout 解析失败也留诊断线索
+        if cache == nil { dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? []) } // stdout 解析失败也留诊断线索
         return cache
     }
 
     /// stderr 尾部 4KB 写到注入的日志目录，落盘前过滤凭证。
-    private func dumpStderr(_ data: Data, plugin: PluginProvider) {
+    private func dumpStderr(_ data: Data, plugin: PluginProvider, secrets: [String]) {
         guard !data.isEmpty else { return }
         let tail = data.count > 4096 ? data.suffix(4096) : data[...]
         let text = String(data: tail, encoding: .utf8) ?? String(decoding: tail, as: UTF8.self)
+        var safe = Self.redact(text)
+        for secret in secrets where !secret.isEmpty { safe = safe.replacingOccurrences(of: secret, with: "[REDACTED]") }
         let log = logDir.appendingPathComponent(".\(plugin.slug)-usage-stderr.log")
-        try? Data(Self.redact(text).utf8).write(to: log, options: .atomic)
+        try? Data(safe.utf8).write(to: log, options: .atomic)
     }
 
     /// 凭证脱敏 (纯函数, 可测): Bearer 头 / api[-_]key 赋值 / sk_ 票据 / 长 token

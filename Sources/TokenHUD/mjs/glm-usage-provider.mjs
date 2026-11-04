@@ -97,7 +97,7 @@ async function main() {
   // curl 的 UA + TLS 指纹被放行。header 从 auth.headers 动态构造。
   const headers = { ...(auth.headers || {}) };
   const token = headers.authorization;
-  if (NAME === 'glm' && !token) {
+  if (NAME === 'glm' && !token && auth.quotaCredentialMode !== 'inherit') {
     writeCache({ ...prevBuckets, error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     return;
   }
@@ -129,6 +129,32 @@ async function main() {
 
   if (process.env.USAGE_DEBUG) {
     try { mkdirSync(HUD_DIR, { recursive: true }); writeFileSync(join(HUD_DIR, `.${NAME}-usage-raw.json`), JSON.stringify(data, null, 2)); } catch {}
+  }
+
+  // Official plan endpoint: same API Key as model calls, bare Authorization (not web JWT).
+  if (auth.quotaCredentialMode === 'inherit') {
+    const code = Number(data?.code);
+    const fail = error => writeCache({ ...prevBuckets, error, stale: true, lastAttemptAt: Date.now(), ttlMs: TTL_MS });
+    if (code === 401 || code === 403) { fail('auth'); return; }
+    if (code === 429) { fail('ratelimit'); return; }
+    if (data?.success === false || !Array.isArray(data?.data?.limits)) { fail('parse'); return; }
+    const windows = [];
+    let fiveHour = null, sevenDay = null;
+    for (const limit of data.data.limits) {
+      if (String(limit.type).toUpperCase() !== 'TOKENS_LIMIT' || ![3, 6].includes(Number(limit.unit))) continue;
+      const pct = Number(limit.percentage);
+      if (limit.percentage == null || !Number.isFinite(pct)) continue;
+      const hours = Number(limit.number) > 0 ? Number(limit.number) : 5;
+      const week = Number(limit.unit) === 6;
+      const reset = Number(limit.nextResetTime);
+      const bucket = { used_percentage: Math.min(100, Math.max(0, pct)), resets_at: reset > 0 ? Math.floor(reset / 1000) : null };
+      windows.push({ label: week ? '本周' : `${hours}小时`, period: week ? '7天' : `${hours}小时`, ...bucket });
+      if (week) sevenDay = bucket;
+      else if (hours === 5) fiveHour = bucket;
+    }
+    if (!windows.length) { fail('当前 Key 未返回可识别的模型套餐额度'); return; }
+    writeCache({ generatedAt: Date.now(), ttlMs: TTL_MS, windows, five_hour: fiveHour, seven_day: sevenDay, error: null, stale: false });
+    return;
   }
 
   // 认证失败检测：GLM 用 body.code===401；GPT 用 {error:"Unauthorized"}（均 HTTP 200）

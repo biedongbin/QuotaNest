@@ -13,7 +13,9 @@ struct AccountManagementTests {
         let suite: String
     }
 
-    private func fixture() throws -> Fixture {
+    private func fixture(withTemplate: Bool = false,
+                         execute: ((ProviderConfig) async -> String?)? = nil,
+                         query: ((String) async -> RefreshOutcome)? = nil) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-accounts-\(UUID().uuidString)")
         let hud = root.appendingPathComponent("hud")
         let providers = root.appendingPathComponent("providers")
@@ -23,14 +25,27 @@ struct AccountManagementTests {
         try Data("{}".utf8).write(to: settings)
         let suite = "tokenhud.accounts.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let engine = DataEngine(hudDir: hud, bundleProvidersDir: nil, userProvidersDir: providers,
+        let bundle = root.appendingPathComponent("bundle")
+        if withTemplate {
+            var manifest = ProviderManifest(name: "Fixture", label: "Fixture", testModel: "fixture-model",
+                queryUrl: "https://quota.example.test/usage", refreshUrl: "https://api.example.test/v1/messages",
+                refreshProtocol: "anthropic", quotaMode: "script")
+            manifest.credentialSource = ProviderCredentialSource(file: root.appendingPathComponent("fixture-auth.json").path,
+                tokenPath: "session.access_token")
+            manifest.authCallUrl = "https://auth.example.test/v1/responses"
+            manifest.authCallProtocol = "responses"
+            try PluginGenerator.writePlugin(slug: "fixture", manifest: manifest, script: "exit 1", into: bundle)
+            try Data("{}".utf8).write(to: bundle.appendingPathComponent("fixture/auth-template.json"))
+        }
+        let engine = DataEngine(hudDir: hud, bundleProvidersDir: withTemplate ? bundle : nil, userProvidersDir: providers,
                                 runner: ProviderRunner(nodePath: nil, logDir: hud), defaults: defaults,
                                 settingsURL: settings)
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hud, userDir: providers, settingsURL: settings,
                                   bundleDir: nil, defaults: defaults, confirmDiscardChanges: { true },
                                   confirmResumePlan: { true }, confirmTestCall: { _ in true },
-                                  executeTestCall: { _ in "✓ offline" })
+                                  executeTestCall: execute ?? { _ in "✓ offline" },
+                                  executeQuotaQuery: query ?? { _ in .ok })
         return Fixture(root: root, hud: hud, model: model, defaults: defaults, suite: suite)
     }
 
@@ -49,6 +64,7 @@ struct AccountManagementTests {
         f.model.draft?.values.times = ["09:00"]
         if quota {
             f.model.draft?.values.quotaMode = "endpoint"
+            f.model.draft?.values.quotaCredentialMode = "legacy"
             f.model.draft?.values.queryURL = "https://quota.example.test/account/usage"
             f.model.draft?.values.queryKey = "fixture-quota-key"
         }
@@ -129,6 +145,220 @@ struct AccountManagementTests {
                 != DataEngine.cachePath(for: first.plugin, hudDir: f.hud))
         #expect(f.model.readConfig(first.plugin).refreshKey == "fixture-api-key")
         #expect(f.model.engine.triggerDisabledSlugs.contains(second.id))
+    }
+
+    @Test func fakeAuthDraftTestAndSaveShareSourceWithoutPersistingToken() async throws {
+        let f = try fixture(withTemplate: true); defer { cleanup(f) }
+        let token = "offline-auth-token-never-persist"
+        let source = f.root.appendingPathComponent("fixture-auth.json")
+        try JSONSerialization.data(withJSONObject: ["session": ["access_token": token]]).write(to: source)
+        f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
+        f.model.draft?.values.name = "Auth fixture"
+        f.model.draft?.values.authMode = "auth"
+        f.model.draft?.values.key = ""
+        f.model.draft?.values.quotaCredentialMode = "inherit"
+        let values = try #require(f.model.draft?.values)
+        let draftConfig = f.model.callConfigForDraft(values)
+        #expect(draftConfig.refreshKey.isEmpty)
+        #expect(f.model.authSourceDescription(draftConfig) == source.path)
+        #expect(f.model.authenticationIssue(draftConfig) == nil)
+        f.model.testCallDraft(values: values)
+        for _ in 0..<100 where f.model.isTestingCurrentConfig { await Task.yield() }
+        #expect(f.model.callTestResult(for: nil)?.phase == .success)
+        #expect(f.model.callTestResult(for: nil)?.target == "https://auth.example.test/v1/responses")
+        f.model.save()
+        let row = try #require(f.model.current)
+        #expect(f.model.callConfigured(row))
+        #expect(f.model.quotaConfigured(row))
+        let saved = f.model.readConfig(row.plugin)
+        #expect(saved.authMode == "auth")
+        #expect(saved.refreshKey.isEmpty)
+        let contents = try String(contentsOf: try #require(f.model.authURL(row.plugin)), encoding: .utf8)
+        #expect(!contents.contains(token))
+        f.model.startEdit()
+        #expect(f.model.draft?.values.authMode == "auth")
+        #expect(f.model.draft?.values.key.isEmpty == true)
+    }
+
+    @Test func newBuiltinAccountKeepsQuotaDisabled() throws {
+        let f = try fixture(withTemplate: true); defer { cleanup(f) }
+        f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
+        f.model.draft?.values.name = "Builtin with quota off"
+        f.model.draft?.values.key = "offline-key"
+        f.model.draft?.values.quotaMode = "none"
+        f.model.save()
+        #expect(f.model.topError.isEmpty)
+        let row = try #require(f.model.current)
+        #expect(f.model.readConfig(row.plugin).quotaMode == "none")
+        #expect(!f.model.quotaConfigured(row))
+        #expect(f.model.callConfigured(row))
+    }
+
+    @Test func clearingBaseKeyInvalidatesInheritedQueryWithoutDeletingLegacyCredentials() throws {
+        let f = try fixture(); defer { cleanup(f) }
+        _ = try create(f, quota: true)
+        f.model.startEdit()
+        f.model.draft?.values.quotaCredentialMode = "inherit"
+        f.model.save()
+        var row = try #require(f.model.current)
+        #expect(f.model.quotaConfigured(row))
+        f.model.startEdit()
+        f.model.draft?.values.clearKeyIntent = true
+        f.model.draft?.values.key = ""
+        f.model.save()
+        row = try #require(f.model.current)
+        let config = f.model.readConfig(row.plugin)
+        #expect(config.quotaCredentialMode == "inherit")
+        #expect(config.queryKey == "fixture-quota-key")
+        #expect(!f.model.quotaConfigured(row))
+        #expect(!f.model.callConfigured(row))
+    }
+
+    @Test func authSelectionPersistsWithoutUsingAnExistingAPIKeyAsAuthorization() throws {
+        let f = try fixture(); defer { cleanup(f) }
+        _ = try create(f)
+        f.model.startEdit()
+        f.model.draft?.values.authMode = "auth"
+        f.model.draft?.values.authCredentialFile = f.root.appendingPathComponent("missing-auth.json").path
+        f.model.draft?.values.quotaCredentialMode = "inherit"
+        let values = try #require(f.model.draft?.values)
+        let snapshot = f.model.callConfigForDraft(values)
+        #expect(snapshot.authMode == "auth")
+        #expect(f.model.authenticationIssue(snapshot) != nil)
+        f.model.testCallDraft(values: values)
+        #expect(f.model.callTestResult(for: nil)?.phase == .failure)
+        f.model.save()
+        let row = try #require(f.model.current)
+        let saved = f.model.readConfig(row.plugin)
+        #expect(saved.authMode == "auth")
+        #expect(saved.authCredentialFile == values.authCredentialFile)
+        #expect(!f.model.callConfigured(row))
+        f.model.startEdit()
+        #expect(f.model.draft?.values.authMode == "auth")
+        #expect(f.model.draft?.values.quotaCredentialMode == "inherit")
+    }
+
+    @Test func authenticationChangesClearOnlyThatAccountsQuotaCache() throws {
+        let f = try fixture(withTemplate: true); defer { cleanup(f) }
+        let authorization = try JSONSerialization.data(withJSONObject: ["session": ["access_token": "offline-cache-auth"]])
+        try authorization.write(to: f.root.appendingPathComponent("fixture-auth.json"))
+        try authorization.write(to: f.root.appendingPathComponent("another-auth.json"))
+        f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
+        f.model.draft?.values.name = "First cache identity"
+        f.model.draft?.values.key = "initial-base-key"
+        f.model.draft?.values.queryKey = "fixture-quota-key"
+        f.model.save()
+        let first = try #require(f.model.current)
+        let other = try create(f, quota: true)
+        let firstCache = DataEngine.cachePath(for: first.plugin, hudDir: f.hud)
+        let otherCache = DataEngine.cachePath(for: other.plugin, hudDir: f.hud)
+        let cached = try JSONEncoder().encode(UsageCache(generatedAt: Date().timeIntervalSince1970 * 1000,
+                                                        fiveHour: Bucket(usedPercentage: 35)))
+        try cached.write(to: otherCache)
+        #expect(f.model.selectAccount(first.id, tab: .config))
+        f.model.startEdit()
+        f.model.draft?.values.quotaCredentialMode = "inherit"
+        f.model.save()
+        let changes: [(WritableKeyPath<DraftValues, String>, String)] = [
+            (\.key, "new-base-key"), (\.authCredentialFile, f.root.appendingPathComponent("another-auth.json").path),
+            (\.authMode, "auth"), (\.quotaCredentialMode, "legacy")
+        ]
+        for (field, value) in changes {
+            let currentCache = try JSONEncoder().encode(UsageCache(generatedAt: Date().timeIntervalSince1970 * 1000,
+                                                                  fiveHour: Bucket(usedPercentage: 35)))
+            try currentCache.write(to: firstCache)
+            f.model.engine.reloadRegistry()
+            #expect(f.model.row(first.id)?.state?.cache != nil)
+            f.model.lastSuccess[first.id] = Date()
+            f.model.startEdit()
+            f.model.draft?.values[keyPath: field] = value
+            f.model.save()
+            #expect(f.model.topError.isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: firstCache.path))
+            #expect(f.model.row(first.id)?.state?.cache == nil)
+            #expect(f.model.lastSuccess[first.id] == nil)
+            #expect(try Data(contentsOf: otherCache) == cached)
+            #expect(f.model.readConfig(try #require(f.model.current?.plugin)).queryKey == "fixture-quota-key")
+        }
+    }
+
+    @Test func disabledAuthAccountRejectsCacheAfterSourceChangesOrDisappears() throws {
+        let f = try fixture(withTemplate: true); defer { cleanup(f) }
+        let source = f.root.appendingPathComponent("fixture-auth.json")
+        let baseline = Date().addingTimeInterval(-60)
+        try JSONSerialization.data(withJSONObject: ["session": ["access_token": "offline-account-a"]]).write(to: source)
+        try FileManager.default.setAttributes([.modificationDate: baseline.addingTimeInterval(-2)], ofItemAtPath: source.path)
+        f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
+        f.model.draft?.values.name = "Disabled Auth cache"
+        f.model.draft?.values.authMode = "auth"
+        f.model.save()
+        let row = try #require(f.model.current)
+        let cache = DataEngine.cachePath(for: row.plugin, hudDir: f.hud)
+        let original = try JSONEncoder().encode(UsageCache(generatedAt: baseline.timeIntervalSince1970 * 1000,
+                                                          fiveHour: Bucket(usedPercentage: 35)))
+        try original.write(to: cache)
+        f.model.engine.setTracking(row.id, enabled: false)
+        #expect(!f.model.engine.states.contains { $0.slug == row.id })
+        #expect(f.model.row(row.id)?.state?.cache?.fiveHour?.usedPercentage == 35)
+        try JSONSerialization.data(withJSONObject: ["session": ["access_token": "offline-account-b"]]).write(to: source)
+        try FileManager.default.setAttributes([.modificationDate: baseline.addingTimeInterval(2)], ofItemAtPath: source.path)
+        #expect(f.model.row(row.id)?.state?.cache == nil)
+        #expect(try Data(contentsOf: cache) == original)
+        let updated = try JSONEncoder().encode(UsageCache(generatedAt: baseline.addingTimeInterval(4).timeIntervalSince1970 * 1000,
+                                                         fiveHour: Bucket(usedPercentage: 18)))
+        try updated.write(to: cache)
+        #expect(f.model.row(row.id)?.state?.cache?.fiveHour?.usedPercentage == 18)
+        try FileManager.default.removeItem(at: source)
+        #expect(f.model.row(row.id)?.state?.cache == nil)
+        #expect(try Data(contentsOf: cache) == updated)
+    }
+
+    @Test func savedTestSuccessQueriesQuotaButQueryFailureDoesNotChangeCallSuccess() async throws {
+        var queried: [String] = []
+        let f = try fixture(query: { slug in queried.append(slug); return .failed("offline query failure") })
+        defer { cleanup(f) }
+        let row = try create(f, quota: true)
+        f.model.testCall(row.id)
+        for _ in 0..<100 where f.model.callRunning.contains(row.id) || queried.isEmpty || f.model.running.contains(row.id) {
+            await Task.yield()
+        }
+        #expect(queried == [row.id])
+        #expect(f.model.callTestResult(for: row.id)?.phase == .success)
+        #expect(f.model.lastRun[row.id]?.ok == false)
+        #expect(f.model.toast?.text.contains("查询失败") == true)
+        #expect(f.model.toast?.text.contains("开窗") == false)
+    }
+
+    @Test func draftSuccessDoesNotQuerySavedAccount() async throws {
+        var queries = 0
+        let f = try fixture(query: { _ in queries += 1; return .ok })
+        defer { cleanup(f) }
+        let row = try create(f, quota: true)
+        f.model.startEdit()
+        f.model.draft?.values.key = "draft-only-key"
+        f.model.testCallDraft(values: try #require(f.model.draft?.values))
+        for _ in 0..<100 where f.model.isTestingCurrentConfig { await Task.yield() }
+        #expect(f.model.callTestResult(for: row.id)?.phase == .success)
+        #expect(queries == 0)
+    }
+
+    @Test func savedTestSkipsQuotaWhenCurrentBaseAuthenticationChanged() async throws {
+        var release = false
+        var queries = 0
+        let f = try fixture(execute: { _ in
+            while !release { await Task.yield() }
+            return "✓ offline"
+        }, query: { _ in queries += 1; return .ok })
+        defer { cleanup(f) }
+        let row = try create(f, quota: true)
+        f.model.testCall(row.id)
+        var changed = f.model.readConfig(row.plugin)
+        changed.refreshKey = "rotated-during-call"
+        try ProviderConfigStore.write(changed, manifest: row.plugin.manifest, to: try #require(f.model.authURL(row.plugin)))
+        release = true
+        for _ in 0..<100 where f.model.callRunning.contains(row.id) { await Task.yield() }
+        #expect(f.model.callTestResult(for: row.id)?.phase == .success)
+        #expect(queries == 0)
     }
 
     @Test func discardedDraftIsNotResurrected() throws {

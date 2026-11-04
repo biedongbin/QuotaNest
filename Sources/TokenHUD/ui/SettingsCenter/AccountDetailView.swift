@@ -11,7 +11,7 @@ struct AccountDetailView: View {
                 header(row)
             } else {
                 HStack(spacing: 14) {
-                    QuietTabs(selection: sectionBinding, items: [("config", "连接"), ("trigger", "计划")])
+                    QuietTabs(selection: sectionBinding, items: [("config", "基础接入与用量"), ("trigger", "API 调度")])
                     Spacer(minLength: 0)
                     Text("保存后加入账号列表").font(Typo.small).foregroundStyle(Palette.muted)
                 }.padding(.horizontal, 20).padding(.vertical, 10)
@@ -38,7 +38,7 @@ struct AccountDetailView: View {
 
     private func header(_ row: AccountRow) -> some View {
         HStack(spacing: 14) {
-            QuietTabs(selection: sectionBinding, items: [("config", "连接"), ("quota", "额度"), ("trigger", "计划"), ("display", "展示")])
+            QuietTabs(selection: sectionBinding, items: [("config", "基础接入与用量"), ("quota", "额度"), ("trigger", "API 调度"), ("display", "展示")])
             Spacer(minLength: 0)
             Toggle("启用账号", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
                 .toggleStyle(.switch).controlSize(.small).fixedSize().font(Typo.small)

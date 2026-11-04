@@ -4,6 +4,47 @@ import Testing
 
 @Suite
 struct DataEngineTests {
+    @Test @MainActor func automaticQuotaUsesBaseKeyWithoutSeparateQueryKey() async throws {
+        let (engine, root, hud, _) = makeEngine("inherited-auto-query")
+        defer { try? FileManager.default.removeItem(at: root) }
+        addPlugin("shared", stdout: #"{"seven_day":{"used_percentage":10}}"#, to: root)
+        let auth = hud.appendingPathComponent(".shared-usage-auth.json")
+        let manifest = ProviderManifest(name: "shared", label: "shared", authFile: auth.path,
+            queryUrl: "https://example.test/usage", queryAuth: "bearer", quotaMode: "script")
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("providers/shared/manifest.json"))
+        var config = ProviderConfig()
+        config.refreshKey = "fixture-base-key"
+        config.quotaMode = "script"
+        config.quotaCredentialMode = "inherit"
+        try ProviderConfigStore.write(config, manifest: manifest, to: auth)
+        let original = try Data(contentsOf: auth)
+        engine.reloadRegistry()
+        await engine.refreshNow()
+        #expect(engine.states.first?.cache?.sevenDay?.usedPercentage == 10)
+        #expect(try Data(contentsOf: auth) == original)
+        #expect(ProviderConfigStore.read(authFile: auth, manifest: manifest).queryKey.isEmpty)
+    }
+
+    @Test func authSourceChangeUpdatesQueryRevision() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-auth-revision-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let auth = root.appendingPathComponent("account.json")
+        let source = root.appendingPathComponent("login.json")
+        let account = Data(#"{"schemaVersion":3,"authMode":"auth","quotaCredentialMode":"inherit"}"#.utf8)
+        try account.write(to: auth)
+        try Data(#"{"tokens":{"access_token":"fixture-only"}}"#.utf8).write(to: source)
+        var manifest = ProviderManifest(name: "fixture", label: "fixture", authFile: auth.path)
+        manifest.credentialSource = ProviderCredentialSource(file: source.path, environmentDirectory: nil,
+            tokenPath: "tokens.access_token", headerPaths: nil, requiredValues: nil)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000_000)], ofItemAtPath: source.path)
+        let before = DataEngine.configRevision(slug: "fixture", manifest: manifest)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000_000)], ofItemAtPath: source.path)
+        let after = DataEngine.configRevision(slug: "fixture", manifest: manifest)
+        #expect(after != before)
+        #expect(try Data(contentsOf: auth) == account)
+    }
+
     @Test @MainActor func displayOrderPersistsAndSurvivesAccountVisibilityChanges() {
         let (engine, root, _, defaults) = makeEngine("display-order")
         defer { try? FileManager.default.removeItem(at: root) }

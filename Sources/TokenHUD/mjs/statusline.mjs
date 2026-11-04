@@ -2,7 +2,7 @@
 // 自定义 statusLine：第1行 目录|ctx|模型|分支；第2行 多环境限额(env1 5h·周 | env2 ...)
 // 铁律：快、永不崩溃、永不阻塞网络。顶层 try/catch 兜底。
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -132,8 +132,9 @@ try {
     if (key.startsWith('_')) continue; // 元数据 key (_schemaVersion), 非供应商条目
     ENV_REGISTRY[key] = {
       label: cfg.label || key,
-      source: 'cache',
+      source: cfg.source === 'api' ? 'api' : 'cache',
       cache: cfg.cache, // 绝对路径
+      authSourceFile: typeof cfg.authSourceFile === 'string' ? cfg.authSourceFile : null,
       auth: join(HUD_DIR, '.never-exists'), // 不存在 → 不 spawn
       spawnEnv: {},
       buckets: cfg.buckets || { seven_day: '周' },
@@ -250,6 +251,7 @@ function renderEnvQuota(envKey, stdin) {
   const cfg = ENV_REGISTRY[envKey];
   if (!cfg) return '';
   const labelSeg = wrap(envColor(envKey), cfg.label);
+  if (cfg.source === 'api') return `${labelSeg} ${dim('仅 API')}`;
   let fiveHour = null, sevenDay = null, monthly = null, windows = [], stale = false, error = null;
 
   if (cfg.source === 'rate_limits') {
@@ -258,6 +260,15 @@ function renderEnvQuota(envKey, stdin) {
     sevenDay = rl.seven_day;
   } else {
     const cache = readJsonSafe(cfg.cache);
+    if (cfg.authSourceFile) {
+      try {
+        if (statSync(cfg.authSourceFile).mtimeMs > (cache?.generatedAt || 0)) {
+          return `${labelSeg} ${wrap(C.yellow, '授权已变化，待查询')}`;
+        }
+      } catch {
+        return `${labelSeg} ${wrap(C.yellow, '需登录')}`;
+      }
+    }
     if (cache?.error === 'auth') error = 'auth';
     else if (cache?.error) error = String(cache.error);
     fiveHour = cache?.five_hour || null;

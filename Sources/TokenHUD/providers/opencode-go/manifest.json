@@ -20,5 +20,11 @@
   "refreshHeader": "Authorization: Bearer <key>",
   "refreshProtocol": "openai",
   "refreshUrl": "https://opencode.ai/zen/go/v1/chat/completions",
-  "testModel": "deepseek-v4-flash"
+  "testModel": "deepseek-v4-flash",
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "inheritQueryUrl": "https://opencode.ai/zen/go/v1/usage",
+  "inheritQueryHeader": "Authorization: Bearer <key>"
 }

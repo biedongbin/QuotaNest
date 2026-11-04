@@ -20,5 +20,11 @@
   "refreshHeader": "Authorization: Bearer <key>\nanthropic-version: 2023-06-01",
   "refreshProtocol": "anthropic",
   "refreshUrl": "https://ollama.com/v1/messages",
-  "testModel": "deepseek-v4-flash"
+  "testModel": "deepseek-v4-flash",
+  "authMode": "apikey",
+  "quotaAuthModes": [
+    "apikey"
+  ],
+  "inheritQueryUrl": "https://ollama.com/api/balance",
+  "inheritQueryHeader": "Authorization: Bearer <key>"
 }

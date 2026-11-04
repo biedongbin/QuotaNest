@@ -283,7 +283,9 @@ final class DataEngine: ObservableObject {
                         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                         try encoder.encode(manifest).write(to: manifestPath, options: .atomic)
                     }
-                    if !hadInstanceAuth && !hadLegacyAuth && t.manifest.authStyle != "local" {
+                    let baseConfig = ProviderConfigStore.read(authFile: instanceAuth, manifest: manifest)
+                    let hasAuthSource = baseConfig.authMode == "auth" && (try? ProviderAuthentication.resolveQuota(baseConfig)) != nil
+                    if !hadInstanceAuth && !hadLegacyAuth && t.manifest.authStyle != "local" && !hasAuthSource {
                         disabledSlugs.insert(t.slug)
                         triggerDisabledSlugs.insert(t.slug)
                         defaults.set(Array(disabledSlugs), forKey: Self.defaultsDisabledKey)
@@ -369,7 +371,9 @@ final class DataEngine: ObservableObject {
         else { return }
         let mergeKeys = ["testModel", "testPrompt", "queryUrl", "queryAuth", "queryKeyField",
                          "refreshUrl", "refreshProtocol", "refreshAuth", "refreshHeader",
-                         "needsCredential", "buckets", "accent", "icon", "intervalSec"]
+                         "needsCredential", "buckets", "accent", "icon", "intervalSec",
+                         "credentialSource", "authCallUrl", "authCallProtocol", "authCallHeader", "authModelsUrl",
+                         "inheritQueryUrl", "inheritQueryHeader", "quotaAuthModes"]
         var changed = false
         // v1 GLM 模板误把网页登录 token 声明成 bearer；仅修正已知旧声明。
         if template.queryAuth == "jwt", obj["queryAuth"] as? String == "bearer" {
@@ -471,12 +475,21 @@ final class DataEngine: ObservableObject {
                     Self.saveSkipped(f, defaults: defaults)
                     return
                 }
+                let callRevision = Self.configRevision(slug: sch.slug, manifest: sch.manifest)
                 let response = await trigger(sch.manifest, sch.authFile)
                 let outcome = response?.hasPrefix("✓") == true ? "succeeded"
                     : (response?.contains("结果不确定") == true ? "uncertain" : "failed")
                 var completed = loadFiredSchedules()
                 completed[Self.scheduleDedupKey(slug: sch.slug, date: now), default: [:]][hhmm] = outcome
                 saveFiredSchedules(completed)
+                if outcome == "succeeded", Self.canQuery(sch.manifest),
+                   ProviderConfigStore.read(authFile: sch.authFile, manifest: sch.manifest).quotaMode != "none" {
+                    Task { @MainActor [weak self] in
+                        guard let self, self.allPlugins.contains(where: { $0.slug == sch.slug }),
+                              Self.configRevision(slug: sch.slug, manifest: sch.manifest) == callRevision else { return }
+                        _ = await self.forceRefresh(slug: sch.slug)
+                    }
+                }
             }
         }
     }
@@ -691,6 +704,13 @@ final class DataEngine: ObservableObject {
     }
 
     func refreshNow() async {
+        for index in states.indices {
+            if let cache = states[index].cache,
+               !cacheMatchesAuthSource(cache, slug: states[index].slug, manifest: states[index].manifest) {
+                states[index].cache = nil
+                states[index].isStale = true
+            }
+        }
         let now = Date().timeIntervalSince1970 * 1000
         // P1-3 退避: ratelimit 暂停窗口内的账号跳过本轮自动查询 (到期自动恢复; 手动 forceRefresh 不受限)
         let paused = Self.loadPaused(defaults: defaults)
@@ -701,8 +721,11 @@ final class DataEngine: ObservableObject {
             if st.manifest.quotaMode != nil {
                 guard let auth = authURL(for: st) else { return nil }
                 let config = ProviderConfigStore.read(authFile: auth, manifest: st.manifest)
+                guard config.quotaMode != "none" else { return nil }
                 let ready: Bool
-                if st.manifest.quotaMode == "endpoint" {
+                if config.quotaCredentialMode == "inherit" {
+                    ready = (try? ProviderAuthentication.resolveQuota(config)) != nil
+                } else if st.manifest.quotaMode == "endpoint" {
                     ready = !config.queryKey.isEmpty
                 } else {
                     switch st.manifest.queryAuth {
@@ -806,9 +829,15 @@ final class DataEngine: ObservableObject {
         } else {
             path = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud/.\(slug)-usage-auth.json")
         }
-        return (try? URL(fileURLWithPath: path.path)
-            .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+        let ownRevision = (try? path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
             .timeIntervalSince1970 ?? 0
+        let config = ProviderConfigStore.read(authFile: path, manifest: manifest)
+        guard config.authMode == "auth", let source = ProviderAuthentication.credentialFileURL(for: config) else {
+            return ownRevision
+        }
+        let sourceRevision = (try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+            .timeIntervalSince1970 ?? 0
+        return ownRevision + sourceRevision
     }
 
     /// 错误码 → 人话 (缓存契约里的 error 字段值不变)
@@ -969,11 +998,23 @@ final class DataEngine: ObservableObject {
         states[index].isStale = true
     }
 
-    private func readCache(slug: String, manifest: ProviderManifest) -> UsageCache? {
+    private func cacheMatchesAuthSource(_ cache: UsageCache, slug: String, manifest: ProviderManifest) -> Bool {
+        guard let file = authURL(for: ProviderState(slug: slug, manifest: manifest, cache: nil, isStale: false)) else { return true }
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        guard config.authMode == "auth", config.quotaCredentialMode == "inherit" else { return true }
+        guard (try? ProviderAuthentication.resolveQuota(config)) != nil,
+              let source = ProviderAuthentication.credentialFileURL(for: config),
+              let modified = try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { return false }
+        return modified.timeIntervalSince1970 * 1000 <= (cache.generatedAt ?? 0)
+    }
+
+    func readCache(slug: String, manifest: ProviderManifest) -> UsageCache? {
         let p = DataEngine.cachePath(for: PluginProvider(slug: slug, manifest: manifest, dir: hudDir),
                                      hudDir: hudDir)
-        guard let data = try? Data(contentsOf: p) else { return nil }
-        return try? JSONDecoder().decode(UsageCache.self, from: data)
+        guard let data = try? Data(contentsOf: p),
+              let cache = try? JSONDecoder().decode(UsageCache.self, from: data),
+              cacheMatchesAuthSource(cache, slug: slug, manifest: manifest) else { return nil }
+        return cache
     }
 
     private func writeCache(_ cache: UsageCache, plugin state: ProviderState) {

@@ -13,5 +13,28 @@
   "label": "GPT",
   "name": "GPT",
   "queryAuth": "header",
-  "queryUrl": "https://chatgpt.com/backend-api/wham/usage"
+  "queryUrl": "https://chatgpt.com/backend-api/wham/usage",
+  "authMode": "auth",
+  "quotaAuthModes": [
+    "auth"
+  ],
+  "refreshUrl": "https://api.openai.com/v1/chat/completions",
+  "refreshProtocol": "openai",
+  "refreshHeader": "Authorization: Bearer <key>",
+  "credentialSource": {
+    "file": "~/.codex/auth.json",
+    "environmentDirectory": "CODEX_HOME",
+    "tokenPath": "tokens.access_token",
+    "headerPaths": {
+      "chatgpt-account-id": "tokens.account_id"
+    },
+    "requiredValues": {
+      "auth_mode": "chatgpt"
+    },
+    "fileConfigKey": "codexAuthFile"
+  },
+  "authCallUrl": "https://chatgpt.com/backend-api/codex/responses",
+  "authCallProtocol": "responses",
+  "authCallHeader": "Authorization: Bearer <key>\nOpenAI-Beta: responses=experimental\noriginator: codex_cli_rs\nUser-Agent: codex_cli_rs/0.159.0\nversion: 0.159.0",
+  "authModelsUrl": "https://chatgpt.com/backend-api/codex/models?client_version=0.159.0"
 }

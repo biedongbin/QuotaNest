@@ -147,6 +147,9 @@ struct DraftValues: Equatable {
     var queryToken = ""
     var queryCookie = ""
     var quotaMode = "none"
+    var authMode = "apikey"
+    var quotaCredentialMode = "inherit"
+    var authCredentialFile = ""
     var clearQueryKeyIntent = false
 }
 
@@ -184,21 +187,21 @@ struct AccountRow: Identifiable {
     let enabled: Bool
     /// P1-10 执行性配置完整 (key/url 齐) — false = 「未配置」徽章, 依赖配置的开关已强制 off
     let isConfigured: Bool
+    let baseAuthenticationMode: String
 
     var id: String { plugin.slug }
     var name: String { plugin.manifest.fullName }
     /// 有 queryUrl = 可查额度 (GPT/Cline 也有); 脚本型实例由 fetch.sh 直查, 由 cacheFile 声明
     var canQuery: Bool { plugin.manifest.supportsQuota }
     /// 有 refreshUrl = 可定时调用
-    var canCall: Bool { plugin.manifest.refreshUrl != nil }
+    var canCall: Bool { plugin.manifest.refreshUrl?.isEmpty == false || plugin.manifest.authCallUrl?.isEmpty == false }
     /// 模板实例 = 内置 (地址由模板提供)
     var builtin: Bool { plugin.manifest.template != nil }
-    var authStyle: String { plugin.manifest.authStyle }
+    var authStyle: String { baseAuthenticationMode == "apikey" ? "apikey" : "local" }
     var authLabel: String {
         switch authStyle {
         case "apikey": return "API Key"
-        case "oauth": return "授权登录 · OAuth"
-        default: return "授权登录"
+        default: return "Auth · 本机授权"
         }
     }
 
@@ -334,6 +337,7 @@ final class SettingsModel: ObservableObject {
     private let confirmResumePlan: (() -> Bool)?
     private let confirmTestCall: ((CallTestConfirmation) -> Bool)?
     private let executeTestCall: (ProviderConfig) async -> String?
+    private let executeQuotaQuery: (String) async -> RefreshOutcome
     private var templatesReturn: (page: NavPage, selected: String?, tab: Tab)?
 
     @Published var search = ""
@@ -394,7 +398,8 @@ final class SettingsModel: ObservableObject {
          defaults: UserDefaults = .standard, confirmDiscardChanges: (() -> Bool)? = nil,
          confirmResumePlan: (() -> Bool)? = nil,
          confirmTestCall: ((CallTestConfirmation) -> Bool)? = nil,
-         executeTestCall: ((ProviderConfig) async -> String?)? = nil) {
+         executeTestCall: ((ProviderConfig) async -> String?)? = nil,
+         executeQuotaQuery: ((String) async -> RefreshOutcome)? = nil) {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
@@ -405,6 +410,7 @@ final class SettingsModel: ObservableObject {
         self.confirmResumePlan = confirmResumePlan
         self.confirmTestCall = confirmTestCall
         self.executeTestCall = executeTestCall ?? { config in await RefreshTrigger.testRefresh(config: config) }
+        self.executeQuotaQuery = executeQuotaQuery ?? { [engine] slug in await engine.forceRefresh(slug: slug) }
         // 恢上次的账号与 tab; 账号已不存在则回落第一个
         let slugs = engine.allPlugins.map(\.slug)
         self.selected = SettingsPersist.resumeSlug(
@@ -432,7 +438,8 @@ final class SettingsModel: ObservableObject {
                        state: engine.states.first { $0.slug == p.slug } ?? cachedState(for: p),
                        autoQuery: !engine.disabledSlugs.contains(p.slug),
                        enabled: !engine.disabledSlugs.contains(p.slug),
-                       isConfigured: Self.configured(p, readConfig: readConfig))
+                       isConfigured: Self.configured(p, readConfig: readConfig),
+                       baseAuthenticationMode: readConfig(p).authMode)
         }
     }
 
@@ -486,21 +493,27 @@ final class SettingsModel: ObservableObject {
                           state: engine.states.first { $0.slug == slug } ?? cachedState(for: p),
                           autoQuery: !engine.disabledSlugs.contains(slug),
                           enabled: !engine.disabledSlugs.contains(slug),
-                          isConfigured: Self.configured(p, readConfig: readConfig))
+                          isConfigured: Self.configured(p, readConfig: readConfig),
+                          baseAuthenticationMode: readConfig(p).authMode)
     }
 
     /// P1-10 执行性配置完整判定 (静态, 供 AccountRow 构建)
     nonisolated private static func configured(_ p: PluginProvider,
                                                readConfig: (PluginProvider) -> ProviderConfig) -> Bool {
         let cfg = readConfig(p)
-        let callReady = SettingsValidation.isValidURL(cfg.refreshUrl)
-            && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+        let callable = Self.callReady(cfg)
         let queryReady = Self.queryReady(p.manifest, config: cfg)
-        return callReady || queryReady
+        return callable || queryReady
     }
 
     nonisolated private static func queryReady(_ manifest: ProviderManifest, config: ProviderConfig) -> Bool {
-        guard manifest.supportsQuota else { return false }
+        guard manifest.supportsQuota, config.quotaMode != "none" else { return false }
+        if config.quotaCredentialMode == "inherit" {
+            do {
+                let resolved = try ProviderAuthentication.resolveQuota(config)
+                return config.quotaMode != "endpoint" || SettingsValidation.isValidURL(resolved.queryUrl)
+            } catch { return false }
+        }
         if config.quotaMode == "endpoint", !SettingsValidation.isValidURL(config.queryUrl) { return false }
         switch manifest.queryAuth {
         case "jwt": return !config.queryToken.isEmpty
@@ -510,20 +523,65 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    nonisolated private static func callReady(_ config: ProviderConfig) -> Bool {
+        do {
+            let resolved = try ProviderAuthentication.resolveCall(config)
+            return SettingsValidation.isValidURL(resolved.refreshUrl) && !resolved.refreshKey.isEmpty
+                && !config.testModel.isEmpty
+        } catch { return false }
+    }
+
+    func authenticationIssue(_ config: ProviderConfig) -> String? {
+        do { _ = try ProviderAuthentication.resolveCall(config); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    func authSourceDescription(_ config: ProviderConfig) -> String {
+        ProviderAuthentication.sourceDescription(config)
+    }
+
+    func draftAuthSourceDescription() -> String {
+        guard let draft else { return "尚未选择账号" }
+        return authSourceDescription(callConfigForDraft(draft.values))
+    }
+
+    func baseAddressDescription(_ config: ProviderConfig) -> String {
+        guard config.authMode == "auth" else { return config.apiBaseURL.isEmpty ? "未配置" : config.apiBaseURL }
+        do { return try ProviderAuthentication.resolveCall(config).apiBaseURL }
+        catch { return "Auth 调用尚不可用" }
+    }
+
+    func baseProtocolDescription(_ config: ProviderConfig) -> String {
+        let name: String
+        if config.authMode == "auth" {
+            do { name = try ProviderAuthentication.resolveCall(config).refreshProtocol }
+            catch { return "由 Auth 调用能力提供；当前不可用" }
+        } else { name = config.refreshProtocol }
+        switch name {
+        case "anthropic": return "Anthropic Messages"
+        case "responses": return "OpenAI Responses"
+        default: return "OpenAI Chat Completions"
+        }
+    }
+
+    func draftHasLegacyCredentials() -> Bool {
+        guard let draft else { return false }
+        return [draft.values.queryKey, draft.values.queryToken, draft.values.queryCookie,
+                draft.base.queryKey, draft.base.queryToken, draft.base.queryCookie].contains { !$0.isEmpty }
+    }
+
     func callConfigured(_ row: AccountRow) -> Bool {
         let cfg = readConfig(row.plugin)
-        return SettingsValidation.isValidURL(cfg.refreshUrl) && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+        return Self.callReady(cfg)
     }
 
     func quotaConfigured(_ row: AccountRow) -> Bool {
         Self.queryReady(row.plugin.manifest, config: readConfig(row.plugin))
     }
 
-    /// 关闭自动查询后账号不在 states 里, 但缓存文件仍在 → 直接读盘 (手动查询结果照常显示)
+    /// 停用账号仍可展示缓存，但必须通过统一的授权来源校验。
     private func cachedState(for p: PluginProvider) -> ProviderState? {
-        let path = DataEngine.cachePath(for: p, hudDir: hudDir)
-        guard let data = try? Data(contentsOf: path),
-              let cache = try? JSONDecoder().decode(UsageCache.self, from: data) else { return nil }
+        guard let cache = engine.readCache(slug: p.slug, manifest: p.manifest) else { return nil }
         return ProviderState(slug: p.slug, manifest: p.manifest, cache: cache,
                              isStale: !HUDFmt.isFresh(cache, interval: p.manifest.interval,
                                                       now: Date().timeIntervalSince1970 * 1000))
@@ -559,7 +617,10 @@ final class SettingsModel: ObservableObject {
     }
 
     func draftCanCall() -> Bool {
-        if draftBuiltin() { return draftManifest()?.refreshUrl?.isEmpty == false }
+        if draftBuiltin() {
+            return draftManifest()?.refreshUrl?.isEmpty == false
+                || (draft?.values.authMode == "auth" && draftManifest()?.authCallUrl?.isEmpty == false)
+        }
         return draft != nil
     }
 
@@ -571,7 +632,7 @@ final class SettingsModel: ObservableObject {
         return row.plugin.manifest.label
     }
     func draftBuiltin() -> Bool { draft?.template != nil }
-    func draftAuthStyle() -> String { draftManifest()?.authStyle ?? "apikey" }
+    func draftAuthStyle() -> String { draft?.values.authMode ?? "apikey" }
 
     /// 模板 auth-template.json 的 apiUrl (脚本型模板的查询地址事实源)
     private func templateAuthURL(_ slug: String) -> String {
@@ -648,6 +709,9 @@ final class SettingsModel: ObservableObject {
         v.queryToken = cfg.queryToken
         v.queryCookie = cfg.queryCookie
         v.quotaMode = cfg.quotaMode
+        v.authMode = cfg.authMode
+        v.quotaCredentialMode = cfg.quotaCredentialMode
+        v.authCredentialFile = cfg.authCredentialFile
         draft = Draft(slug: row.id, template: row.plugin.manifest.template, isNew: false, values: v, base: v)
         draft?.hasExistingKey = !cfg.refreshKey.isEmpty
         errors = [:]; topError = ""
@@ -666,6 +730,8 @@ final class SettingsModel: ObservableObject {
         copy.values.queryKey = ""
         copy.values.queryToken = ""
         copy.values.queryCookie = ""
+        copy.values.quotaCredentialMode = "inherit"
+        copy.values.authCredentialFile = ""
         copy.values.autoTrigger = false
         copy.values.clearKeyIntent = false
         copy.values.clearQueryKeyIntent = false
@@ -695,6 +761,12 @@ final class SettingsModel: ObservableObject {
                             model: m?.testModel ?? "", prompt: m?.testPrompt ?? ProviderConfig.defaultPrompt,
                             proto: m?.refreshProtocol ?? choice.proto ?? "openai", autoQuery: true,
                             autoTrigger: false, times: [])
+        if let template = engine.template(bySlug: choice.id) {
+            let defaults = ProviderConfigStore.read(authFile: template.dir.appendingPathComponent("auth-template.json"),
+                                                    manifest: template.manifest)
+            v.authMode = defaults.authMode
+            v.authCredentialFile = defaults.authCredentialFile
+        }
         v.queryURL = m?.queryUrl ?? templateAuthURL(choice.id)
         v.quotaMode = m == nil ? "none" : "script"
         draft = Draft(slug: nil, template: choice.manifest.map { _ in choice.id }, isNew: true,
@@ -758,7 +830,8 @@ final class SettingsModel: ObservableObject {
             name: d.values.name, key: d.values.key, url: d.values.url,
             authStyle: draftAuthStyle(), builtin: draftBuiltin(),
             hasExistingKey: d.isNew ? false : d.hasExistingKey)
-        if !d.values.url.isEmpty && !SettingsValidation.isValidURL(d.values.url) {
+        if d.values.authMode == "apikey", !draftBuiltin(),
+           !d.values.url.isEmpty && !SettingsValidation.isValidURL(d.values.url) {
             errs["url"] = "API Base URL 必须是有效的 http(s) 地址"
         }
         if d.values.quotaMode == "endpoint" && !d.values.queryURL.isEmpty
@@ -842,7 +915,10 @@ final class SettingsModel: ObservableObject {
     }
 
     private func draftConfig(_ values: DraftValues, existing: ProviderConfig? = nil) -> ProviderConfig {
-        var cfg = existing ?? ProviderConfig()
+        let templateDefaults = draft?.template.flatMap { engine.template(bySlug: $0) }.map {
+            ProviderConfigStore.read(authFile: $0.dir.appendingPathComponent("auth-template.json"), manifest: $0.manifest)
+        }
+        var cfg = existing ?? templateDefaults ?? ProviderConfig()
         let existingCallKey = cfg.refreshKey
         if let key = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingCallKey,
             intent: values.clearKeyIntent ? .clear : .replace) { cfg.refreshKey = key }
@@ -863,6 +939,9 @@ final class SettingsModel: ObservableObject {
         }
         cfg.queryUrl = values.queryURL.trimmingCharacters(in: .whitespacesAndNewlines)
         cfg.quotaMode = values.quotaMode
+        cfg.authMode = values.authMode
+        cfg.quotaCredentialMode = values.quotaCredentialMode
+        cfg.authCredentialFile = values.authCredentialFile
         cfg.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
         cfg.testPrompt = values.prompt
         cfg.scheduleTimes = values.times
@@ -878,7 +957,7 @@ final class SettingsModel: ObservableObject {
     private func draftCallReady(_ values: DraftValues) -> Bool {
         let existing = draft?.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
         let cfg = draftConfig(values, existing: existing)
-        return SettingsValidation.isValidURL(cfg.refreshUrl) && !cfg.refreshKey.isEmpty && !cfg.testModel.isEmpty
+        return Self.callReady(cfg)
     }
 
     private func create(values: DraftValues, draft d: Draft) throws -> String {
@@ -898,7 +977,7 @@ final class SettingsModel: ObservableObject {
             let defaults = ProviderConfigStore.read(authFile: PluginGenerator.expandPath(manifest.authFile ?? ""),
                                                     manifest: manifest)
             if cfg.queryUrl.isEmpty { cfg.queryUrl = defaults.queryUrl }
-            cfg.quotaMode = "script"
+            cfg.quotaMode = values.quotaMode
         } else {
             manifest = PluginGenerator.customManifest(name: name, config: cfg,
                 authFile: PluginGenerator.authPath(slug: slug, hudDir: hudDir))
@@ -926,7 +1005,9 @@ final class SettingsModel: ObservableObject {
         let cfg = draftConfig(values, existing: previous)
         let changedQuota = cfg.queryKey != previous.queryKey || cfg.queryToken != previous.queryToken
             || cfg.queryCookie != previous.queryCookie || cfg.queryUrl != previous.queryUrl
-            || cfg.quotaMode != previous.quotaMode
+            || cfg.quotaMode != previous.quotaMode || cfg.quotaCredentialMode != previous.quotaCredentialMode
+            || cfg.authMode != previous.authMode || cfg.authCredentialFile != previous.authCredentialFile
+            || (cfg.quotaCredentialMode == "inherit" && cfg.refreshKey != previous.refreshKey)
         var manifest = p.manifest
         if manifest.template == nil {
             let generated = PluginGenerator.customManifest(name: values.name, config: cfg,
@@ -946,6 +1027,8 @@ final class SettingsModel: ObservableObject {
                 try FileManager.default.removeItem(at: cache)
             }
             engine.invalidateSnapshot(slug)
+            lastRun[slug] = nil
+            lastSuccess[slug] = nil
         }
         applyToggles(slug: slug, values: values, manifest: manifest)
         return slug
@@ -953,7 +1036,7 @@ final class SettingsModel: ObservableObject {
 
     private func applyToggles(slug: String, values: DraftValues, manifest: ProviderManifest) {
         engine.setTracking(slug, enabled: values.autoQuery)
-        let callable = manifest.refreshUrl != nil
+        let callable = manifest.refreshUrl?.isEmpty == false || manifest.authCallUrl?.isEmpty == false
         engine.setTriggerEnabled(slug, enabled: callable && values.autoTrigger)
     }
 
@@ -964,11 +1047,15 @@ final class SettingsModel: ObservableObject {
             flash("该账号没有额度查询地址，无法查询额度", error: true)
             return
         }
+        guard quotaConfigured(row) else {
+            flash("用量查询尚未配置完整，请检查基础认证或旧版查询兼容配置", error: true)
+            return
+        }
         guard !running.contains(slug) else { return }
         running.insert(slug)
         let started = Date()
         Task {
-            let outcome = await engine.forceRefresh(slug: slug)
+            let outcome = await executeQuotaQuery(slug)
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             running.remove(slug)
             lastRun[slug] = (outcome.ok, ms, Date())
@@ -1003,7 +1090,17 @@ final class SettingsModel: ObservableObject {
                         providerName: values.name.isEmpty ? "新账号" : values.name)
     }
 
-    private func performTestCall(config: ProviderConfig, key: String, source: String, providerName: String) {
+    private func performTestCall(config original: ProviderConfig, key: String, source: String, providerName: String) {
+        let config: ProviderConfig
+        do { config = try ProviderAuthentication.resolveCall(original) }
+        catch {
+            let message = error.localizedDescription
+            callTestResults[key] = CallTestResult(phase: .failure, model: original.testModel,
+                target: CallTestResult.targetDescription(original.refreshUrl), sourceLabel: source,
+                message: message, date: Date())
+            flash(message, error: true)
+            return
+        }
         let target = CallTestResult.targetDescription(config.refreshUrl)
         func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
             CallTestResult(phase: phase, model: config.testModel, target: target,
@@ -1081,7 +1178,25 @@ final class SettingsModel: ObservableObject {
             let summary = phase == .success ? message
                 : (phase == .uncertain ? "测试结果不确定，可能已消费；请查看下方完整详情" : "测试调用未成功，请查看下方完整详情")
             flash(summary, error: phase != .success)
+            if phase == .success, source == "已保存配置",
+               let row = row(key), quotaConfigured(row),
+               currentAuthenticationMatches(config, row: row) {
+                query(key)
+            }
         }
+    }
+
+    private func currentAuthenticationMatches(_ snapshot: ProviderConfig, row: AccountRow) -> Bool {
+        do {
+            let current = try ProviderAuthentication.resolveCall(readConfig(row.plugin))
+            return current.authMode == snapshot.authMode
+                && current.refreshKey == snapshot.refreshKey
+                && current.refreshUrl == snapshot.refreshUrl
+                && current.refreshProtocol == snapshot.refreshProtocol
+                && current.refreshHeader == snapshot.refreshHeader
+                && ProviderAuthentication.credentialFileURL(for: current)
+                    == ProviderAuthentication.credentialFileURL(for: snapshot)
+        } catch { return false }
     }
 
     func delete(_ slug: String) {
