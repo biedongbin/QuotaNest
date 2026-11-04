@@ -23,7 +23,7 @@ struct FloatingView: View {
         return states.reduce(CGFloat(16)) { height, state in
             let count = max(1, QuotaPresentation(state: state).metrics.count)
             if expanded || controller.style == .glass { return height + 84 + CGFloat((count + 1) / 2) * 56 }
-            if controller.style == .compact { return height + 32 }
+            if controller.style == .compact { return height + 25 }
             if controller.style == .list { return height + CGFloat(count) * 24 + 9 }
             return height + 29 + CGFloat(count) * 20
         }
@@ -37,7 +37,7 @@ struct FloatingView: View {
             header.frame(height: 37)
             if expanded { Rectangle().fill(Palette.border).frame(height: 1) }
             ScrollView {
-                VStack(alignment: .leading, spacing: expanded ? 9 : 12) {
+                VStack(alignment: .leading, spacing: expanded ? 9 : (controller.style == .compact ? 3 : 12)) {
                     if states.isEmpty { emptyState }
                     ForEach(states) { state in
                         if expanded { floatingAccount(state) }
@@ -53,7 +53,7 @@ struct FloatingView: View {
                 }
                 .padding(.horizontal, expanded ? 10 : 13)
                 .padding(.top, expanded ? 10 : 1)
-                .padding(.bottom, expanded ? 10 : 12)
+                .padding(.bottom, expanded ? 10 : (controller.style == .compact ? 4 : 12))
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: FloatingContentHeightKey.self, value: geometry.size.height)
                 })
@@ -181,7 +181,7 @@ struct FloatingView: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
         .accessibilityElement(children: .combine)
         .contextMenu { accountMenu(state) }
     }
