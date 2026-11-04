@@ -125,6 +125,45 @@ struct SettingsCenterView: View {
     }
 }
 
+private struct AccountStatusMenu: View {
+    @Binding var selection: AccountStatusFilter
+    var compact = false
+    @State private var hovered = false
+
+    var body: some View {
+        Menu {
+            Picker("账号状态", selection: $selection) {
+                ForEach(AccountStatusFilter.allCases) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }.pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundStyle(Palette.muted)
+                Text(selection.label).lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: compact ? 11 : 12, weight: .medium))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, compact ? 7 : 10)
+            .frame(height: compact ? 26 : 30)
+            .background(hovered ? Palette.hover : Palette.surface,
+                        in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovered = $0 }
+        .accessibilityValue(selection.label)
+        .help("按账号状态筛选")
+    }
+}
+
 private struct AccountSidebar: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var engine: DataEngine
@@ -157,9 +196,8 @@ private struct AccountSidebar: View {
                     HStack {
                         Text("账号列表").font(.system(size: 11)).foregroundStyle(Palette.muted)
                         Spacer(minLength: 2)
-                        Picker("账号列表状态", selection: $model.sidebarStatusFilter) {
-                            ForEach(AccountStatusFilter.allCases) { filter in Text(filter.label).tag(filter) }
-                        }.labelsHidden().pickerStyle(.menu)
+                        AccountStatusMenu(selection: $model.sidebarStatusFilter, compact: true)
+                            .accessibilityLabel("账号列表状态")
                             .accessibilityIdentifier("sidebar.status-filter")
                     }.padding(.horizontal, 8).padding(.top, 12)
                     if model.sidebarGroups.isEmpty {
@@ -254,9 +292,8 @@ struct OverviewPage: View {
                     .disabled(!model.allAccounts.contains { $0.enabled && $0.canQuery && model.quotaConfigured($0) })
                 }
                 HStack(spacing: 12) {
-                    Picker("账号状态", selection: $model.overviewStatusFilter) {
-                        ForEach(AccountStatusFilter.allCases) { filter in Text(filter.label).tag(filter) }
-                    }.pickerStyle(.segmented).frame(maxWidth: 560)
+                    AccountStatusMenu(selection: $model.overviewStatusFilter)
+                        .accessibilityLabel("概览账号状态")
                         .accessibilityIdentifier("overview.status-filter")
                     Text("\(model.overviewGroups.reduce(0) { $0 + $1.rows.count }) 个账号")
                         .font(Typo.small).foregroundStyle(Palette.muted)
