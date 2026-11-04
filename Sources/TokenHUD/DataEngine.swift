@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 
 // MARK: - P1-4 模型调用并发位 (每账号 1 / 全局 2)
@@ -365,7 +366,8 @@ final class DataEngine: ObservableObject {
     func migrateLegacyCustomAccounts() {
         let fm = FileManager.default
         for plugin in ProviderRegistry.scan(dir: userDir) {
-            guard plugin.manifest.template == nil, plugin.manifest.quotaMode == nil else { continue }
+            guard plugin.manifest.sourceReference == nil,
+                  plugin.manifest.template == nil, plugin.manifest.quotaMode == nil else { continue }
             let scriptURL = plugin.dir.appendingPathComponent(plugin.manifest.fetch)
             let manifestURL = plugin.dir.appendingPathComponent("manifest.json")
             let auth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
@@ -428,7 +430,9 @@ final class DataEngine: ObservableObject {
             obj["quotaMode"] = "script"
             changed = true
         }
-        for k in mergeKeys where obj[k] == nil {
+        let sourceOwnedKeys: Set<String> = obj["sourceReference"] == nil ? []
+            : ["testModel", "refreshUrl", "refreshProtocol", "refreshAuth", "refreshHeader"]
+        for k in mergeKeys where obj[k] == nil && !sourceOwnedKeys.contains(k) {
             if let v = tmpl[k] { obj[k] = v; changed = true }
         }
         if var source = obj["credentialSource"] as? [String: Any],
@@ -439,7 +443,8 @@ final class DataEngine: ObservableObject {
             obj["credentialSource"] = source
         }
         // Header 模板按名称补新增声明，已有值（含用户自定义认证）始终保留。
-        if let existing = obj["refreshHeader"] as? String, let declared = template.refreshHeader {
+        if obj["sourceReference"] == nil,
+           let existing = obj["refreshHeader"] as? String, let declared = template.refreshHeader {
             func headerName(_ line: Substring) -> String? {
                 let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
                 guard parts.count == 2 else { return nil }
@@ -820,6 +825,7 @@ final class DataEngine: ObservableObject {
             }
         guard let plugin else { return .failed("供应商不存在") }
         guard Self.canQuery(plugin.manifest) else { return .failed("该账号未配置额度查询") }
+        invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
         // 核对: 查询期间账号被删/凭证被改 → 丢弃 (FR-05.3)
         let rev0 = Self.configRevision(slug: slug, manifest: plugin.manifest)
         let now = Date().timeIntervalSince1970 * 1000
@@ -828,10 +834,12 @@ final class DataEngine: ObservableObject {
         do {
             fetched = try await queryGate.run(slug: slug, revision: rev0) { [runner] in await runner.run(plugin) }
         } catch {
+            invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
             return .failed(Self.reason(for: "busy"))
         }
         guard let p = allPlugins.first(where: { $0.slug == slug }),
               Self.configRevision(slug: slug, manifest: p.manifest) == rev0 else {
+            invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
             return .failed("查询期间配置已变更，结果已丢弃")
         }
         // 失败 (nil) 也走 apply: 记录 lastAttemptAt/stale (失败不推进 generatedAt)
@@ -870,6 +878,9 @@ final class DataEngine: ObservableObject {
             if checkRevision {
                 guard let p = allPlugins.first(where: { $0.slug == slug }),
                       revisions[slug] == Self.configRevision(slug: slug, manifest: p.manifest) else {
+                    if let manifest = allPlugins.first(where: { $0.slug == slug })?.manifest {
+                        invalidateChangedReferencedSnapshot(slug, manifest: manifest)
+                    }
                     print("[DataEngine] discard late result for \(slug) (config changed or removed)")
                     continue
                 }
@@ -892,6 +903,16 @@ final class DataEngine: ObservableObject {
         let ownRevision = (try? path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
             .timeIntervalSince1970 ?? 0
         let config = ProviderConfigStore.read(authFile: path, manifest: manifest)
+        if let reference = config.sourceReference {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let identity = (try? encoder.encode(reference)) ?? Data()
+            let revision = (try? ImportedSource.read(reference).revision) ?? "source-unavailable"
+            let material = Data("\(ownRevision)|\(revision)|".utf8) + identity
+            let hex = SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
+            // 13 hexadecimal digits fit exactly in Double's 53-bit integer significand.
+            return Double(UInt64(hex.prefix(13), radix: 16) ?? 0)
+        }
         guard config.authMode == "auth", let source = ProviderAuthentication.credentialFileURL(for: config) else {
             return ownRevision
         }
@@ -1015,12 +1036,19 @@ final class DataEngine: ObservableObject {
 
     private func apply(slug: String, fetched: UsageCache?, now: Double) {
         guard let i = states.firstIndex(where: { $0.slug == slug }) else { return }
+        if states[i].manifest.sourceReference != nil, let fetched,
+           !cacheMatchesAuthSource(fetched, slug: slug, manifest: states[i].manifest) {
+            states[i].cache = nil
+            states[i].isStale = true
+            return
+        }
         if let fetched {
             var snapshot = fetched
             if fetched.error != nil, var previous = states[i].cache,
                fetched.accountId == previous.accountId,
                cacheMatchesAuthSource(previous, slug: slug, manifest: states[i].manifest),
-               fetched.accountId != nil || (states[i].manifest.authStyle != "local" && states[i].manifest.queryAuth != "header") {
+               states[i].manifest.sourceReference != nil || fetched.accountId != nil
+                   || (states[i].manifest.authStyle != "local" && states[i].manifest.queryAuth != "header") {
                 previous.error = fetched.error
                 previous.stale = true
                 previous.lastAttemptAt = fetched.lastAttemptAt ?? now
@@ -1039,9 +1067,15 @@ final class DataEngine: ObservableObject {
             Self.savePaused(paused, defaults: defaults)
         } else {
             // local/header 的当前身份无法证实：进程失败不能沿用上一 CLI 账号的数据。
-            let local = states[i].manifest.authStyle == "local" || states[i].manifest.queryAuth == "header"
+            let local = states[i].manifest.sourceReference == nil
+                && (states[i].manifest.authStyle == "local" || states[i].manifest.queryAuth == "header")
             let previous = local ? nil : states[i].cache.flatMap {
                 cacheMatchesAuthSource($0, slug: slug, manifest: states[i].manifest) ? $0 : nil
+            }
+            if states[i].manifest.sourceReference != nil, previous == nil {
+                states[i].cache = nil
+                states[i].isStale = true
+                return
             }
             var old = previous ?? UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil,
                                             monthly: nil, error: "fetch", stale: true)
@@ -1061,9 +1095,20 @@ final class DataEngine: ObservableObject {
         states[index].isStale = true
     }
 
+    private func invalidateChangedReferencedSnapshot(_ slug: String, manifest: ProviderManifest) {
+        guard manifest.sourceReference != nil,
+              let cache = states.first(where: { $0.slug == slug })?.cache,
+              !cacheMatchesAuthSource(cache, slug: slug, manifest: manifest) else { return }
+        invalidateSnapshot(slug)
+    }
+
     private func cacheMatchesAuthSource(_ cache: UsageCache, slug: String, manifest: ProviderManifest) -> Bool {
         guard let file = authURL(for: ProviderState(slug: slug, manifest: manifest, cache: nil, isStale: false)) else { return true }
         let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        if let reference = config.sourceReference {
+            guard let revision = try? ImportedSource.read(reference).revision else { return false }
+            return cache.sourceRevision == revision
+        }
         guard config.authMode == "auth" else { return true }
         guard (try? ProviderAuthentication.resolveQuota(config)) != nil,
               let source = ProviderAuthentication.credentialFileURL(for: config),
@@ -1082,11 +1127,19 @@ final class DataEngine: ObservableObject {
     }
 
     private func writeCache(_ cache: UsageCache, plugin state: ProviderState) {
+        if state.manifest.sourceReference != nil,
+           !cacheMatchesAuthSource(cache, slug: state.slug, manifest: state.manifest) { return }
         let p = DataEngine.cachePath(for: PluginProvider(slug: state.slug, manifest: state.manifest,
                                                          dir: hudDir),
                                      hudDir: hudDir)
-        if let data = try? JSONEncoder().encode(cache) {
-            try? data.write(to: p, options: .atomic)
+        do {
+            try JSONEncoder().encode(cache).write(to: p, options: .atomic)
+            if let reference = state.manifest.sourceReference {
+                try HUDSync.refreshReferenceDependencies(slug: state.slug, reference: reference, hudDir: hudDir)
+            }
+        } catch {
+            // Existing HUD dependency metadata stays conservative if publishing fails.
+            print("[DataEngine] cache or HUD dependency write failed for \(state.slug)")
         }
     }
 }

@@ -6,13 +6,14 @@ import AppKit
 @MainActor
 final class ImportCenterModel: ObservableObject {
     enum Source: String, CaseIterable, Identifiable {
-        case nineRouter, ccSwitch, cpamp
+        case nineRouter, ccSwitch, cpamp, magpie
         var id: String { rawValue }
         var label: String {
             switch self {
             case .nineRouter: return "9router"
             case .ccSwitch: return "cc-switch"
             case .cpamp: return "CPAMP"
+            case .magpie: return "Magpie"
             }
         }
         var path: String {
@@ -20,12 +21,14 @@ final class ImportCenterModel: ObservableObject {
             case .nineRouter: return "~/.9router/db/data.sqlite"
             case .ccSwitch: return "~/.cc-switch/cc-switch.db"
             case .cpamp: return "~/.cli-proxy-api/*.json"
+            case .magpie: return ProviderImporter.magpieRoot(home: NSHomeDirectory())
             }
         }
     }
 
     enum RowState: Equatable {
         case addable        // 可新增
+        case convertible    // 旧导入账号可转换为只读来源引用
         case exists         // 已存在
         case unsupported    // 不支持
         case unadapted      // 额度未适配
@@ -33,13 +36,14 @@ final class ImportCenterModel: ObservableObject {
         var text: String {
             switch self {
             case .addable: return "可新增"
+            case .convertible: return "可转换"
             case .exists: return "已存在"
             case .unsupported: return "不支持"
             case .unadapted: return "额度未适配"
             }
         }
         var pickable: Bool {
-            self == .addable || self == .unadapted
+            self == .addable || self == .unadapted || self == .convertible
         }
     }
 
@@ -62,6 +66,30 @@ final class ImportCenterModel: ObservableObject {
     }
 
     @Published var source: Source = .nineRouter
+    @Published var magpieDirectory = ""
+    var sourcePath: String { source == .magpie && !magpieDirectory.isEmpty ? magpieDirectory : source.path }
+
+    func chooseMagpieDirectory() {
+        guard !importing else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "选择 Magpie 配置目录（包含 providers.json 或 plugin-auth.json），支持 portable data 目录"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        magpieDirectory = url.path
+        scanGeneration = UUID()
+        scanState = .idle
+        scan()
+    }
+
+    func resetMagpieDirectory() {
+        guard !importing else { return }
+        magpieDirectory = ""
+        scanGeneration = UUID()
+        scanState = .idle
+        scan()
+    }
     @Published var scanState: ScanState = .idle
     @Published var rows: [Row] = []
     @Published var picked: Set<UUID> = []
@@ -101,9 +129,11 @@ final class ImportCenterModel: ObservableObject {
         let home = NSHomeDirectory()
         let list: [ImportCandidate]
         switch source {
-        case .nineRouter: list = ProviderImporter.from9Router(home: home)
-        case .ccSwitch: list = ProviderImporter.fromCCSwitch(home: home)
-        case .cpamp: list = ProviderImporter.fromCPAMP(home: home)
+        case .nineRouter: list = ProviderImporter.from9Router(home: home, templates: engine.templates)
+        case .ccSwitch: list = ProviderImporter.fromCCSwitch(home: home, templates: engine.templates)
+        case .cpamp: list = ProviderImporter.fromCPAMP(home: home, templates: engine.templates)
+        case .magpie: list = ProviderImporter.fromMagpie(home: home,
+            sourceDirectory: magpieDirectory.isEmpty ? nil : magpieDirectory, templates: engine.templates)
         }
         apply(list)
     }
@@ -116,9 +146,12 @@ final class ImportCenterModel: ObservableObject {
         rows = []; picked = []
         let src = source
         let home = NSHomeDirectory()
+        let directory = magpieDirectory.isEmpty ? nil : magpieDirectory
+        let templates = engine.templates
         // 可取消 + 超时: 错误/超时不得等同于"空结果"
         Task { [weak self] in
-            let result = await Self.scanWithTimeout(src: src, home: home, seconds: 8)
+            let result = await Self.scanWithTimeout(src: src, home: home, directory: directory,
+                                                     templates: templates, seconds: 8)
             guard let self else { return }
             guard self.source == src, self.scanGeneration == generation else { return }
             switch result {
@@ -139,17 +172,19 @@ final class ImportCenterModel: ObservableObject {
         case error(String)
     }
 
-    private nonisolated static func scanWithTimeout(src: Source, home: String,
-                                                    seconds: Double) async -> Result<[ImportCandidate], ScanError> {
+    private nonisolated static func scanWithTimeout(src: Source, home: String, directory: String?,
+                                                    templates: [PluginProvider], seconds: Double) async -> Result<[ImportCandidate], ScanError> {
         await withTaskGroup(of: Result<[ImportCandidate], ScanError>?.self) { group in
             group.addTask {
                 await withCheckedContinuation { cont in
                     DispatchQueue.global(qos: .userInitiated).async {
                         let list: [ImportCandidate]
                         switch src {
-                        case .nineRouter: list = ProviderImporter.from9Router(home: home)
-                        case .ccSwitch: list = ProviderImporter.fromCCSwitch(home: home)
-                        case .cpamp: list = ProviderImporter.fromCPAMP(home: home)
+                        case .nineRouter: list = ProviderImporter.from9Router(home: home, templates: templates)
+                        case .ccSwitch: list = ProviderImporter.fromCCSwitch(home: home, templates: templates)
+                        case .cpamp: list = ProviderImporter.fromCPAMP(home: home, templates: templates)
+                        case .magpie: list = ProviderImporter.fromMagpie(home: home,
+                            sourceDirectory: directory, templates: templates)
                         }
                         cont.resume(returning: .success(list))
                     }
@@ -192,7 +227,7 @@ final class ImportCenterModel: ObservableObject {
         switch row.state {
         case .unsupported: return 3
         case .exists: return 2
-        case .addable, .unadapted: return row.candidate.enabled ? 0 : 1
+        case .addable, .unadapted, .convertible: return row.candidate.enabled ? 0 : 1
         }
     }
 
@@ -205,9 +240,11 @@ final class ImportCenterModel: ObservableObject {
                         templateLookup: (String) -> ProviderManifest?) -> RowState {
         if c.unsupportedReason != nil { return .unsupported }
         // 去重按 origin (source+sourceRecordId): 同源同记录才算已存在; 显示名相同不算 (FR-07.5)
-        if !c.sourceRecordId.isEmpty,
-           existing.contains(where: { $0.manifest.origin == c.origin }) { return .exists }
-        if c.apiKey.isEmpty && c.template == nil { return .unsupported }
+        guard let reference = c.sourceReference else { return .unsupported }
+        if existing.contains(where: { $0.manifest.sourceReference == reference }) { return .exists }
+        let legacy = existing.filter { $0.manifest.sourceReference == nil && ProviderImporter.matchesExisting(c, manifest: $0.manifest) }
+        if legacy.count > 1 { return .unsupported }
+        if legacy.count == 1 { return .convertible }
         if c.template == nil { return .unadapted }
         // 与 AccountRow.canQuery 同口径: 脚本型模板只声明 cacheFile 也算能查额度
         if let t = c.template, let tmpl = templateLookup(t),
@@ -220,7 +257,8 @@ final class ImportCenterModel: ObservableObject {
     private func noteOf(_ a: ImportCandidate, state: RowState) -> String {
         var note: String
         switch state {
-        case .exists: note = "已存在（同源同账号），默认跳过，不覆盖 Key"
+        case .exists: note = "已存在（同源同账号），默认跳过，不覆盖现有配置"
+        case .convertible: note = "转换为源引用：保留原账号，清除本地旧凭据与缓存，今后随源更新"
         case .unsupported: note = a.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
         case .unadapted:
             note = a.enabled ? "导入后可手动调用，额度查询需自行适配"
@@ -228,6 +266,7 @@ final class ImportCenterModel: ObservableObject {
         case .addable:
             note = a.enabled ? a.note : "在源工具中已停用，可手动勾选导入 · \(a.note)"
         }
+        if !a.note.isEmpty && !note.contains(a.note) { note += " · " + a.note }
         if !a.sourceAccount.isEmpty { note += " · 源账号 \(a.sourceAccount)" }
         return note
     }
@@ -342,7 +381,7 @@ struct ImportCenterSheet: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("导入账号").font(Typo.section).foregroundStyle(Palette.ink)
-                Text("从本机其他工具扫描已有配置，只读源数据，不修改对方文件。")
+                Text("只读引用本机来源，不复制 Key 或 Token；旧导入可转换为源引用，无需手动删除配置。")
                     .font(Typo.small).foregroundStyle(Palette.muted)
             }
             Spacer()
@@ -379,7 +418,7 @@ struct ImportCenterSheet: View {
     private var bodyContent: some View {
         switch im.scanState {
         case .idle, .scanning:
-            ResultBox(kind: .info, title: "正在扫描…", detail: "来源 \(im.source.path)，不会读取之外的任何文件。")
+            ResultBox(kind: .info, title: "正在扫描…", detail: "正在只读扫描 \(im.sourcePath) 中的账号引用。")
         case .timedOut:
             ResultBox(kind: .error, title: "扫描超时", detail: "8 秒内未返回。源可能被其他进程占用，可重试。")
         case .failed(let msg):
@@ -424,6 +463,8 @@ struct ImportCenterSheet: View {
                         Text(row.candidate.name).font(Typo.small)
                             .foregroundStyle(row.imported ? Palette.muted : Palette.ink)
                             .strikethrough(row.imported)
+                        Text("\(row.candidate.source) · provider: \(row.candidate.sourceReference?.providerId ?? "—") · record: \(row.candidate.sourceRecordId)")
+                            .font(Typo.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
                         Text(row.note).font(Typo.small)
                             .foregroundStyle(row.failure != nil ? Palette.danger : Palette.muted)
                         if let f = row.failure {
@@ -456,7 +497,7 @@ struct ImportCenterSheet: View {
         if row.imported { return Palette.ok }
         if row.failure != nil { return Palette.danger }
         switch row.state {
-        case .addable: return Palette.ok
+        case .addable, .convertible: return Palette.ok
         case .exists: return Palette.muted
         case .unsupported: return Palette.danger
         case .unadapted: return Palette.warn
@@ -466,8 +507,14 @@ struct ImportCenterSheet: View {
     private var sourceBox: some View {
         HStack(spacing: 12) {
             Text("源路径").font(Typo.small).foregroundStyle(Palette.muted)
-            Text(im.source.path).font(Typo.mono).foregroundStyle(Palette.ink)
-            BadgeText(text: "只读 · 不修改", locked: true)
+            Text(im.sourcePath).font(Typo.mono).foregroundStyle(Palette.ink).textSelection(.enabled)
+            if im.source == .magpie {
+                Button("选择目录…") { im.chooseMagpieDirectory() }.disabled(im.importing)
+                if !im.magpieDirectory.isEmpty {
+                    Button("默认路径") { im.resetMagpieDirectory() }.disabled(im.importing)
+                }
+            }
+            BadgeText(text: "只读引用", locked: true)
             Spacer()
         }
         .padding(.horizontal, 10).padding(.vertical, 8)

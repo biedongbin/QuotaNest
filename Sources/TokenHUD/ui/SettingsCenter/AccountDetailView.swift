@@ -80,7 +80,7 @@ struct AccountDetailView: View {
                 Button("取消") { model.cancelEdit() }.barButton().keyboardShortcut(.cancelAction)
                 Button("保存") { model.save() }
                     .barButton(.primary).keyboardShortcut("s", modifiers: .command)
-                    .disabled(model.isTestingCurrentConfig)
+                    .disabled(model.isTestingCurrentConfig || model.draftConfigurationReadOnly)
             }.padding(.horizontal, 20).frame(minHeight: 48).background(Palette.surface)
         }
     }

@@ -20,6 +20,16 @@ struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var alternatives: [ProviderCredentialFormat]?
 }
 
+/// A live, read-only reference. Never contains credentials.
+struct ProviderSourceReference: Codable, Equatable, Sendable {
+    let source: String
+    let path: String
+    let recordId: String
+    var providerId: String? = nil
+    var collection: String? = nil
+    var credentialProviderId: String? = nil
+}
+
 struct ProviderManifest: Codable {
     let name: String
     let label: String
@@ -64,6 +74,9 @@ struct ProviderManifest: Codable {
     var inheritQueryHeader: String?
     /// nil preserves automatic default account creation for existing templates.
     var autoCreateDefault: Bool?
+    var sourceReference: ProviderSourceReference?
+
+    var isSourceConfigurationReadOnly: Bool { sourceReference != nil || origin?.isEmpty == false }
 
     var supportsQuota: Bool {
         if let quotaMode { return quotaMode != "none" }
@@ -81,7 +94,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader, autoCreateDefault
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader, autoCreateDefault, sourceReference
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -96,7 +109,7 @@ struct ProviderManifest: Codable {
          quotaAuthModes: [String]? = nil, credentialSource: ProviderCredentialSource? = nil,
          authCallUrl: String? = nil, authCallProtocol: String? = nil, authCallHeader: String? = nil,
          authModelsUrl: String? = nil, inheritQueryUrl: String? = nil, inheritQueryHeader: String? = nil,
-         autoCreateDefault: Bool? = nil) {
+         autoCreateDefault: Bool? = nil, sourceReference: ProviderSourceReference? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -132,6 +145,7 @@ struct ProviderManifest: Codable {
         self.inheritQueryUrl = inheritQueryUrl
         self.inheritQueryHeader = inheritQueryHeader
         self.autoCreateDefault = autoCreateDefault
+        self.sourceReference = sourceReference
     }
 
     init(from decoder: Decoder) throws {
@@ -171,6 +185,7 @@ struct ProviderManifest: Codable {
         inheritQueryUrl = try c.decodeIfPresent(String.self, forKey: .inheritQueryUrl)
         inheritQueryHeader = try c.decodeIfPresent(String.self, forKey: .inheritQueryHeader)
         autoCreateDefault = try c.decodeIfPresent(Bool.self, forKey: .autoCreateDefault)
+        sourceReference = try c.decodeIfPresent(ProviderSourceReference.self, forKey: .sourceReference)
     }
 }
 
@@ -279,9 +294,11 @@ struct UsageCache: Codable {
     var windows: [WindowBucket]?
     /// 供应商用于判断缓存归属的标识；不参与展示或日志。
     var accountId: String?
+    /// Digest of the live source snapshot; never raw source credentials.
+    var sourceRevision: String?
 
     enum CodingKeys: String, CodingKey {
-        case schemaVersion, generatedAt, lastAttemptAt, windows
+        case schemaVersion, generatedAt, lastAttemptAt, windows, sourceRevision
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case accountId = "account_id"
@@ -291,7 +308,8 @@ struct UsageCache: Codable {
 
     init(schemaVersion: Int? = nil, generatedAt: Double? = nil, fiveHour: Bucket? = nil, sevenDay: Bucket? = nil,
          monthly: Bucket? = nil, error: String? = nil, stale: Bool? = nil,
-         lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil, accountId: String? = nil) {
+         lastAttemptAt: Double? = nil, windows: [WindowBucket]? = nil, accountId: String? = nil,
+         sourceRevision: String? = nil) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
         self.fiveHour = fiveHour
@@ -302,6 +320,7 @@ struct UsageCache: Codable {
         self.lastAttemptAt = lastAttemptAt
         self.windows = windows
         self.accountId = accountId
+        self.sourceRevision = sourceRevision
     }
 
     init(from decoder: Decoder) throws {
@@ -317,6 +336,7 @@ struct UsageCache: Codable {
         lastAttemptAt = try c.decodeIfPresent(Double.self, forKey: .lastAttemptAt)
         windows = try c.decodeIfPresent([WindowBucket].self, forKey: .windows)
         accountId = try c.decodeIfPresent(String.self, forKey: .accountId)
+        sourceRevision = try c.decodeIfPresent(String.self, forKey: .sourceRevision)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -331,6 +351,7 @@ struct UsageCache: Codable {
         try c.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
         try c.encodeIfPresent(windows, forKey: .windows)
         try c.encodeIfPresent(accountId, forKey: .accountId)
+        try c.encodeIfPresent(sourceRevision, forKey: .sourceRevision)
     }
 
     /// 解析 fetch.sh stdout（可缺 generatedAt/ttlMs 等字段），统一盖上框架字段

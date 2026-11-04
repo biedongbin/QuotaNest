@@ -135,6 +135,7 @@ try {
       source: cfg.source === 'api' ? 'api' : 'cache',
       cache: cfg.cache, // 绝对路径
       authSourceFile: typeof cfg.authSourceFile === 'string' ? cfg.authSourceFile : null,
+      sourceReferenceDependencies: cfg.sourceReferenceDependencies,
       auth: join(HUD_DIR, '.never-exists'), // 不存在 → 不 spawn
       spawnEnv: {},
       buckets: cfg.buckets || { seven_day: '周' },
@@ -260,7 +261,24 @@ function renderEnvQuota(envKey, stdin) {
     sevenDay = rl.seven_day;
   } else {
     const cache = readJsonSafe(cfg.cache);
-    if (cfg.authSourceFile) {
+    if (cfg.sourceReferenceDependencies != null) {
+      const deps = cfg.sourceReferenceDependencies;
+      let valid = deps && typeof deps === 'object' && !Array.isArray(deps)
+        && Object.keys(deps).length > 0 && typeof cache?.sourceRevision === 'string'
+        && cache.sourceRevision.length > 0 && Number.isFinite(cache.generatedAt);
+      if (valid) {
+        for (const [path, recorded] of Object.entries(deps)) {
+          let current = 0;
+          try { current = statSync(path).mtimeMs; } catch { /* Optional WAL may be absent. */ }
+          if (!Number.isFinite(recorded) || Math.floor(current) !== Math.floor(recorded)
+              || current > cache.generatedAt || (path === cfg.authSourceFile && current === 0)) {
+            valid = false;
+            break;
+          }
+        }
+      }
+      if (!valid) return `${labelSeg} ${wrap(C.yellow, '来源变更，待查询')}`;
+    } else if (cfg.authSourceFile) {
       try {
         if (statSync(cfg.authSourceFile).mtimeMs > (cache?.generatedAt || 0)) {
           return `${labelSeg} ${wrap(C.yellow, '授权已变化，待查询')}`;

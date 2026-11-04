@@ -30,6 +30,7 @@ struct SettingsCenterView: View {
                         if let row = model.current, model.navPage == .detail, model.draft == nil {
                             Button { model.duplicateAccount(row.id) } label: { Label("复制账号", systemImage: "plus.square.on.square") }
                                 .keyboardShortcut("d", modifiers: .command)
+                                .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
                         }
                     }
                 }
@@ -409,6 +410,7 @@ struct AccountContextMenu: View {
     var body: some View {
         Button("打开账号") { _ = model.selectAccount(row.id, tab: .config) }
         Button("复制账号…") { model.duplicateAccount(row.id) }
+            .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
         Button("查询额度") { model.query(row.id) }
             .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
         Divider()

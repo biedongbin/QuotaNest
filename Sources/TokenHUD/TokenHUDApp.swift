@@ -39,7 +39,8 @@ struct TokenHUDApp: App {
         case .importScan:
             for (name, rows) in [("9router", ProviderImporter.from9Router(home: home.path)),
                                  ("cc-switch", ProviderImporter.fromCCSwitch(home: home.path)),
-                                 ("cpamp", ProviderImporter.fromCPAMP(home: home.path))] {
+                                 ("cpamp", ProviderImporter.fromCPAMP(home: home.path)),
+                                 ("magpie", ProviderImporter.fromMagpie(home: home.path))] {
                 print("\(name): total=\(rows.count), importable=\(rows.filter { $0.unsupportedReason == nil }.count)")
             }
             exit(0)

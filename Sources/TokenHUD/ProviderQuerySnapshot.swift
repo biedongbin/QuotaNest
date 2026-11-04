@@ -5,6 +5,7 @@ import Foundation
 struct ProviderQuerySnapshot {
     let file: URL
     let queryURL: String
+    let sourceRevision: String?
     let secrets: [String]
     private let directory: URL
 
@@ -14,7 +15,7 @@ struct ProviderQuerySnapshot {
             try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
         } ?? [:]
         object = ProviderConfigStore.removingQueryCredentials(from: object, manifest: manifest)
-        object["authMode"] = config.authMode
+        object["authMode"] = resolved.authMode
         object["tokenhudResolvedAuth"] = true
         object["tokenhudAuthContext"] = resolved.authContext
         object["queryKey"] = resolved.queryKey
@@ -41,7 +42,7 @@ struct ProviderQuerySnapshot {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
-        return ProviderQuerySnapshot(file: file, queryURL: resolved.queryUrl,
+        return ProviderQuerySnapshot(file: file, queryURL: resolved.queryUrl, sourceRevision: resolved.sourceRevision,
                                      secrets: [resolved.refreshKey, resolved.queryKey] + Array(resolved.authContext.values)
                                         + Array(headers.values), directory: directory)
     }

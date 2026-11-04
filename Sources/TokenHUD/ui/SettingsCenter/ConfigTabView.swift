@@ -49,10 +49,12 @@ struct ConfigTabView: View {
         ProviderCapabilityPresentation(manifest: row.plugin.manifest, generic: !row.builtin)
     }
     private var canCall: Bool { capability.canCall(using: config.authMode) }
+    private var readOnly: Bool { row.plugin.manifest.isSourceConfigurationReadOnly }
+    private var resolvedCall: ProviderConfig? { try? ProviderAuthentication.resolveCall(config) }
     private var quotaAddress: String {
         do {
             let resolved = try ProviderAuthentication.resolveQuota(config)
-            return resolved.queryUrl.isEmpty ? "供应商脚本" : resolved.queryUrl
+            return resolved.queryUrl.isEmpty ? "供应商脚本" : (readOnly ? SettingsModel.safeSourceLocation(resolved.queryUrl) : resolved.queryUrl)
         } catch {
             return "基础认证解析失败，查询地址暂不可用"
         }
@@ -62,26 +64,48 @@ struct ConfigTabView: View {
             HStack {
                 Text("连接配置").font(.headline)
                 Spacer()
-                AccountActionButton(title: "编辑连接", identifier: "account.edit-connection") {
+                AccountActionButton(title: "编辑连接", identifier: "account.edit-connection", enabled: !readOnly) {
                     model.startEdit()
                 }.fixedSize().frame(height: 28)
             }
+            if readOnly { sourceDetails }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
                 apiConnection
                 quotaConnection
             }
             HStack {
                 Button("复制账号…", systemImage: "plus.square.on.square") { model.duplicateAccount(row.id) }
+                    .disabled(readOnly)
                 Spacer()
                 Button("删除账号…", role: .destructive) { model.delete(row.id) }
             }
+        }
+    }
+    private var sourceDetails: some View {
+        GroupBox("来源配置 · 只读") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(SettingsModel.sourceReadOnlyMessage).font(.callout)
+                if let source = row.plugin.manifest.sourceReference {
+                    KeyValueRow("来源工具") { Text(source.source) }
+                    KeyValueRow("记录 ID", mono: true) { Text(source.recordId) }
+                    KeyValueRow("Provider ID", mono: true) { Text(source.providerId ?? "未记录") }
+                    KeyValueRow("来源位置", mono: true) { Text(SettingsModel.safeSourceLocation(source.path)) }
+                } else {
+                    KeyValueRow("旧来源标识", mono: true) { Text(row.plugin.manifest.origin ?? "未记录") }
+                    Text("旧导入账号已锁定；来源引用待迁移，请到原工具修改。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     private var apiConnection: some View {
         GroupBox("① 基础接入") {
                 VStack(alignment: .leading, spacing: 8) {
                     if canCall {
-                        KeyValueRow("服务地址", mono: true) { Text(model.baseAddressDescription(config)) }
+                        KeyValueRow("服务地址", mono: true) {
+                            let address = model.baseAddressDescription(config)
+                            Text(readOnly ? SettingsModel.safeSourceLocation(address) : address)
+                        }
                         KeyValueRow("协议") { Text(model.baseProtocolDescription(config)) }
                     } else {
                         Label("当前认证的模型调用与调度未接入", systemImage: "info.circle")
@@ -91,7 +115,14 @@ struct ConfigTabView: View {
                         Text(issue).font(.callout).foregroundStyle(Palette.warn)
                     }
                     KeyValueRow("认证方式") { Text(config.authMode == "auth" ? "Auth · 授权文件" : (config.authMode == "apikey" ? "API Key" : config.authMode)) }
-                    if config.authMode == "auth" {
+                    if readOnly {
+                        KeyValueRow("基础凭证") {
+                            Text(row.plugin.manifest.sourceReference == nil ? "旧导入凭证已锁定，等待来源引用迁移" : "运行时只读引用来源认证，不复制凭证")
+                        }
+                        if let issue = model.authenticationIssue(config) {
+                            Text(issue).font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
+                        }
+                    } else if config.authMode == "auth" {
                         KeyValueRow("有效来源") { Text(model.authSourceDescription(config)) }
                         if canCall, let issue = model.authenticationIssue(config) {
                             Text(issue).font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
@@ -99,7 +130,12 @@ struct ConfigTabView: View {
                     } else {
                         KeyValueRow("基础凭证") { Text(maskKey(config.refreshKey)) }
                     }
-                    if canCall { KeyValueRow("模型", mono: true) { Text(config.testModel.isEmpty ? "未指定" : config.testModel) } }
+                    if canCall {
+                        KeyValueRow("模型", mono: true) {
+                            let modelName = row.plugin.manifest.sourceReference == nil ? config.testModel : resolvedCall?.testModel ?? ""
+                            Text(modelName.isEmpty ? "未指定" : modelName)
+                        }
+                    }
                     if row.builtin && canCall { Label("供应商类型固定服务地址与协议", systemImage: "lock").font(.callout).foregroundStyle(.secondary) }
                     HStack {
                         Label(!canCall ? "模型测试与调度未接入" : (model.callConfigured(row) ? "调用配置完整" : "调用尚未配置完整"),
@@ -125,7 +161,7 @@ struct ConfigTabView: View {
                         Button("查看额度", systemImage: "chart.bar") { model.tab = .quota }
                     } else {
                         Label("未启用额度查询", systemImage: "minus.circle").foregroundStyle(.secondary)
-                        Text(canCall ? "API 调用和调用计划可独立使用。需要时编辑连接，选择额度查询方式。" : "请编辑连接，检查基础认证与供应商用量查询能力。")
+                        Text(readOnly ? "用量查询由来源配置提供，请到来源工具修改。" : (canCall ? "API 调用和调用计划可独立使用。需要时编辑连接，选择额度查询方式。" : "请编辑连接，检查基础认证与供应商用量查询能力。"))
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -146,11 +182,19 @@ struct TriggerTabView: View {
                 Text("调用计划").font(.headline)
                 Spacer()
                 Button("编辑计划", systemImage: "pencil") { model.startEdit() }
+                    .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
+            }
+            if row.plugin.manifest.isSourceConfigurationReadOnly {
+                Label(SettingsModel.sourceReadOnlyMessage, systemImage: "lock").font(.callout)
             }
             GroupBox("③ API 调度 · 启动 5h 使用窗口") {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(planState, systemImage: "calendar.badge.clock")
-                    KeyValueRow("调用模型", mono: true) { Text(config.testModel.isEmpty ? "未指定" : config.testModel) }
+                    KeyValueRow("调用模型", mono: true) {
+                        let modelName = row.plugin.manifest.sourceReference == nil ? config.testModel
+                            : (try? ProviderAuthentication.resolveCall(config).testModel) ?? ""
+                        Text(modelName.isEmpty ? "未指定" : modelName)
+                    }
                     if !config.scheduleTimes.isEmpty {
                         Text(config.scheduleTimes.joined(separator: "、")).monospacedDigit().textSelection(.enabled)
                     }

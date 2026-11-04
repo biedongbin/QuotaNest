@@ -6,13 +6,16 @@ struct EnvsEntry: Codable {
     var cache: String
     var buckets: [String: String]
     var authSourceFile: String?
+    var sourceReferenceDependencies: [String: Double]?
 
-    init(label: String, source: String, cache: String, buckets: [String: String], authSourceFile: String? = nil) {
+    init(label: String, source: String, cache: String, buckets: [String: String], authSourceFile: String? = nil,
+         sourceReferenceDependencies: [String: Double]? = nil) {
         self.label = label
         self.source = source
         self.cache = cache
         self.buckets = buckets
         self.authSourceFile = authSourceFile
+        self.sourceReferenceDependencies = sourceReferenceDependencies
     }
 
     /// P2-3: 顶层 `_schemaVersion` 元数据 key 容错解码为空 entry, 读端过滤掉
@@ -23,6 +26,7 @@ struct EnvsEntry: Codable {
         cache = try c.decodeIfPresent(String.self, forKey: .cache) ?? ""
         buckets = try c.decodeIfPresent([String: String].self, forKey: .buckets) ?? [:]
         authSourceFile = try c.decodeIfPresent(String.self, forKey: .authSourceFile)
+        sourceReferenceDependencies = try c.decodeIfPresent([String: Double].self, forKey: .sourceReferenceDependencies)
     }
 }
 
@@ -50,15 +54,40 @@ enum HUDSync {
             let file = p.manifest.authFile.map(PluginGenerator.expandPath)
                 ?? hudDir.appendingPathComponent(".\(p.slug)-usage-auth.json")
             let config = ProviderConfigStore.read(authFile: file, manifest: p.manifest)
-            let authSource = config.authMode == "auth"
-                ? ProviderAuthentication.credentialFileURL(for: config)?.path : nil
+            let authSource = config.sourceReference.map { PluginGenerator.expandPath($0.path).path }
+                ?? (config.authMode == "auth" ? ProviderAuthentication.credentialFileURL(for: config)?.path : nil)
+            // Only public dependency metadata crosses into the external HUD; never resolve source credentials here.
+            let dependencies = config.sourceReference.map(referenceDependencies)
             d[accountKey(p)] = EnvsEntry(
                 label: p.manifest.fullName,
                 source: p.manifest.quotaMode == "none" || (p.manifest.quotaMode != nil && config.quotaMode == "none") ? "api" : "cache",
                 cache: DataEngine.cachePath(for: p, hudDir: hudDir).path,
-                buckets: p.manifest.buckets, authSourceFile: authSource)
+                buckets: p.manifest.buckets, authSourceFile: authSource,
+                sourceReferenceDependencies: dependencies)
         }
         return d
+    }
+
+    private static func referenceDependencies(_ reference: ProviderSourceReference) -> [String: Double] {
+        Dictionary(uniqueKeysWithValues: ImportedSource.dependencies(reference).map { path in
+            let modified = (try? path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+                .timeIntervalSince1970 ?? 0
+            return (path.path, modified * 1000)
+        })
+    }
+
+    /// Refresh only an already-exported reference entry after the App accepts a bound query result.
+    static func refreshReferenceDependencies(slug: String, reference: ProviderSourceReference, hudDir: URL) throws {
+        let file = hudDir.appendingPathComponent("envs.json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        let data = try Data(contentsOf: file)
+        guard var entries = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var entry = entries[slug] as? [String: Any],
+              entry["sourceReferenceDependencies"] != nil else { return }
+        entry["sourceReferenceDependencies"] = referenceDependencies(reference)
+        entries[slug] = entry
+        try JSONSerialization.data(withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
+            .write(to: file, options: .atomic)
     }
 
     /// new 全量替换自定义段; existing 里属于内置/自定义(非内置 key)但 new 已不含的 → 删除

@@ -29,7 +29,7 @@ enum ProviderAuthentication {
 
     static func resolveCall(_ config: ProviderConfig) throws -> ProviderConfig {
         var resolved = try resolveBase(config)
-        if config.authMode == "auth" {
+        if resolved.authMode == "auth" {
             guard let url = config.authCallURL, !url.isEmpty,
                   let proto = config.authCallProtocol, ["openai", "anthropic", "responses"].contains(proto) else {
                 throw ProviderAuthenticationError(message: "该供应商尚未声明受支持的 Auth 模型调用接口；不会把授权令牌发送到 API Key 接口")
@@ -43,40 +43,80 @@ enum ProviderAuthentication {
 
     /// Quota can use an existing login even when its model-call adapter is unavailable.
     static func resolveQuota(_ config: ProviderConfig) throws -> ProviderConfig {
-        if let modes = config.quotaAuthModes, !modes.contains(config.authMode) {
+        var resolved = try resolveBase(config)
+        if let modes = config.quotaAuthModes, !modes.contains(resolved.authMode) {
             throw ProviderAuthenticationError(message: "此供应商用量接口不支持当前基础认证模式")
         }
-        if config.queryAuth == "header" && config.authMode != "auth" {
+        if config.queryAuth == "header" && resolved.authMode != "auth" {
             throw ProviderAuthenticationError(message: "此用量接口需要 Auth 登录，不能使用 API Key 查询订阅额度")
         }
         if ["jwt", "cookie"].contains(config.queryAuth ?? "") && config.inheritQueryURL == nil {
             throw ProviderAuthenticationError(message: "此类型暂未声明继承基础认证的用量接口")
         }
-        var resolved = try resolveBase(config)
         resolved.queryUrl = config.inheritQueryURL ?? config.queryUrl
         resolved.queryKey = resolved.refreshKey
         resolved.queryHeader = config.inheritQueryHeader ?? resolved.refreshHeader
         return resolved
     }
 
-    private static func resolveBase(_ config: ProviderConfig) throws -> ProviderConfig {
+    static func resolveBase(_ config: ProviderConfig) throws -> ProviderConfig {
         if config.credentialsResolved { return config }
+        guard !config.isSourceConfigurationReadOnly || config.sourceReference != nil else {
+            throw ProviderAuthenticationError(message: "旧导入账号缺少实时来源引用，请重新导入；不会使用旧复制凭证")
+        }
         var resolved = config
-        switch config.authMode {
+        var sourceObject: [String: Any]?
+        if let reference = config.sourceReference {
+            let record = try ImportedSource.read(reference)
+            if reference.source == "magpie", reference.collection?.hasPrefix("providers") == true,
+               let template = config.sourceTemplate {
+                let templates = ProviderImporter.bundledTemplates()
+                let identity = record.object["preset"] as? String ?? record.object["catalog"] as? String
+                    ?? record.object["id"] as? String ?? ""
+                let declared = ProviderImporter.matchingTemplate(provider: identity, base: "", templates: templates)
+                let endpoint = ProviderImporter.matchingTemplate(provider: "", base: record.baseURL, templates: templates)
+                guard (declared == nil || declared?.slug == template), endpoint?.slug == template else {
+                    throw ProviderAuthenticationError(message: "导入来源供应商类型或固定接口已变化，请重新导入")
+                }
+            }
+            sourceObject = record.object
+            resolved.authMode = record.authMode
+            resolved.refreshKey = record.key
+            resolved.sourceRevision = record.revision
+            if !config.sourceEndpointIsFixed {
+                guard !record.baseURL.isEmpty else {
+                    throw ProviderAuthenticationError(message: "导入来源缺少可用接口地址")
+                }
+                resolved.apiBaseURL = record.baseURL
+                resolved.refreshProtocol = record.protocolName
+                resolved.refreshUrl = APIEndpoint.requestURL(baseURL: record.baseURL, protocolName: record.protocolName)
+                resolved.refreshHeader = record.protocolName == "anthropic"
+                    ? "x-api-key: <key>\nanthropic-version: 2023-06-01" : "Authorization: Bearer <key>"
+            }
+            if !record.model.isEmpty { resolved.testModel = record.model }
+        }
+        switch resolved.authMode {
         case "apikey":
-            guard !config.refreshKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard !resolved.refreshKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  resolved.refreshKey.rangeOfCharacter(from: .controlCharacters) == nil else {
                 throw ProviderAuthenticationError(message: "请填写基础接入的 API Key")
             }
         case "auth":
             guard let source = config.credentialSource else {
                 throw ProviderAuthenticationError(message: "此供应商未提供本机 Auth 适配，请选择 API Key 或使用支持 Auth 的类型")
             }
-            guard let file = credentialFileURL(for: config) else {
-                throw ProviderAuthenticationError(message: "未指定本机 Auth 授权文件，请选择文件")
-            }
-            guard let data = try? Data(contentsOf: file),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw ProviderAuthenticationError(message: "无法读取本机授权文件，请先在对应客户端登录")
+            let object: [String: Any]
+            if let sourceObject {
+                object = sourceObject
+            } else {
+                guard let file = credentialFileURL(for: config) else {
+                    throw ProviderAuthenticationError(message: "未指定本机 Auth 授权文件，请选择文件")
+                }
+                guard let data = try? Data(contentsOf: file),
+                      let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    throw ProviderAuthenticationError(message: "无法读取本机授权文件，请先在对应客户端登录")
+                }
+                object = parsed
             }
             let formats = [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
                 requiredValues: source.requiredValues, contextPaths: source.contextPaths)] + (source.alternatives ?? [])

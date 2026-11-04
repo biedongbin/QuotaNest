@@ -68,7 +68,7 @@ enum AccountHealthAssessment {
         if config.authMode == "auth", jwtExpired(resolved.refreshKey, now: now) {
             return .issue(reason: "Auth 凭证已过期，请重新登录")
         }
-        for address in [config.apiBaseURL, config.refreshUrl, config.authMode == "auth" ? (config.authCallURL ?? "") : ""]
+        for address in [resolved.apiBaseURL, resolved.refreshUrl, resolved.authMode == "auth" ? (resolved.authCallURL ?? "") : ""]
             where !address.isEmpty {
             if !SettingsValidation.isValidURL(address) { return .issue(reason: "基础接入地址无效") }
         }
@@ -79,13 +79,13 @@ enum AccountHealthAssessment {
                     return .issue(reason: "额度查询地址缺失或无效")
                 }
             }
-        } else if config.authMode == "apikey" && config.apiBaseURL.isEmpty && config.refreshUrl.isEmpty {
+        } else if resolved.authMode == "apikey" && resolved.apiBaseURL.isEmpty && resolved.refreshUrl.isEmpty {
             return .issue(reason: "请填写基础接入的服务地址")
         }
         if scheduleEnabled && !config.scheduleTimes.isEmpty {
-            let callURL = config.authMode == "auth" ? (config.authCallURL ?? "") : config.refreshUrl
+            let callURL = resolved.authMode == "auth" ? (resolved.authCallURL ?? "") : resolved.refreshUrl
             if !SettingsValidation.isValidURL(callURL) { return .issue(reason: "调用计划缺少有效调用地址") }
-            if config.testModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if resolved.testModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return .issue(reason: "调用计划未配置模型")
             }
         }

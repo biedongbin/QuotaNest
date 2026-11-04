@@ -122,3 +122,18 @@ Auth 选项只在类型声明授权来源时可用；未声明来源的类型禁
 本轮最终Swift、Node、构建和安装结果由主线程据实际日志统一补充，不合并不同suite为猜测总数。真实Auth/APIKey联通、套餐模型归属、供应商窗口机制和实际客户端来源导入须逐项留证；离线保存／格式回归不能替代这些验收。
 
 最新纳入规则：没有真实额度查询的供应商不加入内置类型。Groq仅提供速率响应头，改为不启用，55个固定额度类型之外保留自定义OpenAI兼容／Anthropic兼容两个通用入口；自定义仅支持基础API Key，不支持Auth文件。用户提供完整额度URL，默认HTTP GET并复用同一基础Key，按通用标准JSON normalize契约解析；不添加独立查询认证、不猜测billing路径、不要求用户自写查询脚本。自定义入口不计入72个固定品牌候选。
+
+## 九、导入账号：实时只读来源引用
+
+导入不复制Auth或API Key。`ProviderSourceReference` 保存 `source/path/recordId` 及可选 `providerId/collection/credentialProviderId`；文件按原路径读取，SQLite用只读连接按记录主键和类型精确匹配。每次操作解析来源为本次内存认证快照，不把解析后的Key落入账号文件；来源缺失、删除、类型变化或身份映射不唯一时明确失败，不使用旧复制凭证。四种来源并不代表各来源的全部供应商均已适配。
+
+| 来源 | 绑定与支持边界 |
+|---|---|
+| 9router | `providerConnections.id + provider`；Auth/API Key结构必须符合对应模板。通用兼容记录只在显式协议、地址有效时接入。 |
+| cc-switch | 当前仅Claude，按 `id + app_type` 复合身份读取；其它命名空间预览为不支持，不跨类型取同名主键。 |
+| CPAMP | 引用既有CPA授权文件，以文件名和 `type` 校验；仅已有模板支持的认证格式可导入，不复制JSON秘密或触发refresh。 |
+| Magpie | 主Key引用 `providers.json` 的原providerID并跟随当前Key；额外Key以SHA256前10位十六进制指纹定位槽，删除或更换后不可用，不自动改指向别的Key。插件保留完整账号slot、实际providerID（可含 `-plugin`）及credential providerID，并结合 `plugin-providers.json` 验证唯一归属；原生logins的owner/CLI/Keychain凭证不支持，按不支持处理。默认根目录为绝对 `XDG_CONFIG_HOME` 下的magpie，否则为 `~/.config/magpie`；UI允许显式选择含配置文件的portable根目录。 |
+
+导入配置只读：名称、认证、接口地址、模型及计划配置不能在TokenHUD内改写；允许本地启停、显示、查询和删除关联，均不修改来源。通用来源账号每次使用源记录当前显式协议与URL，内置模板则保持类型固定协议；URL展示去除userinfo与query，避免带出秘密。旧 `origin` 导入账号锁定，可通过重扫转换为来源引用，保持原slug并清除旧本地Key与不再匹配的缓存。
+
+来源记录内容形成 `sourceRevision` 摘要，用于隔离旧缓存、源变更和迟到回包；来源删除不继续展示旧成功状态。HUD只记录安全依赖路径及mtime（数据库含WAL、插件含身份映射依赖），不解析秘密数据库。最终回归结果由主线程统一汇总；这里不将源码接线或扫描成功视为真实供应商联通、原生Keychain导入或登录续期已验证。

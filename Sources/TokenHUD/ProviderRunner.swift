@@ -55,7 +55,7 @@ final class ProviderRunner {
         let originalAuth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
             ?? logDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
         var snapshot: ProviderQuerySnapshot?
-        if FileManager.default.fileExists(atPath: originalAuth.path) || plugin.manifest.credentialSource != nil {
+        if FileManager.default.fileExists(atPath: originalAuth.path) || plugin.manifest.credentialSource != nil || plugin.manifest.sourceReference != nil {
             do {
                 let config = ProviderConfigStore.read(authFile: originalAuth, manifest: plugin.manifest)
                 snapshot = try ProviderQuerySnapshot.make(config: config, manifest: plugin.manifest, originalAuth: originalAuth)
@@ -114,7 +114,9 @@ final class ProviderRunner {
         }
 
         let data = stdout.finish(within: 2)
-        let cache = UsageCache.make(body: data, now: Date().timeIntervalSince1970 * 1000)
+        var cache = UsageCache.make(body: data, now: Date().timeIntervalSince1970 * 1000)
+        // Bind both success and parsed failures to the credentials actually used by this request.
+        cache?.sourceRevision = snapshot?.sourceRevision
         if cache == nil { dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? []) } // stdout 解析失败也留诊断线索
         return cache
     }

@@ -332,6 +332,7 @@ final class SettingsModel: ObservableObject {
     private let defaults: UserDefaults
     private let confirmDiscardChanges: (() -> Bool)?
     private let confirmResumePlan: (() -> Bool)?
+    private let confirmDeleteAccount: (() -> Bool)?
     private let confirmTestCall: ((CallTestConfirmation) -> Bool)?
     private let executeTestCall: (ProviderConfig) async -> String?
     private let executeQuotaQuery: (String) async -> RefreshOutcome
@@ -400,7 +401,8 @@ final class SettingsModel: ObservableObject {
          confirmResumePlan: (() -> Bool)? = nil,
          confirmTestCall: ((CallTestConfirmation) -> Bool)? = nil,
          executeTestCall: ((ProviderConfig) async -> String?)? = nil,
-         executeQuotaQuery: ((String) async -> RefreshOutcome)? = nil) {
+         executeQuotaQuery: ((String) async -> RefreshOutcome)? = nil,
+         confirmDeleteAccount: (() -> Bool)? = nil) {
         self.engine = engine
         self.hudDir = hudDir
         self.userDir = userDir
@@ -409,6 +411,7 @@ final class SettingsModel: ObservableObject {
         self.defaults = defaults
         self.confirmDiscardChanges = confirmDiscardChanges
         self.confirmResumePlan = confirmResumePlan
+        self.confirmDeleteAccount = confirmDeleteAccount
         self.confirmTestCall = confirmTestCall
         self.executeTestCall = executeTestCall ?? { config in await RefreshTrigger.testRefresh(config: config) }
         self.executeQuotaQuery = executeQuotaQuery ?? { [engine] slug in await engine.forceRefresh(slug: slug) }
@@ -522,7 +525,7 @@ final class SettingsModel: ObservableObject {
         do {
             let resolved = try ProviderAuthentication.resolveCall(config)
             return SettingsValidation.isValidURL(resolved.refreshUrl) && !resolved.refreshKey.isEmpty
-                && !config.testModel.isEmpty
+                && !resolved.testModel.isEmpty
         } catch { return false }
     }
 
@@ -546,7 +549,20 @@ final class SettingsModel: ObservableObject {
         return authSourceDescription(callConfigForDraft(draft.values))
     }
 
+    nonisolated static func safeSourceLocation(_ location: String) -> String {
+        guard var url = URLComponents(string: location), url.host != nil else { return location }
+        url.user = nil
+        url.percentEncodedPassword = nil
+        url.query = nil
+        url.fragment = nil
+        return url.string ?? "来源地址"
+    }
+
     func baseAddressDescription(_ config: ProviderConfig) -> String {
+        if config.sourceReference != nil {
+            do { return Self.safeSourceLocation(try ProviderAuthentication.resolveCall(config).apiBaseURL) }
+            catch { return "来源调用尚不可用" }
+        }
         guard config.authMode == "auth" else { return config.apiBaseURL.isEmpty ? "未配置" : config.apiBaseURL }
         do { return try ProviderAuthentication.resolveCall(config).apiBaseURL }
         catch { return "Auth 调用尚不可用" }
@@ -554,7 +570,7 @@ final class SettingsModel: ObservableObject {
 
     func baseProtocolDescription(_ config: ProviderConfig) -> String {
         let name: String
-        if config.authMode == "auth" {
+        if config.authMode == "auth" || config.sourceReference != nil {
             do { name = try ProviderAuthentication.resolveCall(config).refreshProtocol }
             catch { return "由 Auth 调用能力提供；当前不可用" }
         } else { name = config.refreshProtocol }
@@ -691,8 +707,24 @@ final class SettingsModel: ObservableObject {
         importOpen = true
     }
 
+    static let sourceReadOnlyMessage = "导入账号的配置只读，请到来源工具修改；本地启停、显示和删除关联仍可使用。"
+
+    func configurationReadOnly(_ slug: String?) -> Bool {
+        guard let slug, let plugin = engine.allPlugins.first(where: { $0.slug == slug }) else { return false }
+        return plugin.manifest.isSourceConfigurationReadOnly
+    }
+
+    var draftConfigurationReadOnly: Bool { configurationReadOnly(draft?.slug) }
+
+    private func rejectSourceConfigurationEdit(_ slug: String?) -> Bool {
+        guard configurationReadOnly(slug) else { return false }
+        topError = Self.sourceReadOnlyMessage
+        flash(topError, error: true)
+        return true
+    }
+
     func startEdit() {
-        guard let row = current else { return }
+        guard let row = current, !rejectSourceConfigurationEdit(row.id) else { return }
         let cfg = readConfig(row.plugin)
         var v = DraftValues(name: row.name, url: cfg.apiBaseURL, key: cfg.refreshKey,
                             model: cfg.testModel, prompt: cfg.testPrompt, proto: cfg.refreshProtocol,
@@ -709,7 +741,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func duplicateAccount(_ slug: String) {
-        guard leaveGuard(), row(slug) != nil else { return }
+        guard !rejectSourceConfigurationEdit(slug), leaveGuard(), row(slug) != nil else { return }
         selected = slug
         startEdit()
         guard var copy = draft else { return }
@@ -776,7 +808,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func addTime() {
-        guard var d = draft else { return }
+        guard var d = draft, !rejectSourceConfigurationEdit(d.slug) else { return }
         let t = d.timeInput.trimmingCharacters(in: .whitespaces)
         guard SettingsValidation.isValidTime(t) else {
             errors["time"] = "请使用严格的 HH:MM 格式，例如 09:00；9:00 不合法"
@@ -798,14 +830,14 @@ final class SettingsModel: ObservableObject {
     }
 
     func removeTime(at index: Int) {
-        guard var d = draft, d.values.times.indices.contains(index) else { return }
+        guard var d = draft, !rejectSourceConfigurationEdit(d.slug), d.values.times.indices.contains(index) else { return }
         let removed = d.values.times.remove(at: index)
         draft = d
         flash("已从草稿移除 \(removed)", error: false)
     }
 
     func save() {
-        guard let d = draft else { return }
+        guard let d = draft, !rejectSourceConfigurationEdit(d.slug) else { return }
         guard !isTestingCurrentConfig else {
             topError = "测试调用进行中，请等待结果后再保存；当前输入已保留。"
             flash(topError, error: true)
@@ -974,6 +1006,9 @@ final class SettingsModel: ObservableObject {
             throw NSError(domain: "TokenHUD", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "账号已不存在，请重新选择"])
         }
+        guard !p.manifest.isSourceConfigurationReadOnly else {
+            throw ProviderAuthenticationError(message: Self.sourceReadOnlyMessage)
+        }
         if p.manifest.authStyle != "apikey",
            !AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
             throw NSError(domain: "TokenHUD", code: 2,
@@ -1060,12 +1095,14 @@ final class SettingsModel: ObservableObject {
     /// 供测试与模型目录共用点击时的配置快照，不保存、不发请求。
     func callConfigForDraft(_ values: DraftValues) -> ProviderConfig {
         let existing = draft?.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
+        if draftConfigurationReadOnly { return existing ?? ProviderConfig() }
         return draftConfig(values, existing: existing)
     }
 
     /// 使用点击时的当前输入，不保存凭证、配置或计划。
     func testCallDraft(values: DraftValues) {
-        guard draft != nil else { flash("请先打开账号配置", error: true); return }
+        guard let draft else { flash("请先打开账号配置", error: true); return }
+        guard !rejectSourceConfigurationEdit(draft.slug) else { return }
         let config = callConfigForDraft(values)
         performTestCall(config: config, key: callTestResultKey, source: "当前输入",
                         providerName: values.name.isEmpty ? "新账号" : values.name)
@@ -1189,13 +1226,18 @@ final class SettingsModel: ObservableObject {
 
     func delete(_ slug: String) {
         guard let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return }
-        let alert = NSAlert()
-        alert.messageText = "删除 \(p.manifest.fullName)?"
-        alert.informativeText = "将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。"
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
-        alert.alertStyle = .warning
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let confirmed: Bool
+        if let confirmDeleteAccount { confirmed = confirmDeleteAccount() }
+        else {
+            let alert = NSAlert()
+            alert.messageText = "删除 \(p.manifest.fullName)?"
+            alert.informativeText = "将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。"
+            alert.addButton(withTitle: "删除")
+            alert.addButton(withTitle: "取消")
+            alert.alertStyle = .warning
+            confirmed = alert.runModal() == .alertFirstButtonReturn
+        }
+        guard confirmed else { return }
         guard AccountFileOwnership.canRemovePluginDirectory(p.dir, slug: slug, userDir: userDir) else {
             flash("无法删除：账号目录不属于本应用，已保留外部文件。", error: true)
             return

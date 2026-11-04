@@ -18,6 +18,15 @@ struct DraftFormView: View {
     private var canCall: Bool { capability.canCall(using: draft.values.authMode) }
 
     var body: some View {
+        if model.draftConfigurationReadOnly {
+            Label(SettingsModel.sourceReadOnlyMessage, systemImage: "lock")
+                .font(.callout).textSelection(.enabled)
+        } else {
+            editableForm
+        }
+    }
+
+    private var editableForm: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("基础接入、用量查询与 API 调度分别设置，保存后生效。")
                 .font(.callout).foregroundStyle(.secondary)

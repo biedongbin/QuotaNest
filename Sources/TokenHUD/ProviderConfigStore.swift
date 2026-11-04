@@ -5,6 +5,11 @@ struct ProviderConfig {
     var authMode = "apikey"
     var authCredentialFile = ""
     // Read-only capability metadata from the supplier declaration, never persisted credentials.
+    var sourceReference: ProviderSourceReference?
+    var sourceRevision: String?
+    var sourceTemplate: String?
+    var sourceEndpointIsFixed = false
+    var isSourceConfigurationReadOnly = false
     var credentialsResolved = false
     var authContext: [String: String] = [:]
     var quotaAuthModes: [String]?
@@ -38,6 +43,10 @@ struct ProviderConfig {
 enum ProviderConfigStore {
     static func applyingManifest(_ manifest: ProviderManifest, to config: ProviderConfig) -> ProviderConfig {
         var c = config
+        c.sourceReference = manifest.sourceReference
+        c.sourceTemplate = manifest.template
+        c.sourceEndpointIsFixed = manifest.template != nil
+        c.isSourceConfigurationReadOnly = manifest.isSourceConfigurationReadOnly
         c.quotaAuthModes = manifest.quotaAuthModes
         c.credentialSource = manifest.credentialSource
         c.authCallURL = manifest.authCallUrl
@@ -59,6 +68,10 @@ enum ProviderConfigStore {
         c.authMode = obj["authMode"] as? String ?? ((obj["refreshApiKey"] as? String)?.isEmpty == false ? "apikey" : ((manifest.authMode == "auth" || (manifest.credentialSource != nil && manifest.queryAuth == "header")) ? "auth" : "apikey"))
         let legacySource = manifest.credentialSource?.fileConfigKey.flatMap { obj[$0] as? String }
         c.authCredentialFile = obj["authCredentialFile"] as? String ?? legacySource ?? ""
+        c.sourceReference = manifest.sourceReference
+        c.sourceTemplate = manifest.template
+        c.sourceEndpointIsFixed = manifest.template != nil
+        c.isSourceConfigurationReadOnly = manifest.isSourceConfigurationReadOnly
         c.quotaAuthModes = manifest.quotaAuthModes
         c.credentialSource = manifest.credentialSource
         c.authCallURL = manifest.authCallUrl
@@ -89,14 +102,38 @@ enum ProviderConfigStore {
         c.testPrompt = obj["testPrompt"] as? String ?? manifest.testPrompt ?? ProviderConfig.defaultPrompt
         c.testMaxTokens = obj["testMaxTokens"] as? Int ?? ProviderConfig.defaultMaxTokens
         c.scheduleTimes = obj["scheduleTimes"] as? [String] ?? []
+        if manifest.isSourceConfigurationReadOnly {
+            c.refreshKey = ""
+            c.queryKey = ""
+            c.authContext = [:]
+            c.authCredentialFile = ""
+        }
         return c
     }
 
     static func write(_ c: ProviderConfig, manifest: ProviderManifest, to authFile: URL) throws {
-        if c.authMode == "auth" && c.credentialsResolved {
+        if (c.authMode == "auth" || c.sourceReference != nil || manifest.sourceReference != nil) && c.credentialsResolved {
             throw ProviderAuthenticationError(message: "已解析的 Auth 令牌只用于当前请求，不能写入账号配置")
         }
+        guard !(manifest.isSourceConfigurationReadOnly || c.isSourceConfigurationReadOnly)
+                || manifest.sourceReference != nil || c.sourceReference != nil else {
+            throw ProviderAuthenticationError(message: "旧导入账号缺少实时来源引用，请重新导入")
+        }
         let declared = applyingManifest(manifest, to: c)
+        if let reference = manifest.sourceReference ?? c.sourceReference {
+            let source = URL(fileURLWithPath: (reference.path as NSString).expandingTildeInPath)
+            guard source.resolvingSymlinksInPath() != authFile.standardizedFileURL.resolvingSymlinksInPath() else {
+                throw ProviderAuthenticationError(message: "导入来源只读，不能覆盖来源文件")
+            }
+            // Rebuild from a whitelist: no inherited source key, APIkeyRef, headers or context survives.
+            let object: [String: Any] = ["schemaVersion": 4,
+                "sourceReference": try JSONSerialization.jsonObject(with: JSONEncoder().encode(reference))]
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            try FileManager.default.createDirectory(at: authFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: authFile, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
+            return
+        }
         if let source = ProviderAuthentication.credentialFileURL(for: declared),
            source.resolvingSymlinksInPath() == authFile.standardizedFileURL.resolvingSymlinksInPath() {
             throw ProviderAuthenticationError(message: "本机 Auth 授权文件只读，请使用独立的账号配置文件")
@@ -146,7 +183,7 @@ enum ProviderConfigStore {
     /// Strip obsolete query identities while preserving unrelated user configuration.
     static func removingQueryCredentials(from original: [String: Any], manifest: ProviderManifest) -> [String: Any] {
         var object = original
-        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "token", "cookie", "authContext", "tokenhudAuthContext"]
+        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "token", "cookie", "authContext", "tokenhudAuthContext", "apiKeyRef", "APIkeyRef"]
             where key != manifest.credentialSource?.fileConfigKey {
             object.removeValue(forKey: key)
         }

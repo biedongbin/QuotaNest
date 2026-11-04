@@ -140,12 +140,12 @@ struct QuotaTabView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("未启用额度查询", systemImage: "chart.bar.xaxis")
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
-                        Text("需要时，在连接中配置额度接口；用量查询统一继承基础认证。模型测试与调用计划取决于供应商类型的接入能力。")
+                        Text(row.plugin.manifest.isSourceConfigurationReadOnly ? SettingsModel.sourceReadOnlyMessage : "需要时，在连接中配置额度接口；用量查询统一继承基础认证。模型测试与调用计划取决于供应商类型的接入能力。")
                             .font(Typo.small).foregroundStyle(Palette.muted)
                         Button("配置额度查询") {
                             model.tab = .config
                             model.startEdit()
-                        }.barButton()
+                        }.barButton().disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
                     }
                 }
             } else {
