@@ -16,8 +16,8 @@ macOS 菜单栏 App（LSUIElement），SwiftUI + NSPanel/NSStatusItem 自绘，S
 
 当前权威入口为 [供应商账号三层需求与技术契约](docs/account-management-rebuild.md)，旧重构文档仅供历史追溯。
 
-1. 基础模型接入分 **Auth 认证调用／API Key 调用**；Auth 当前只读既有本机 CLI／JSON 授权来源，不写回外部 auth，不把尚未实现的 App 浏览器 OAuth 登录写成已实现。
-2. 用量查询通常继承基础接入的同一认证，地址／解析可以不同；不常规要求第二套 Key。网页 accessToken／Cookie 是旧特殊兼容，不是默认接入前提。
+1. 基础模型接入分 **Auth 认证调用／API Key 调用**；Auth 当前只读既有本机 CLI／JSON 授权来源。编辑时必须可直接填写 `auth.json` 路径或通过文件选择器选择，留空采用供应商类型默认来源；不写回外部 auth，不把尚未实现的 App 浏览器 OAuth 登录写成已实现。
+2. 用量查询统一继承基础接入的同一认证，地址／解析可以不同；不提供独立查询认证模式或额外 Key／Token／Cookie 配置区。保存时清理旧查询字段，保留基础 API Key 和授权文件引用；不得要求用户手工删除旧数据。旧网页契约仅供历史取证，不再是当前启用方案。
 3. 定时 API 调用用于尝试主动开启按首次使用计时的动态 5h 窗口，提高工作时段的额度利用机会，不是强制 reset／余额刷新，也不保证供应商必然开窗。模型须适用于目标套餐／用量池，不能只按便宜名称推荐。
 
 本轮实现与验收结果须据实际版本和 suite 输出记录，构建成功不等于所有供应商 Auth 真实联通或窗口机制已验证。
@@ -28,7 +28,7 @@ macOS 菜单栏 App（LSUIElement），SwiftUI + NSPanel/NSStatusItem 自绘，S
 
 - 协议差异（queryUrl/queryAuth/refreshUrl/refreshProtocol/refreshAuth/refreshHeader/testModel/testPrompt）全部声明在 **manifest.json**，主框架（ProviderConfigStore/RefreshTrigger）纯通用，无 slug switch
 - 账号通过 `template` 引用供应商类型；固定地址／协议及支持的认证、查询能力由类型声明。旧 `builtin` 字段仅保留兼容读取，不再单凭该布尔值定义当前类型能力或编辑锁定规则。
-- 特殊兼容解析（旧 glm JWT、oc-go cookie HTML、ollama 页面 data-time）在各自 provider 脚本（~/.claude/hud/*.mjs），不进主框架，也不替代默认认证继承路径。
+- 查询请求与解析差异留在各自 provider 适配，不进主框架；认证统一继承基础 Auth／API Key，不恢复旧网页凭证配置入口。
 - auth 文件（~/.claude/hud/.*-usage-auth.json）存凭证 + scheduleTimes；缓存 .{slug}-usage-cache.json
 
 ## UI 交互基线（每次交付强制检查，先于用户发现）

@@ -50,7 +50,7 @@ enum HUDSync {
             let file = p.manifest.authFile.map(PluginGenerator.expandPath)
                 ?? hudDir.appendingPathComponent(".\(p.slug)-usage-auth.json")
             let config = ProviderConfigStore.read(authFile: file, manifest: p.manifest)
-            let authSource = config.authMode == "auth" && config.quotaCredentialMode == "inherit"
+            let authSource = config.authMode == "auth"
                 ? ProviderAuthentication.credentialFileURL(for: config)?.path : nil
             d[accountKey(p)] = EnvsEntry(
                 label: p.manifest.fullName,

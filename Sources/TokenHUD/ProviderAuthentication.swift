@@ -38,10 +38,6 @@ enum ProviderAuthentication {
 
     /// Quota can use an existing login even when its model-call adapter is unavailable.
     static func resolveQuota(_ config: ProviderConfig) throws -> ProviderConfig {
-        if config.quotaCredentialMode == "legacy" { return config }
-        guard config.quotaCredentialMode == "inherit" else {
-            throw ProviderAuthenticationError(message: "未知的用量认证模式")
-        }
         if let modes = config.quotaAuthModes, !modes.contains(config.authMode) {
             throw ProviderAuthenticationError(message: "此供应商用量接口不支持当前基础认证模式")
         }
@@ -49,13 +45,11 @@ enum ProviderAuthentication {
             throw ProviderAuthenticationError(message: "此用量接口需要 Auth 登录，不能使用 API Key 查询订阅额度")
         }
         if ["jwt", "cookie"].contains(config.queryAuth ?? "") && config.inheritQueryURL == nil {
-            throw ProviderAuthenticationError(message: "此类型暂未声明继承基础认证的用量接口；旧网页凭证仅在历史兼容模式使用")
+            throw ProviderAuthenticationError(message: "此类型暂未声明继承基础认证的用量接口")
         }
         var resolved = try resolveBase(config)
         resolved.queryUrl = config.inheritQueryURL ?? config.queryUrl
         resolved.queryKey = resolved.refreshKey
-        resolved.queryToken = ""
-        resolved.queryCookie = ""
         resolved.queryHeader = config.inheritQueryHeader ?? resolved.refreshHeader
         return resolved
     }

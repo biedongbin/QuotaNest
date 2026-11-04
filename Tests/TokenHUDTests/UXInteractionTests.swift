@@ -70,6 +70,20 @@ struct UXInteractionTests {
         #expect(try Data(contentsOf: auth) == before)
         #expect(try Data(contentsOf: settings) == settingsBefore)
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("logs").path))
+        model.draft?.values.authMode = "auth"
+        await NativeAXTestSupport.settle(host, window: window)
+        let pathField = try #require(NativeAXTestSupport.elements(roots: [window, host]).compactMap { $0 as? NSTextField }.first {
+            NativeAXTestSupport.object($0, getter: "accessibilityIdentifier") as? String == "account.auth-file"
+                || NativeAXTestSupport.names($0).contains("Auth 文件路径")
+                || $0.placeholderString == "留空使用供应商默认来源"
+        })
+        #expect(pathField.isEditable)
+        let chosenPath = root.appendingPathComponent("selected-auth.json").path
+        pathField.stringValue = chosenPath
+        pathField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: pathField))
+        await NativeAXTestSupport.settle(host, window: window)
+        #expect(model.draft?.values.authCredentialFile == chosenPath)
+        #expect(try Data(contentsOf: auth) == before)
     }
 }
 

@@ -2,179 +2,100 @@ import Foundation
 import Testing
 @testable import TokenHUD
 
-/// ProviderConfigStore 读写往返: jwt/cookie/bearer 三形态 + refreshApiKey 回退 (P1-1 类分叉 bug 的防线)
+/// Account persistence keeps base authentication and removes obsolete query identities.
 @Suite
 struct ConfigStoreTests {
-    private let tmp = FileManager.default.temporaryDirectory
-
-    private func writeAuth(_ json: String, name: String = UUID().uuidString) throws -> URL {
-        let u = tmp.appendingPathComponent(".auth-\(name).json")
-        try json.write(to: u, atomically: true, encoding: .utf8)
-        return u
+    private func writeAuth(_ json: String) throws -> URL {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(".auth-\(UUID()).json")
+        try json.write(to: file, atomically: true, encoding: .utf8)
+        return file
     }
 
-    private func readBack(_ u: URL) throws -> [String: Any] {
-        try JSONSerialization.jsonObject(with: Data(contentsOf: u)) as? [String: Any] ?? [:]
+    @Test func obsoleteQueryIdentitiesNeverSupplyBaseAuthentication() throws {
+        let file = try writeAuth(#"{"queryKey":"query-only","headers":{"authorization":"jwt-only","Cookie":"sid=1"},"cookieAuth":"sid=2","quotaCredentialMode":"legacy"}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var manifest = ProviderManifest(name: "fixture", label: "fixture")
+        manifest.queryAuth = "jwt"
+        manifest.refreshAuth = "cookie"
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        #expect(config.refreshKey.isEmpty && config.queryKey.isEmpty)
+        #expect(throws: ProviderAuthenticationError.self) { try ProviderAuthentication.resolveQuota(config) }
     }
 
-    // MARK: read — 按 manifest.queryAuth 取凭证
-
-    @Test func readJWT() throws {
-        let f = try writeAuth(#"{"apiUrl":"https://glm.example.com","headers":{"authorization":"jwt-abc"},"refreshApiKey":"rk"}"#)
-        var m = ProviderManifest(name: "CC-GLM", label: "GLM")
-        m.queryAuth = "jwt"
-        m.refreshAuth = "bearer"
-        let c = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(c.queryUrl == "https://glm.example.com") // 无 manifest.queryUrl 时回退 auth.apiUrl
-        #expect(c.queryToken == "jwt-abc")
-        #expect(c.refreshKey == "rk")
+    @Test func oldSharedBaseAPIKeyLayoutsRemainReadable() throws {
+        let headerFile = try writeAuth(#"{"headers":{"Authorization":"Bearer shared-key"}}"#)
+        defer { try? FileManager.default.removeItem(at: headerFile) }
+        var manifest = ProviderManifest(name: "fixture", label: "fixture")
+        let defaultConfig = ProviderConfigStore.read(authFile: headerFile, manifest: manifest)
+        #expect(defaultConfig.refreshKey == "shared-key")
+        manifest.queryAuth = "bearer"
+        #expect(ProviderConfigStore.read(authFile: headerFile, manifest: manifest).refreshKey == "shared-key")
+        try ProviderConfigStore.write(defaultConfig, manifest: manifest, to: headerFile)
+        #expect(ProviderConfigStore.read(authFile: headerFile, manifest: manifest).refreshKey == "shared-key")
+        let keyedFile = try writeAuth(#"{"apiKey":"declared-key"}"#)
+        defer { try? FileManager.default.removeItem(at: keyedFile) }
+        manifest.queryKeyField = "apiKey"
+        #expect(ProviderConfigStore.read(authFile: keyedFile, manifest: manifest).refreshKey == "declared-key")
     }
 
-    @Test func readCookie() throws {
-        let f = try writeAuth(#"{"url":"https://oc.example.com","cookieAuth":"sid=1","refreshApiKey":"rk"}"#)
-        var m = ProviderManifest(name: "OC-Go", label: "OC")
-        m.queryAuth = "cookie"
-        m.refreshAuth = "cookie"
-        let c = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(c.queryCookie == "sid=1")
-        #expect(c.refreshKey == "rk") // 显式调用凭证不被额度 Cookie 覆盖
+    @Test func explicitEmptyBaseKeyDoesNotRestoreAnOldIdentity() throws {
+        let file = try writeAuth(#"{"schemaVersion":2,"refreshApiKey":"","queryKey":"old-query","apiKey":"old-shared","headers":{"Authorization":"Bearer old-header"}}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", queryAuth: "bearer", queryKeyField: "apiKey")
+        #expect(ProviderConfigStore.read(authFile: file, manifest: manifest).refreshKey.isEmpty)
     }
 
-    @Test func readBearerFallsBackToHeader() throws {
-        // ollama 形态: 无 refreshApiKey, 回退 headers.Authorization (Bearer 前缀剥离)
-        let f = try writeAuth(#"{"apiUrl":"https://o.example.com","headers":{"Authorization":"Bearer sk-x"}}"#)
-        var m = ProviderManifest(name: "Ollama", label: "Ol")
-        m.queryAuth = "bearer"
-        m.refreshAuth = "bearer"
-        let c = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(c.queryKey == "sk-x")
-        #expect(c.refreshKey == "sk-x") // 回退成功且无 Bearer 前缀
+    @Test func savingCleansQueryFieldsAndKeepsBaseAndUnknownFields() throws {
+        let file = try writeAuth(#"{"refreshApiKey":"base-key","apiKey":"old-key","queryKey":"old-query","queryToken":"old-token","queryCookie":"old-cookie","cookieAuth":"sid=1","quotaCredentialMode":"legacy","headers":{"Authorization":"Bearer old","authorization":"jwt","COOKIE":"sid=2","x-trace":"keep"},"queryUrl":"https://quota.example.test/usage","quotaMode":"endpoint","scheduleTimes":["09:00"],"other":{"keep":true}}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", queryAuth: "bearer", queryKeyField: "apiKey")
+        var config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        config.queryKey = "must-never-persist"
+        try ProviderConfigStore.write(config, manifest: manifest, to: file)
+        let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "apiKey"] {
+            #expect(saved[key] == nil)
+        }
+        #expect(saved["refreshApiKey"] as? String == "base-key")
+        #expect(saved["authMode"] as? String == "apikey")
+        #expect(saved["queryUrl"] as? String == "https://quota.example.test/usage")
+        #expect(saved["quotaMode"] as? String == "endpoint")
+        #expect(saved["scheduleTimes"] as? [String] == ["09:00"])
+        #expect((saved["headers"] as? [String: String]) == ["x-trace": "keep"])
+        #expect((saved["other"] as? [String: Bool]) == ["keep": true])
+        let reread = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        #expect(try ProviderAuthentication.resolveQuota(reread).queryKey == "base-key")
     }
 
-    @Test func readManifestQueryUrlWins() throws {
-        // 自定义供应商: manifest.queryUrl 优先于 auth.apiUrl
-        let f = try writeAuth(#"{"apiUrl":"https://old.example.com","headers":{"Authorization":"Bearer k"}}"#)
-        var m = ProviderManifest(name: "Relay", label: "Relay")
-        m.queryAuth = "bearer"
-        m.queryUrl = "https://new.example.com"
-        let c = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(c.queryUrl == "https://new.example.com")
+    @Test func readManifestQueryURLWinsAndScheduleSurvives() throws {
+        let file = try writeAuth(#"{"apiUrl":"https://old.example.test","refreshApiKey":"base","scheduleTimes":["09:00","18:30"]}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", queryUrl: "https://new.example.test")
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        #expect(config.queryUrl == "https://new.example.test")
+        #expect(config.scheduleTimes == ["09:00", "18:30"])
     }
 
-    @Test func readScheduleTimes() throws {
-        let f = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"scheduleTimes":["09:00","18:30"]}"#)
-        let c = ProviderConfigStore.read(authFile: f, manifest: ProviderManifest(name: "R", label: "R"))
-        #expect(c.scheduleTimes == ["09:00", "18:30"])
+    @Test func cleanupDetectionInvalidatesOnceAndProtectsDeclaredSourcePointers() throws {
+        let file = try writeAuth(#"{"refreshApiKey":"base","token":"/fixture/auth.json","cookie":"","headers":{"Cookie":"old","x-trace":"keep"}}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let source = ProviderCredentialSource(file: "/fixture/auth.json", tokenPath: "tokens.access_token", fileConfigKey: "token")
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", credentialSource: source)
+        #expect(ProviderConfigStore.hasObsoleteQueryCredentials(authFile: file, manifest: manifest))
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        try ProviderConfigStore.write(config, manifest: manifest, to: file)
+        #expect(!ProviderConfigStore.hasObsoleteQueryCredentials(authFile: file, manifest: manifest))
+        let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(saved["token"] as? String == "/fixture/auth.json")
+        #expect(saved["cookie"] == nil)
     }
 
-    // MARK: write — 往返保持
-
-    @Test func writeRoundTripBearer() throws {
-        let f = try writeAuth(#"{"apiUrl":"https://r.example.com","headers":{"Authorization":"Bearer old"}}"#)
-        var m = ProviderManifest(name: "Relay", label: "Relay")
-        m.queryAuth = "bearer"
-        m.refreshAuth = "bearer"
-        var c = ProviderConfig()
-        c.queryKey = "sk-new"
-        c.refreshKey = "rk-new"
-        c.testModel = "m-1"
-        c.testPrompt = "hi"
-        c.scheduleTimes = ["09:00"]
-        try ProviderConfigStore.write(c, manifest: m, to: f)
-        let obj = try readBack(f)
-        #expect((obj["headers"] as? [String: Any])?["Authorization"] as? String == "Bearer sk-new")
-        #expect(obj["refreshApiKey"] as? String == "rk-new")
-        #expect(obj["testModel"] as? String == "m-1")
-        #expect(obj["scheduleTimes"] as? [String] == ["09:00"])
-        // 再读回: 凭证一致 (往返无分叉)
-        let back = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(back.queryKey == "sk-new")
-        #expect(back.refreshKey == "rk-new")
-    }
-
-    @Test func writeJWTKeepsOtherFields() throws {
-        let f = try writeAuth(#"{"apiUrl":"https://g.example.com","headers":{"authorization":"old","x-trace":"1"},"other":true}"#)
-        var m = ProviderManifest(name: "CC-GLM", label: "GLM")
-        m.queryAuth = "jwt"
-        m.refreshAuth = "bearer"
-        var c = ProviderConfig()
-        c.queryToken = "jwt-new"
-        try ProviderConfigStore.write(c, manifest: m, to: f)
-        let obj = try readBack(f)
-        let h = obj["headers"] as? [String: Any]
-        #expect(h?["authorization"] as? String == "jwt-new")
-        #expect(h?["x-trace"] as? String == "1") // 未触及字段保留
-        #expect(obj["other"] as? Bool == true)
-    }
-
-    @Test func writeEmptyScheduleRemovesKey() throws {
-        let f = try writeAuth(#"{"headers":{"Authorization":"Bearer k"},"scheduleTimes":["09:00"]}"#)
-        try ProviderConfigStore.write(ProviderConfig(), manifest: ProviderManifest(name: "R", label: "R"), to: f)
-        let obj = try readBack(f)
-        #expect(obj["scheduleTimes"] == nil) // 清空后字段移除
-    }
-
-    // MARK: queryKeyField — 凭证单一事实源 = auth.<field> (cline 形态)
-
-    @Test func writeKeyedFieldWritesTopLevelKey() throws {
-        let f = try writeAuth(#"{"apiKey":"old","headers":{"Authorization":"stale","x-trace":"1"},"other":true}"#)
-        var m = ProviderManifest(name: "Cline", label: "Cline")
-        m.queryAuth = "bearer"
-        m.queryKeyField = "apiKey"
-        var c = ProviderConfig()
-        c.queryKey = "clp_new"
-        try ProviderConfigStore.write(c, manifest: m, to: f)
-        let obj = try readBack(f)
-        #expect(obj["apiKey"] as? String == "clp_new")             // 既有 apiKey 被更新 (非冻结)
-        #expect((obj["headers"] as? [String: Any])?["x-trace"] as? String == "1") // headers 保留
-        #expect(obj["other"] as? Bool == true)                      // 未知字段保留
-        #expect(ProviderConfigStore.read(authFile: f, manifest: m).queryKey == "clp_new")
-    }
-
-    @Test func readKeyedFieldAlsoFeedsRefresh() throws {
-        // 同一把 Key 兼作查询与调用 (cline): 无 refreshApiKey 时 refresh 回退 queryKey
-        let f = try writeAuth(#"{"apiKey":"clp_same"}"#)
-        var m = ProviderManifest(name: "Cline", label: "Cline")
-        m.queryAuth = "bearer"
-        m.queryKeyField = "apiKey"
-        m.refreshAuth = "bearer"
-        let c = ProviderConfigStore.read(authFile: f, manifest: m)
-        #expect(c.queryKey == "clp_same")
-        #expect(c.refreshKey == "clp_same")
-    }
-
-    @Test func instantiateThenWriteKeyedField() throws {
-        // 模板实例化 (auth-template 只有空 apiKey) -> 写新 key -> 文件 auth.apiKey == 新值
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("th-keyed-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let tdir = tmp.appendingPathComponent("bundle/cline", isDirectory: true)
-        try FileManager.default.createDirectory(at: tdir, withIntermediateDirectories: true)
-        let tmplManifest = ProviderManifest(name: "Cline", label: "Cline", buckets: [:],
-                                            queryAuth: "bearer", queryKeyField: "apiKey")
-        try JSONEncoder().encode(tmplManifest).write(to: tdir.appendingPathComponent("manifest.json"))
-        try "#!/bin/zsh\n".write(to: tdir.appendingPathComponent("fetch.sh"), atomically: true, encoding: .utf8)
-        try #"{"apiKey":"","_note":"keep"}"#
-            .write(to: tdir.appendingPathComponent("auth-template.json"), atomically: true, encoding: .utf8)
-        let userDir = tmp.appendingPathComponent("user", isDirectory: true)
-        let hudDir = tmp.appendingPathComponent("hud", isDirectory: true)
-        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
-
-        let tmpl = PluginProvider(slug: "cline", manifest: tmplManifest, dir: tdir)
-        let m = try PluginGenerator.instantiate(template: tmpl, slug: "cline-me", name: "Cline-Me",
-                                               into: userDir, hudDir: hudDir)
-        #expect(m.queryKeyField == "apiKey")   // 实例继承模板字段声明
-        let af = PluginGenerator.expandPath(m.authFile!)
-        var c = ProviderConfigStore.read(authFile: af, manifest: m)
-        c.queryKey = "clp_new"
-        try ProviderConfigStore.write(c, manifest: m, to: af)
-
-        let obj = try readBack(af)
-        #expect(obj["apiKey"] as? String == "clp_new")
-        #expect(obj["_note"] as? String == "keep")  // auth 模板未知字段保留
-        #expect(obj["headers"] == nil)              // 不凭空造 headers.Authorization
-        #expect(ProviderConfigStore.read(authFile: af, manifest: m).queryKey == "clp_new")
+    @Test func emptyScheduleRemovesKey() throws {
+        let file = try writeAuth(#"{"scheduleTimes":["09:00"]}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try ProviderConfigStore.write(ProviderConfig(), manifest: ProviderManifest(name: "fixture", label: "fixture"), to: file)
+        let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(saved["scheduleTimes"] == nil)
     }
 }
 

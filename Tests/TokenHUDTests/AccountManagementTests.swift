@@ -64,9 +64,7 @@ struct AccountManagementTests {
         f.model.draft?.values.times = ["09:00"]
         if quota {
             f.model.draft?.values.quotaMode = "endpoint"
-            f.model.draft?.values.quotaCredentialMode = "legacy"
             f.model.draft?.values.queryURL = "https://quota.example.test/account/usage"
-            f.model.draft?.values.queryKey = "fixture-quota-key"
         }
         f.model.save()
         #expect(f.model.topError.isEmpty)
@@ -89,25 +87,21 @@ struct AccountManagementTests {
         #expect(cfg.scheduleTimes == ["09:00"])
     }
 
-    @Test func separateCredentialsSurviveSaveAndIndependentClear() throws {
+    @Test func quotaAlwaysUsesTheBaseKeyAfterReplacementAndClear() throws {
         let f = try fixture(); defer { cleanup(f) }
         var row = try create(f, quota: true)
+        #expect(try ProviderAuthentication.resolveQuota(f.model.readConfig(row.plugin)).queryKey == "fixture-api-key")
         f.model.startEdit()
-        f.model.draft?.values.queryKey = "replacement-query-key"
+        f.model.draft?.values.key = "replacement-base-key"
         f.model.save()
         row = try #require(f.model.current)
         var cfg = f.model.readConfig(row.plugin)
-        #expect(cfg.refreshKey == "fixture-api-key")
-        #expect(cfg.queryKey == "replacement-query-key")
+        #expect(cfg.refreshKey == "replacement-base-key")
+        #expect(cfg.queryKey.isEmpty)
+        #expect(try ProviderAuthentication.resolveQuota(cfg).queryKey == "replacement-base-key")
         #expect(cfg.queryUrl == "https://quota.example.test/account/usage")
         #expect(cfg.refreshUrl == "https://api.example.test/v1/chat/completions")
-        f.model.startEdit()
-        f.model.draft?.values.clearQueryKeyIntent = true
-        f.model.save()
-        row = try #require(f.model.current)
-        cfg = f.model.readConfig(row.plugin)
-        #expect(cfg.queryKey.isEmpty)
-        #expect(cfg.refreshKey == "fixture-api-key")
+        #expect(f.model.quotaConfigured(row))
         #expect(!f.model.engine.triggerDisabledSlugs.contains(row.id))
         f.model.startEdit()
         f.model.draft?.values.clearKeyIntent = true
@@ -116,8 +110,10 @@ struct AccountManagementTests {
         row = try #require(f.model.current)
         cfg = f.model.readConfig(row.plugin)
         #expect(cfg.refreshKey.isEmpty)
+        #expect(cfg.queryKey.isEmpty)
         #expect(f.model.engine.triggerDisabledSlugs.contains(row.id))
         #expect(!f.model.callConfigured(row))
+        #expect(!f.model.quotaConfigured(row))
     }
 
     @Test func copyCreatesIndependentAccountWithoutSecretsOrActivePlan() throws {
@@ -128,15 +124,11 @@ struct AccountManagementTests {
         #expect(draft.isNew)
         #expect(draft.slug == nil)
         #expect(draft.values.key.isEmpty)
-        #expect(draft.values.queryKey.isEmpty)
-        #expect(draft.values.queryToken.isEmpty)
-        #expect(draft.values.queryCookie.isEmpty)
         #expect(!draft.values.autoTrigger)
         #expect(draft.values.times == ["09:00"])
         #expect(draft.values.queryURL == "https://quota.example.test/account/usage")
         #expect(f.model.engine.allPlugins.count == 1)
         f.model.draft?.values.key = "second-api-key"
-        f.model.draft?.values.queryKey = "second-quota-key"
         f.model.save()
         let second = try #require(f.model.current)
         #expect(second.id != first.id)
@@ -144,6 +136,10 @@ struct AccountManagementTests {
         #expect(DataEngine.cachePath(for: second.plugin, hudDir: f.hud)
                 != DataEngine.cachePath(for: first.plugin, hudDir: f.hud))
         #expect(f.model.readConfig(first.plugin).refreshKey == "fixture-api-key")
+        let secondConfig = f.model.readConfig(second.plugin)
+        #expect(secondConfig.refreshKey == "second-api-key")
+        #expect(secondConfig.queryKey.isEmpty)
+        #expect(try ProviderAuthentication.resolveQuota(secondConfig).queryKey == "second-api-key")
         #expect(f.model.engine.triggerDisabledSlugs.contains(second.id))
     }
 
@@ -156,7 +152,6 @@ struct AccountManagementTests {
         f.model.draft?.values.name = "Auth fixture"
         f.model.draft?.values.authMode = "auth"
         f.model.draft?.values.key = ""
-        f.model.draft?.values.quotaCredentialMode = "inherit"
         let values = try #require(f.model.draft?.values)
         let draftConfig = f.model.callConfigForDraft(values)
         #expect(draftConfig.refreshKey.isEmpty)
@@ -194,13 +189,16 @@ struct AccountManagementTests {
         #expect(f.model.callConfigured(row))
     }
 
-    @Test func clearingBaseKeyInvalidatesInheritedQueryWithoutDeletingLegacyCredentials() throws {
+    @Test func clearingBaseKeyInvalidatesQuotaAuthentication() throws {
         let f = try fixture(); defer { cleanup(f) }
-        _ = try create(f, quota: true)
-        f.model.startEdit()
-        f.model.draft?.values.quotaCredentialMode = "inherit"
-        f.model.save()
-        var row = try #require(f.model.current)
+        var row = try create(f, quota: true)
+        let auth = try #require(f.model.authURL(row.plugin))
+        var obsolete = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: auth)) as? [String: Any])
+        obsolete["quotaCredentialMode"] = "legacy"
+        obsolete["queryKey"] = "obsolete-query-key"
+        obsolete["queryToken"] = "obsolete-query-token"
+        obsolete["queryCookie"] = "obsolete-query-cookie"
+        try JSONSerialization.data(withJSONObject: obsolete).write(to: auth)
         #expect(f.model.quotaConfigured(row))
         f.model.startEdit()
         f.model.draft?.values.clearKeyIntent = true
@@ -208,8 +206,7 @@ struct AccountManagementTests {
         f.model.save()
         row = try #require(f.model.current)
         let config = f.model.readConfig(row.plugin)
-        #expect(config.quotaCredentialMode == "inherit")
-        #expect(config.queryKey == "fixture-quota-key")
+        #expect(config.queryKey.isEmpty)
         #expect(!f.model.quotaConfigured(row))
         #expect(!f.model.callConfigured(row))
     }
@@ -220,7 +217,6 @@ struct AccountManagementTests {
         f.model.startEdit()
         f.model.draft?.values.authMode = "auth"
         f.model.draft?.values.authCredentialFile = f.root.appendingPathComponent("missing-auth.json").path
-        f.model.draft?.values.quotaCredentialMode = "inherit"
         let values = try #require(f.model.draft?.values)
         let snapshot = f.model.callConfigForDraft(values)
         #expect(snapshot.authMode == "auth")
@@ -235,7 +231,51 @@ struct AccountManagementTests {
         #expect(!f.model.callConfigured(row))
         f.model.startEdit()
         #expect(f.model.draft?.values.authMode == "auth")
-        #expect(f.model.draft?.values.quotaCredentialMode == "inherit")
+    }
+
+    @Test func unchangedSaveDropsObsoleteQueryCacheAndPreservesBaseAuthentication() throws {
+        let f = try fixture(withTemplate: true); defer { cleanup(f) }
+        let source = f.root.appendingPathComponent("fixture-auth.json")
+        let authorization = try JSONSerialization.data(withJSONObject: ["session": ["access_token": "offline-source-token"]])
+        try authorization.write(to: source)
+        f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
+        f.model.draft?.values.name = "Migrated account"
+        f.model.draft?.values.key = "preserved-base-key"
+        f.model.draft?.values.authCredentialFile = source.path
+        f.model.save()
+        let first = try #require(f.model.current)
+        let other = try create(f, quota: true)
+        let auth = try #require(f.model.authURL(first.plugin))
+        let otherAuth = try #require(f.model.authURL(other.plugin))
+        let otherConfig = try Data(contentsOf: otherAuth)
+        var obsolete = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: auth)) as? [String: Any])
+        obsolete["quotaCredentialMode"] = "legacy"
+        obsolete["queryKey"] = "obsolete-query-key"
+        try JSONSerialization.data(withJSONObject: obsolete).write(to: auth)
+        let firstCache = DataEngine.cachePath(for: first.plugin, hudDir: f.hud)
+        let otherCache = DataEngine.cachePath(for: other.plugin, hudDir: f.hud)
+        let cached = try JSONEncoder().encode(UsageCache(generatedAt: Date().timeIntervalSince1970 * 1000,
+                                                         fiveHour: Bucket(usedPercentage: 35)))
+        try cached.write(to: firstCache)
+        try cached.write(to: otherCache)
+        f.model.engine.reloadRegistry()
+        f.model.lastSuccess[first.id] = Date()
+        #expect(f.model.selectAccount(first.id, tab: .config))
+        f.model.startEdit()
+        #expect(f.model.draft?.dirty == false)
+        f.model.save()
+        #expect(f.model.topError.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: firstCache.path))
+        #expect(f.model.row(first.id)?.state?.cache == nil)
+        #expect(f.model.lastSuccess[first.id] == nil)
+        #expect(try Data(contentsOf: otherCache) == cached)
+        #expect(try Data(contentsOf: otherAuth) == otherConfig)
+        #expect(try Data(contentsOf: source) == authorization)
+        let saved = f.model.readConfig(try #require(f.model.current?.plugin))
+        #expect(saved.refreshKey == "preserved-base-key")
+        #expect(saved.authMode == "apikey")
+        #expect(saved.authCredentialFile == source.path)
+        #expect(!ProviderConfigStore.hasObsoleteQueryCredentials(authFile: auth, manifest: first.plugin.manifest))
     }
 
     @Test func authenticationChangesClearOnlyThatAccountsQuotaCache() throws {
@@ -246,7 +286,6 @@ struct AccountManagementTests {
         f.model.pickTemplate(try #require(f.model.choices.first { $0.id == "fixture" }))
         f.model.draft?.values.name = "First cache identity"
         f.model.draft?.values.key = "initial-base-key"
-        f.model.draft?.values.queryKey = "fixture-quota-key"
         f.model.save()
         let first = try #require(f.model.current)
         let other = try create(f, quota: true)
@@ -257,11 +296,11 @@ struct AccountManagementTests {
         try cached.write(to: otherCache)
         #expect(f.model.selectAccount(first.id, tab: .config))
         f.model.startEdit()
-        f.model.draft?.values.quotaCredentialMode = "inherit"
         f.model.save()
         let changes: [(WritableKeyPath<DraftValues, String>, String)] = [
             (\.key, "new-base-key"), (\.authCredentialFile, f.root.appendingPathComponent("another-auth.json").path),
-            (\.authMode, "auth"), (\.quotaCredentialMode, "legacy")
+            (\.authMode, "auth"), (\.queryURL, "https://quota.example.test/changed"),
+            (\.quotaMode, "none")
         ]
         for (field, value) in changes {
             let currentCache = try JSONEncoder().encode(UsageCache(generatedAt: Date().timeIntervalSince1970 * 1000,
@@ -278,7 +317,7 @@ struct AccountManagementTests {
             #expect(f.model.row(first.id)?.state?.cache == nil)
             #expect(f.model.lastSuccess[first.id] == nil)
             #expect(try Data(contentsOf: otherCache) == cached)
-            #expect(f.model.readConfig(try #require(f.model.current?.plugin)).queryKey == "fixture-quota-key")
+            #expect(f.model.readConfig(try #require(f.model.current?.plugin)).queryKey.isEmpty)
         }
     }
 
@@ -395,7 +434,8 @@ struct AccountManagementTests {
         let m = ProviderManifest(name: "Independent", label: "Independent", queryAuth: "bearer")
         try ProviderConfigStore.write(cfg, manifest: m, to: auth)
         let read = ProviderConfigStore.read(authFile: auth, manifest: m)
-        #expect(read.queryKey == "quota-only")
+        #expect(read.queryKey.isEmpty)
+        #expect(throws: (any Error).self) { try ProviderAuthentication.resolveQuota(read) }
         #expect(read.refreshKey.isEmpty)
     }
 
@@ -406,7 +446,9 @@ struct AccountManagementTests {
         try Data(#"{"schemaVersion":1,"refreshApiKey":"","headers":{"Authorization":"Bearer legacy-shared-key"}}"#.utf8).write(to: auth)
         #expect(ProviderConfigStore.read(authFile: auth, manifest: manifest).refreshKey == "legacy-shared-key")
         try Data(#"{"schemaVersion":2,"refreshApiKey":"","queryKey":"query-only"}"#.utf8).write(to: auth)
-        #expect(ProviderConfigStore.read(authFile: auth, manifest: manifest).refreshKey.isEmpty)
+        let cleared = ProviderConfigStore.read(authFile: auth, manifest: manifest)
+        #expect(cleared.refreshKey.isEmpty)
+        #expect(cleared.queryKey.isEmpty)
     }
 
     @Test func planRowsShowPersistedTerminalOutcomes() throws {

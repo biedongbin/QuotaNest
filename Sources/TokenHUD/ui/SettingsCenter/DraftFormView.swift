@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DraftFormView: View {
     enum Section { case config, trigger, all }
@@ -6,11 +8,8 @@ struct DraftFormView: View {
     let draft: Draft
     var section: Section = .all
     @State private var revealCallKey = false
-    @State private var revealQueryKey = false
-    @State private var revealQueryToken = false
-    @State private var revealQueryCookie = false
-    @State private var clearing: CredentialKind?
-    private enum CredentialKind: String, Identifiable { case call, query; var id: String { rawValue } }
+    @State private var clearingCallKey = false
+    @State private var choosingAuthFile = false
     private var manifest: ProviderManifest? { model.draftManifest() }
     private var builtin: Bool { model.draftBuiltin() }
 
@@ -25,25 +24,17 @@ struct DraftFormView: View {
             }
             if section != .config { schedule }
         }
-        .confirmationDialog(clearing == .call ? "保存后清除 API 调用凭证？" : "保存后清除额度查询凭证？",
-                            isPresented: Binding(get: { clearing != nil }, set: { if !$0 { clearing = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("保存后清除基础 API Key？", isPresented: $clearingCallKey, titleVisibility: .visible) {
             Button("标记清除", role: .destructive) {
-                if clearing == .call {
-                    model.draft?.values.clearKeyIntent = true
-                    model.draft?.values.key = ""
-                } else {
-                    model.draft?.values.clearQueryKeyIntent = true
-                    model.draft?.values.queryKey = ""
-                    model.draft?.values.queryToken = ""
-                    model.draft?.values.queryCookie = ""
-                }
-                clearing = nil
+                model.draft?.values.clearKeyIntent = true
+                model.draft?.values.key = ""
             }
-            Button("取消", role: .cancel) { clearing = nil }
+            Button("取消", role: .cancel) { }
         } message: {
-            Text("清除基础 API Key 后，跟随基础接入的查询也将不可用。旧版独立查询凭证会保留；保存前可以撤销。")
+            Text("用量查询与 API 调度共用基础认证；清除后对应能力将不可用。保存前可以撤销。")
         }
     }
+
     private var identity: some View {
         GroupBox("账号") {
             VStack(alignment: .leading, spacing: 10) {
@@ -88,9 +79,19 @@ struct DraftFormView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if draft.values.authMode == "auth" {
-                    labeled("授权来源 / 文件") {
-                        Text(model.draftAuthSourceDescription()).font(.callout).textSelection(.enabled)
+                    labeled("Auth 文件") {
+                        HStack(spacing: 8) {
+                            TextField("留空使用供应商默认来源", text: bind(\.authCredentialFile))
+                                .fieldBox().accessibilityLabel("Auth 文件路径")
+                                .accessibilityIdentifier("account.auth-file")
+                            Button("选择…") { chooseAuthFile() }.barButton()
+                                .disabled(choosingAuthFile).accessibilityIdentifier("account.choose-auth-file")
+                            Button("默认") { model.draft?.values.authCredentialFile = "" }.barButton(.ghost)
+                                .disabled(draft.values.authCredentialFile.isEmpty)
+                        }
                     }
+                    Text("当前有效来源：" + model.draftAuthSourceDescription())
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     Text("读取已有本机授权；本页不提供浏览器 OAuth 登录，也无需另填 API Key。")
                         .font(.caption).foregroundStyle(.secondary)
                     if let issue = model.authenticationIssue(model.callConfigForDraft(draft.values)) {
@@ -98,7 +99,7 @@ struct DraftFormView: View {
                     }
                 } else {
                     secret("API Key", value: bind(\.key), revealed: $revealCallKey)
-                    credentialActions(query: false)
+                    credentialActions
                 }
                 labeled("模型") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -138,16 +139,9 @@ struct DraftFormView: View {
                 }
                 if draft.values.quotaMode != "none" {
                     labeled("查询认证") {
-                        Picker("查询认证", selection: bind(\.quotaCredentialMode)) {
-                            Text("跟随基础接入（默认）").tag("inherit")
-                            if model.draftHasLegacyCredentials() || draft.values.quotaCredentialMode == "legacy" {
-                                Text("旧版独立凭证").tag("legacy")
-                            }
-                        }.labelsHidden()
+                        Text(draft.values.authMode == "auth" ? "跟随基础接入 · Auth" : "跟随基础接入 · API Key")
                     }
-                    Text(draft.values.quotaCredentialMode == "inherit"
-                         ? "使用基础接入的同一认证；基础凭证失效或被清除后，查询也不可用。"
-                         : "当前仍使用旧版独立查询凭证，可切换为跟随基础接入；切换不会删除旧凭证。")
+                    Text("使用基础接入的同一认证，不需要额外填写查询凭证。")
                         .font(.callout).foregroundStyle(.secondary)
                     if draft.values.quotaMode == "endpoint" {
                         labeled("用量查询地址") {
@@ -165,50 +159,46 @@ struct DraftFormView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if model.draftHasLegacyCredentials() || draft.values.quotaCredentialMode == "legacy" {
-                    DisclosureGroup("旧版查询兼容") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("仅保留历史网页 Access Token / Cookie 等独立凭证。建议切换为跟随基础接入；不会静默删除旧值。")
-                                .font(.caption).foregroundStyle(.secondary)
-                            quotaCredentials
-                            credentialActions(query: true)
-                        }.padding(.top, 8)
-                    }
-                }
             }
         }
     }
-    @ViewBuilder private var quotaCredentials: some View {
-        if manifest?.authStyle != "apikey", builtin, draft.values.quotaMode == "script" {
-            Text("由本机授权来源提供。可选凭证只用于该账号查询，不会更改外部 CLI 登录。")
-                .font(.callout).foregroundStyle(.secondary)
-        }
-        switch manifest?.queryAuth {
-        case "jwt": secret("额度查询 Token", value: bind(\.queryToken), revealed: $revealQueryToken)
-        case "cookie": secret("额度查询 Cookie", value: bind(\.queryCookie), revealed: $revealQueryCookie)
-        default: secret("额度查询 Key", value: bind(\.queryKey), revealed: $revealQueryKey)
-        }
-        if draft.values.quotaMode == "script", manifest?.queryAuth != "cookie" {
-            secret("查询 Cookie（可选）", value: bind(\.queryCookie), revealed: $revealQueryCookie)
-            Text("仅用于脚本支持的查询方式；配置状态不代表已验证服务连接。")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-    private func credentialActions(query: Bool) -> some View {
-        let marked = query ? draft.values.clearQueryKeyIntent : draft.values.clearKeyIntent
+    private var credentialActions: some View {
+        let marked = draft.values.clearKeyIntent
         return HStack {
-            Text(marked ? "已标记清除，保存后生效" : "留空保持已有凭证；新输入替换对应凭证")
+            Text(marked ? "已标记清除，保存后生效" : "留空保持已有 API Key；新输入替换")
                 .font(.caption).foregroundStyle(marked ? Color.red : Color.secondary)
             Spacer()
             if !draft.isNew {
-                Button(marked ? "撤销清除" : "清除凭证…") {
-                    if marked {
-                        if query { model.draft?.values.clearQueryKeyIntent = false }
-                        else { model.draft?.values.clearKeyIntent = false }
-                    } else { clearing = query ? .query : .call }
+                Button(marked ? "撤销清除" : "清除 API Key…") {
+                    if marked { model.draft?.values.clearKeyIntent = false }
+                    else { clearingCallKey = true }
                 }.font(.callout)
             }
         }
+    }
+    private func chooseAuthFile() {
+        guard !choosingAuthFile else { return }
+        choosingAuthFile = true
+        let openedSlug = model.draft?.slug
+        let openedTemplate = model.draft?.template
+        let panel = NSOpenPanel()
+        panel.title = "选择 Auth 授权文件"
+        panel.prompt = "选择"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.allowedContentTypes = [.json]
+        let config = model.callConfigForDraft(model.draft?.values ?? draft.values)
+        panel.directoryURL = ProviderAuthentication.credentialFileURL(for: config)?.deletingLastPathComponent()
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            choosingAuthFile = false
+            guard response == .OK, let url = panel.url,
+                  model.draft?.slug == openedSlug, model.draft?.template == openedTemplate else { return }
+            model.draft?.values.authCredentialFile = url.path
+        }
+        if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: completion) }
+        else { panel.begin(completionHandler: completion) }
     }
     private var schedule: some View {
         GroupBox("③ API 调度 · 启动 5h 使用窗口") {

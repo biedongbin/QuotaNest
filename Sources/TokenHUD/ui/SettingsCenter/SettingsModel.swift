@@ -143,14 +143,9 @@ struct DraftValues: Equatable {
     /// P1-9 显式清除 Key 意图 (确认后置位); 空输入 = 保持原值, 不置位
     var clearKeyIntent = false
     var queryURL = ""
-    var queryKey = ""
-    var queryToken = ""
-    var queryCookie = ""
     var quotaMode = "none"
     var authMode = "apikey"
-    var quotaCredentialMode = "inherit"
     var authCredentialFile = ""
-    var clearQueryKeyIntent = false
 }
 
 struct Draft: Equatable {
@@ -508,19 +503,10 @@ final class SettingsModel: ObservableObject {
 
     nonisolated private static func queryReady(_ manifest: ProviderManifest, config: ProviderConfig) -> Bool {
         guard manifest.supportsQuota, config.quotaMode != "none" else { return false }
-        if config.quotaCredentialMode == "inherit" {
-            do {
-                let resolved = try ProviderAuthentication.resolveQuota(config)
-                return config.quotaMode != "endpoint" || SettingsValidation.isValidURL(resolved.queryUrl)
-            } catch { return false }
-        }
-        if config.quotaMode == "endpoint", !SettingsValidation.isValidURL(config.queryUrl) { return false }
-        switch manifest.queryAuth {
-        case "jwt": return !config.queryToken.isEmpty
-        case "cookie": return !config.queryCookie.isEmpty
-        case "header": return true
-        default: return !config.queryKey.isEmpty || !config.queryCookie.isEmpty
-        }
+        do {
+            let resolved = try ProviderAuthentication.resolveQuota(config)
+            return config.quotaMode != "endpoint" || SettingsValidation.isValidURL(resolved.queryUrl)
+        } catch { return false }
     }
 
     nonisolated private static func callReady(_ config: ProviderConfig) -> Bool {
@@ -562,12 +548,6 @@ final class SettingsModel: ObservableObject {
         case "responses": return "OpenAI Responses"
         default: return "OpenAI Chat Completions"
         }
-    }
-
-    func draftHasLegacyCredentials() -> Bool {
-        guard let draft else { return false }
-        return [draft.values.queryKey, draft.values.queryToken, draft.values.queryCookie,
-                draft.base.queryKey, draft.base.queryToken, draft.base.queryCookie].contains { !$0.isEmpty }
     }
 
     func callConfigured(_ row: AccountRow) -> Bool {
@@ -705,12 +685,8 @@ final class SettingsModel: ObservableObject {
                             autoTrigger: !engine.triggerDisabledSlugs.contains(row.id)
                                 && !cfg.scheduleTimes.isEmpty && row.canCall, times: cfg.scheduleTimes)
         v.queryURL = cfg.queryUrl
-        v.queryKey = cfg.queryKey
-        v.queryToken = cfg.queryToken
-        v.queryCookie = cfg.queryCookie
         v.quotaMode = cfg.quotaMode
         v.authMode = cfg.authMode
-        v.quotaCredentialMode = cfg.quotaCredentialMode
         v.authCredentialFile = cfg.authCredentialFile
         draft = Draft(slug: row.id, template: row.plugin.manifest.template, isNew: false, values: v, base: v)
         draft?.hasExistingKey = !cfg.refreshKey.isEmpty
@@ -727,14 +703,9 @@ final class SettingsModel: ObservableObject {
         copy.hasExistingKey = false
         copy.values.name += " 副本"
         copy.values.key = ""
-        copy.values.queryKey = ""
-        copy.values.queryToken = ""
-        copy.values.queryCookie = ""
-        copy.values.quotaCredentialMode = "inherit"
         copy.values.authCredentialFile = ""
         copy.values.autoTrigger = false
         copy.values.clearKeyIntent = false
-        copy.values.clearQueryKeyIntent = false
         copy.base = DraftValues()
         draft = copy
         newDraftTestKey = "new-draft-\(UUID().uuidString)"
@@ -922,13 +893,6 @@ final class SettingsModel: ObservableObject {
         let existingCallKey = cfg.refreshKey
         if let key = SettingsValidation.resolveKey(draftKey: values.key, existingKey: existingCallKey,
             intent: values.clearKeyIntent ? .clear : .replace) { cfg.refreshKey = key }
-        if values.clearQueryKeyIntent {
-            cfg.queryKey = ""; cfg.queryToken = ""; cfg.queryCookie = ""
-        } else {
-            if !values.queryKey.isEmpty || existing == nil { cfg.queryKey = values.queryKey }
-            if !values.queryToken.isEmpty || existing == nil { cfg.queryToken = values.queryToken }
-            if !values.queryCookie.isEmpty || existing == nil { cfg.queryCookie = values.queryCookie }
-        }
         cfg.apiBaseURL = values.url.trimmingCharacters(in: .whitespacesAndNewlines)
         cfg.refreshProtocol = values.proto
         cfg.refreshUrl = APIEndpoint.requestURL(baseURL: cfg.apiBaseURL, protocolName: cfg.refreshProtocol)
@@ -940,7 +904,6 @@ final class SettingsModel: ObservableObject {
         cfg.queryUrl = values.queryURL.trimmingCharacters(in: .whitespacesAndNewlines)
         cfg.quotaMode = values.quotaMode
         cfg.authMode = values.authMode
-        cfg.quotaCredentialMode = values.quotaCredentialMode
         cfg.authCredentialFile = values.authCredentialFile
         cfg.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
         cfg.testPrompt = values.prompt
@@ -1003,11 +966,10 @@ final class SettingsModel: ObservableObject {
         }
         let previous = readConfig(p)
         let cfg = draftConfig(values, existing: previous)
-        let changedQuota = cfg.queryKey != previous.queryKey || cfg.queryToken != previous.queryToken
-            || cfg.queryCookie != previous.queryCookie || cfg.queryUrl != previous.queryUrl
-            || cfg.quotaMode != previous.quotaMode || cfg.quotaCredentialMode != previous.quotaCredentialMode
+        let changedQuota = ProviderConfigStore.hasObsoleteQueryCredentials(authFile: af, manifest: p.manifest)
+            || cfg.queryUrl != previous.queryUrl || cfg.quotaMode != previous.quotaMode
             || cfg.authMode != previous.authMode || cfg.authCredentialFile != previous.authCredentialFile
-            || (cfg.quotaCredentialMode == "inherit" && cfg.refreshKey != previous.refreshKey)
+            || cfg.refreshKey != previous.refreshKey
         var manifest = p.manifest
         if manifest.template == nil {
             let generated = PluginGenerator.customManifest(name: values.name, config: cfg,
@@ -1048,7 +1010,7 @@ final class SettingsModel: ObservableObject {
             return
         }
         guard quotaConfigured(row) else {
-            flash("用量查询尚未配置完整，请检查基础认证或旧版查询兼容配置", error: true)
+            flash("用量查询尚未配置完整，请检查基础认证与查询地址", error: true)
             return
         }
         guard !running.contains(slug) else { return }

@@ -106,43 +106,45 @@ struct SettingsExperienceTests {
         #expect(try Data(contentsOf: root.appendingPathComponent("hud/.sample-usage-auth.json")) == before)
     }
 
-    @Test func savingOrClearingQueryKeyPreservesIndependentCallKey() throws {
+    @Test func savingDiscardsOldQueryCredentialsAndPreservesBaseAuthentication() throws {
         let (model, root, defaults, suite) = try fixture()
         defer { cleanup(root, defaults, suite) }
         let auth = root.appendingPathComponent("hud/.sample-usage-auth.json")
         let data = try JSONSerialization.data(withJSONObject: [
-            "headers": ["Authorization": "Bearer query-key"], "refreshApiKey": "call-key",
-            "testModel": "saved-model", "testPrompt": "saved-prompt"])
+            "schemaVersion": 2, "quotaCredentialMode": "legacy", "queryKey": "old-query-key",
+            "token": "old-token", "cookie": "old-cookie", "queryToken": "old-query-token",
+            "queryCookie": "old-query-cookie", "headers": ["Authorization": "Bearer query-key"],
+            "refreshApiKey": "call-key", "testModel": "saved-model", "testPrompt": "saved-prompt"])
         try data.write(to: auth)
         #expect(model.selectAccount("sample", tab: .config))
         model.startEdit()
+        #expect(model.draft?.values.key == "call-key")
         model.draft?.values.name = "Name change"
         model.draft?.values.autoTrigger = false
         model.save()
+        #expect(model.topError.isEmpty)
         var config = model.readConfig(try #require(model.current?.plugin))
-        #expect(config.queryKey == "query-key")
-        #expect(config.refreshKey == "call-key")
-        model.startEdit()
-        model.draft?.values.clearQueryKeyIntent = true
-        model.draft?.values.queryKey = ""
-        model.save()
-        config = model.readConfig(try #require(model.current?.plugin))
         #expect(config.queryKey.isEmpty)
         #expect(config.refreshKey == "call-key")
+        let saved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: auth)) as? [String: Any])
+        for field in ["quotaCredentialMode", "queryKey", "queryToken", "queryCookie", "token", "cookie", "headers"] {
+            #expect(saved[field] == nil)
+        }
         model.startEdit()
-        #expect(model.draft?.values.queryKey.isEmpty == true)
         #expect(model.draft?.hasExistingKey == true)
-        model.draft?.values.name = "Rename after query was cleared"
+        model.draft?.values.key = "replacement-base-key"
         model.save()
         config = model.readConfig(try #require(model.current?.plugin))
         #expect(config.queryKey.isEmpty)
-        #expect(config.refreshKey == "call-key")
+        #expect(config.refreshKey == "replacement-base-key")
         model.startEdit()
-        model.draft?.values.queryKey = "query-key-c"
+        model.draft?.values.key = ""
+        model.draft?.values.clearKeyIntent = true
         model.save()
         config = model.readConfig(try #require(model.current?.plugin))
-        #expect(config.queryKey == "query-key-c")
-        #expect(config.refreshKey == "call-key")
+        #expect(config.queryKey.isEmpty)
+        #expect(config.refreshKey.isEmpty)
+        #expect(!model.callConfigured(try #require(model.current)))
     }
 
     @Test func newPlanCancellationKeepsDraftAndCreatesNoAccount() throws {

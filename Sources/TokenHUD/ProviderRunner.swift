@@ -58,9 +58,7 @@ final class ProviderRunner {
         if FileManager.default.fileExists(atPath: originalAuth.path) || plugin.manifest.credentialSource != nil {
             do {
                 let config = ProviderConfigStore.read(authFile: originalAuth, manifest: plugin.manifest)
-                if config.quotaCredentialMode == "inherit" {
-                    snapshot = try ProviderQuerySnapshot.make(config: config, manifest: plugin.manifest, originalAuth: originalAuth)
-                }
+                snapshot = try ProviderQuerySnapshot.make(config: config, manifest: plugin.manifest, originalAuth: originalAuth)
             } catch {
                 return UsageCache(generatedAt: nil, fiveHour: nil, sevenDay: nil, monthly: nil,
                     error: "配置错误：" + error.localizedDescription, stale: true,

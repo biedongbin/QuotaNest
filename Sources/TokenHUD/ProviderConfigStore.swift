@@ -1,9 +1,8 @@
 import Foundation
 
-/// API 调用与额度查询各自持有凭证，供应商类型只声明协议和解析方式。
+/// API 调用与额度查询共享基础认证，查询凭证仅在请求时解析。
 struct ProviderConfig {
     var authMode = "apikey"
-    var quotaCredentialMode = "inherit"
     var authCredentialFile = ""
     // Read-only capability metadata from the supplier declaration, never persisted credentials.
     var credentialsResolved = false
@@ -19,8 +18,6 @@ struct ProviderConfig {
 
     var queryUrl = ""
     var queryKey = ""
-    var queryToken = ""
-    var queryCookie = ""
     var queryHeader = ""
     var apiBaseURL = ""
     var refreshUrl = ""
@@ -74,48 +71,34 @@ enum ProviderConfigStore {
             ?? (manifest.supportsQuota ? (manifest.template != nil ? "script" : "endpoint") : "none")
         c.queryUrl = manifest.queryUrl ?? (obj["queryUrl"] as? String)
             ?? (obj["apiUrl"] as? String) ?? (obj["url"] as? String) ?? ""
-        c.queryToken = headers["authorization"] as? String ?? ""
-        c.queryCookie = obj["cookieAuth"] as? String ?? ""
-        if let value = obj["queryKey"] as? String {
-            c.queryKey = value
-        } else if let field = manifest.queryKeyField {
-            c.queryKey = obj[field] as? String ?? ""
-        } else {
-            c.queryKey = bearer(headers["Authorization"] as? String)
-            if c.queryKey.isEmpty, manifest.template != nil, manifest.queryAuth == "bearer" {
-                c.queryKey = obj["refreshApiKey"] as? String ?? ""
-            }
-        }
-        c.queryHeader = headers.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
         c.refreshUrl = manifest.refreshUrl ?? (obj["refreshUrl"] as? String) ?? ""
         c.apiBaseURL = obj["apiBaseURL"] as? String ?? APIEndpoint.baseURL(from: c.refreshUrl)
         c.refreshProtocol = manifest.refreshProtocol ?? "anthropic"
         c.refreshHeader = manifest.refreshHeader ?? "Authorization: Bearer <key>"
-        // v2 中空字符串有明确语义：不得偷偷回退另一能力的凭证。
+        // Older shared API Key layouts can supply the base key, never web JWT/Cookie or queryKey.
         let schemaVersion = obj["schemaVersion"] as? Int ?? 1
         if let value = obj["refreshApiKey"] as? String, !value.isEmpty || schemaVersion >= 2 {
             c.refreshKey = value
-        } else if manifest.refreshAuth == "cookie" {
-            c.refreshKey = c.queryCookie
-        } else {
-            c.refreshKey = c.queryKey
+        } else if let field = manifest.queryKeyField, field != "queryKey" {
+            c.refreshKey = obj[field] as? String ?? ""
+        } else if manifest.queryAuth == "bearer" || manifest.queryAuth == nil, manifest.refreshAuth != "cookie" {
+            c.refreshKey = bearer(headers["Authorization"] as? String)
         }
         c.testModel = obj["testModel"] as? String ?? manifest.testModel ?? ""
         c.testPrompt = obj["testPrompt"] as? String ?? manifest.testPrompt ?? ProviderConfig.defaultPrompt
         c.testMaxTokens = obj["testMaxTokens"] as? Int ?? ProviderConfig.defaultMaxTokens
         c.scheduleTimes = obj["scheduleTimes"] as? [String] ?? []
-        if let mode = obj["quotaCredentialMode"] as? String {
-            c.quotaCredentialMode = mode
-        } else {
-            let legacyValues = [c.queryKey, c.queryToken, c.queryCookie].contains { !$0.isEmpty }
-            c.quotaCredentialMode = legacyValues || (manifest.queryAuth == "header" && (obj["schemaVersion"] as? Int ?? 1) < 3 && !obj.isEmpty) ? "legacy" : "inherit"
-        }
         return c
     }
 
     static func write(_ c: ProviderConfig, manifest: ProviderManifest, to authFile: URL) throws {
         if c.authMode == "auth" && c.credentialsResolved {
             throw ProviderAuthenticationError(message: "已解析的 Auth 令牌只用于当前请求，不能写入账号配置")
+        }
+        let declared = applyingManifest(manifest, to: c)
+        if let source = ProviderAuthentication.credentialFileURL(for: declared),
+           source.resolvingSymlinksInPath() == authFile.standardizedFileURL.resolvingSymlinksInPath() {
+            throw ProviderAuthenticationError(message: "本机 Auth 授权文件只读，请使用独立的账号配置文件")
         }
         var obj: [String: Any] = [:]
         if FileManager.default.fileExists(atPath: authFile.path) {
@@ -126,20 +109,9 @@ enum ProviderConfigStore {
             }
             obj = existing
         }
-        var headers = obj["headers"] as? [String: Any] ?? [:]
-        switch manifest.queryAuth {
-        case "jwt": headers["authorization"] = c.queryToken
-        case "cookie": obj["cookieAuth"] = c.queryCookie
-        case "header": break // 外部 CLI 配置只读
-        default:
-            if let field = manifest.queryKeyField { obj[field] = c.queryKey }
-            else { headers["Authorization"] = "Bearer \(c.queryKey)" }
-        }
-        if !headers.isEmpty { obj["headers"] = headers }
-        obj["queryKey"] = c.queryKey
+        obj = removingQueryCredentials(from: obj, manifest: manifest)
         obj["queryUrl"] = c.queryUrl
         obj["quotaMode"] = c.quotaMode
-        obj["cookieAuth"] = c.queryCookie
         // 旧解析脚本仍读取 apiUrl，保留其格式；绝不写入 API 调用地址。
         obj["apiUrl"] = c.queryUrl
         obj["refreshApiKey"] = c.authMode == "auth" ? (obj["refreshApiKey"] as? String ?? "") : c.refreshKey
@@ -150,7 +122,6 @@ enum ProviderConfigStore {
         obj["testMaxTokens"] = c.testMaxTokens
         obj["scheduleTimes"] = c.scheduleTimes.isEmpty ? nil : c.scheduleTimes
         obj["authMode"] = c.authMode
-        obj["quotaCredentialMode"] = c.quotaCredentialMode
         obj["authCredentialFile"] = c.authCredentialFile
         obj["schemaVersion"] = 3
         let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
@@ -161,6 +132,32 @@ enum ProviderConfigStore {
 
     static func createCustom(slug: String, to authFile: URL) throws {
         try write(ProviderConfig(), manifest: ProviderManifest(name: slug, label: slug), to: authFile)
+    }
+
+    /// The caller invalidates its owned quota cache when saving removes an old query identity.
+    static func hasObsoleteQueryCredentials(authFile: URL, manifest: ProviderManifest) -> Bool {
+        guard let data = try? Data(contentsOf: authFile),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        let cleaned = removingQueryCredentials(from: object, manifest: manifest)
+        return !NSDictionary(dictionary: object).isEqual(to: cleaned)
+    }
+
+    /// Strip obsolete query identities while preserving unrelated user configuration.
+    static func removingQueryCredentials(from original: [String: Any], manifest: ProviderManifest) -> [String: Any] {
+        var object = original
+        for key in ["queryKey", "queryToken", "queryCookie", "cookieAuth", "quotaCredentialMode", "token", "cookie"]
+            where key != manifest.credentialSource?.fileConfigKey {
+            object.removeValue(forKey: key)
+        }
+        let baseFields: Set<String> = ["refreshApiKey", "authMode", "authCredentialFile", "queryUrl", "quotaMode", "scheduleTimes"]
+        if let field = manifest.queryKeyField, !baseFields.contains(field), field != manifest.credentialSource?.fileConfigKey {
+            object.removeValue(forKey: field)
+        }
+        if let headers = object["headers"] as? [String: Any] {
+            let retained = headers.filter { !["authorization", "cookie"].contains($0.key.lowercased()) }
+            object["headers"] = retained.isEmpty ? nil : retained
+        }
+        return object
     }
 
     private static func bearer(_ value: String?) -> String {

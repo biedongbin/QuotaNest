@@ -4,6 +4,77 @@ import Testing
 
 @Suite
 struct DataEngineTests {
+    @Test @MainActor func startupMigrationRemovesTheOldQueryIdentityAndItsCache() throws {
+        let (engine, root, hud, _) = makeEngine("query-identity-upgrade")
+        defer { try? FileManager.default.removeItem(at: root) }
+        addPlugin("shared", stdout: "{}", to: root)
+        let auth = hud.appendingPathComponent(".shared-usage-auth.json")
+        let cache = hud.appendingPathComponent(".shared-usage-cache.json")
+        try JSONSerialization.data(withJSONObject: ["refreshApiKey": "base-account-A", "queryKey": "query-account-B",
+            "headers": ["authorization": "old-B", "x-trace": "keep"], "quotaCredentialMode": "legacy",
+            "scheduleTimes": ["09:00"], "other": true]).write(to: auth)
+        try Data(#"{"generatedAt":9999999999999,"seven_day":{"used_percentage":87}}"#.utf8).write(to: cache)
+        engine.reloadRegistry()
+        #expect(engine.states.first?.cache?.sevenDay?.usedPercentage == 87)
+        engine.migrateAccounts()
+        #expect(engine.states.first?.cache == nil)
+        engine.reloadRegistry()
+        #expect(engine.states.first?.cache == nil)
+        #expect(!FileManager.default.fileExists(atPath: cache.path))
+        let config = ProviderConfigStore.read(authFile: auth, manifest: engine.allPlugins[0].manifest)
+        #expect(config.refreshKey == "base-account-A")
+        #expect(!ProviderConfigStore.hasObsoleteQueryCredentials(authFile: auth, manifest: engine.allPlugins[0].manifest))
+        let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: auth)) as? [String: Any])
+        #expect(saved["other"] as? Bool == true)
+        #expect(saved["scheduleTimes"] as? [String] == ["09:00"])
+        #expect(saved["headers"] as? [String: String] == ["x-trace": "keep"])
+        let migrated = try Data(contentsOf: auth)
+        engine.migrateAccounts()
+        #expect(try Data(contentsOf: auth) == migrated)
+    }
+
+    @Test @MainActor func startupQueryMigrationReportsAnUnownedCacheWithoutShowingIt() throws {
+        let (engine, root, hud, _) = makeEngine("query-upgrade-cache-boundary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        addPlugin("shared", stdout: "{}", to: root)
+        let auth = hud.appendingPathComponent(".shared-usage-auth.json")
+        let cache = root.appendingPathComponent("external-usage-cache.json")
+        let original = Data(#"{"refreshApiKey":"base-A","queryKey":"old-B"}"#.utf8)
+        let cached = Data(#"{"generatedAt":9999999999999,"seven_day":{"used_percentage":87}}"#.utf8)
+        try original.write(to: auth)
+        try cached.write(to: cache)
+        let manifest = ProviderManifest(name: "shared", label: "shared", cacheFile: cache.path, authFile: auth.path)
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("providers/shared/manifest.json"))
+        engine.migrateAccounts()
+        engine.reloadRegistry()
+        #expect(engine.registryErrors["shared"]?.contains("查询认证迁移失败") == true)
+        #expect(engine.states.first?.cache == nil)
+        #expect(try Data(contentsOf: auth) == original)
+        #expect(try Data(contentsOf: cache) == cached)
+    }
+
+    @Test @MainActor func startupQueryMigrationSkipsExternalSymlinkAndAuthSourceFiles() throws {
+        let (engine, root, hud, _) = makeEngine("query-upgrade-boundaries")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = Data(#"{"authMode":"apikey","refreshApiKey":"base-A","queryKey":"old-B"}"#.utf8)
+        let external = root.appendingPathComponent("external-usage-auth.json")
+        try original.write(to: external)
+        for slug in ["external", "linked", "source"] {
+            addPlugin(slug, stdout: "{}", to: root)
+            let auth = slug == "external" ? external : hud.appendingPathComponent(".\(slug)-usage-auth.json")
+            if slug == "linked" { try FileManager.default.createSymbolicLink(at: auth, withDestinationURL: external) }
+            if slug == "source" { try original.write(to: auth) }
+            var manifest = ProviderManifest(name: slug, label: slug, authFile: auth.path)
+            if slug == "source" { manifest.credentialSource = ProviderCredentialSource(file: auth.path, tokenPath: "tokens.access_token") }
+            try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("providers/\(slug)/manifest.json"))
+        }
+        engine.migrateAccounts()
+        #expect(try Data(contentsOf: external) == original)
+        #expect(try Data(contentsOf: hud.appendingPathComponent(".source-usage-auth.json")) == original)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: hud.appendingPathComponent(".linked-usage-auth.json").path) == external.path)
+        #expect(engine.registryErrors.isEmpty)
+    }
+
     @Test @MainActor func automaticQuotaUsesBaseKeyWithoutSeparateQueryKey() async throws {
         let (engine, root, hud, _) = makeEngine("inherited-auto-query")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -15,7 +86,6 @@ struct DataEngineTests {
         var config = ProviderConfig()
         config.refreshKey = "fixture-base-key"
         config.quotaMode = "script"
-        config.quotaCredentialMode = "inherit"
         try ProviderConfigStore.write(config, manifest: manifest, to: auth)
         let original = try Data(contentsOf: auth)
         engine.reloadRegistry()

@@ -29,7 +29,7 @@ function run(name, auth, response) {
 
 test('GLM API Key queries the official plan route with raw Authorization and actual windows', () => {
   const reset = Date.now() + 3600000;
-  const { body, args } = run('glm', { quotaCredentialMode: 'inherit', apiUrl: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit',
+  const { body, args } = run('glm', { tokenhudResolvedAuth: true, apiUrl: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit',
     headers: { Authorization: 'fake-coding-api-key' }, successCode: 200 }, { success: true, data: { limits: [
       { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 12, nextResetTime: reset },
       { type: 'TOKENS_LIMIT', unit: 6, number: 7, percentage: 45, nextResetTime: reset },
@@ -46,7 +46,7 @@ test('GLM API Key queries the official plan route with raw Authorization and act
 });
 
 test('GPT inherited query uses the resolved snapshot instead of a subsequently changed CLI login', () => {
-  const { body, args } = run('gpt', { quotaCredentialMode: 'inherit', authMode: 'auth', tokenhudResolvedAuth: true,
+  const { body, args } = run('gpt', { authMode: 'auth', tokenhudResolvedAuth: true,
     queryKey: 'snapshot-account-token-A', accountId: 'account-A' }, { rate_limit: {
       primary_window: { used_percent: 12, limit_window_seconds: 18000 },
       secondary_window: { used_percent: 45, limit_window_seconds: 604800 },

@@ -146,6 +146,7 @@ final class DataEngine: ObservableObject {
     /// 类型模板清单 (bundle providers, 只读) — 添加供应商选类型、EditForm 能力判定用
     @Published private(set) var templates: [PluginProvider] = []
     @Published private(set) var registryErrors: [String: String] = [:]
+    private var queryMigrationErrors: [String: String] = [:]
     @Published private(set) var nodeMissing = false
     @Published private(set) var lastRefresh: Date?
     /// "立刻刷新"进行中 (状态栏图标显示 ⟳ 反馈)
@@ -253,6 +254,7 @@ final class DataEngine: ObservableObject {
     /// P2-3: 实例已存在 → 字段级 merge — 只补模板新增能力字段, 不全量覆盖
     /// (用户对 manifest 的手改/工具改动保留; displayName 等用户字段一律不动)
     func migrateAccounts() {
+        defer { migrateObsoleteQueryCredentials() }
         migrateLegacyCustomAccounts()
         guard let bundleDir else { return }
         let fm = FileManager.default
@@ -297,6 +299,47 @@ final class DataEngine: ObservableObject {
             }
         }
         upgradeTemplateAccounts()
+    }
+
+    /// Upgrade only app-owned account files; external CLI authorization and caches stay read-only.
+    private func migrateObsoleteQueryCredentials() {
+        let fm = FileManager.default
+        queryMigrationErrors = [:]
+        for plugin in ProviderRegistry.scan(dir: userDir) {
+            let auth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
+                ?? hudDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
+            do {
+                guard try isOwnedRegularUsageFile(auth, kind: "auth"),
+                      ProviderConfigStore.hasObsoleteQueryCredentials(authFile: auth, manifest: plugin.manifest) else { continue }
+                let config = ProviderConfigStore.read(authFile: auth, manifest: plugin.manifest)
+                if let source = ProviderAuthentication.credentialFileURL(for: config),
+                   source.resolvingSymlinksInPath() == auth.standardizedFileURL.resolvingSymlinksInPath() { continue }
+                let cache = Self.cachePath(for: plugin, hudDir: hudDir)
+                // Remove the previous identity's cache before committing the new inherited identity.
+                if fm.fileExists(atPath: cache.path) {
+                    guard try isOwnedRegularUsageFile(cache, kind: "cache") else {
+                        throw ProviderAuthenticationError(message: "旧查询缓存不属于可自动清理的账号文件，请检查缓存路径")
+                    }
+                    try fm.removeItem(at: cache)
+                }
+                invalidateSnapshot(plugin.slug)
+                try ProviderConfigStore.write(config, manifest: plugin.manifest, to: auth)
+            } catch {
+                let message = "查询认证迁移失败：\(error.localizedDescription)"
+                queryMigrationErrors[plugin.slug] = message
+                registryErrors[plugin.slug] = message
+            }
+        }
+    }
+
+    private func isOwnedRegularUsageFile(_ file: URL, kind: String) throws -> Bool {
+        let standardized = file.standardizedFileURL
+        guard standardized.deletingLastPathComponent() == hudDir.standardizedFileURL,
+              standardized.resolvingSymlinksInPath().deletingLastPathComponent() == hudDir.resolvingSymlinksInPath(),
+              standardized.lastPathComponent.hasSuffix("-usage-\(kind).json")
+                || standardized.lastPathComponent.hasSuffix(".usage-\(kind).json") else { return false }
+        guard FileManager.default.fileExists(atPath: standardized.path) else { return false }
+        return try FileManager.default.attributesOfItem(atPath: standardized.path)[.type] as? FileAttributeType == .typeRegular
     }
 
     private func upgradeTemplateAccounts() {
@@ -523,7 +566,7 @@ final class DataEngine: ObservableObject {
                 return hasInstance || !deleted.contains(p.slug)
             }
         }
-        registryErrors = errors
+        registryErrors = errors.merging(queryMigrationErrors) { _, migration in migration }
         allPlugins = plugins.sorted {
             let left = orderIndex($0.slug), right = orderIndex($1.slug)
             return left == right ? $0.slug < $1.slug : left < right
@@ -722,19 +765,7 @@ final class DataEngine: ObservableObject {
                 guard let auth = authURL(for: st) else { return nil }
                 let config = ProviderConfigStore.read(authFile: auth, manifest: st.manifest)
                 guard config.quotaMode != "none" else { return nil }
-                let ready: Bool
-                if config.quotaCredentialMode == "inherit" {
-                    ready = (try? ProviderAuthentication.resolveQuota(config)) != nil
-                } else if st.manifest.quotaMode == "endpoint" {
-                    ready = !config.queryKey.isEmpty
-                } else {
-                    switch st.manifest.queryAuth {
-                    case "jwt": ready = !config.queryToken.isEmpty
-                    case "cookie": ready = !config.queryCookie.isEmpty
-                    case "header": ready = true
-                    default: ready = !config.queryKey.isEmpty || !config.queryCookie.isEmpty
-                    }
-                }
+                let ready = (try? ProviderAuthentication.resolveQuota(config)) != nil
                 guard ready else { return nil }
             }
             let override = defaults.integer(forKey: Self.intervalKey(st.slug))
@@ -1001,7 +1032,7 @@ final class DataEngine: ObservableObject {
     private func cacheMatchesAuthSource(_ cache: UsageCache, slug: String, manifest: ProviderManifest) -> Bool {
         guard let file = authURL(for: ProviderState(slug: slug, manifest: manifest, cache: nil, isStale: false)) else { return true }
         let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
-        guard config.authMode == "auth", config.quotaCredentialMode == "inherit" else { return true }
+        guard config.authMode == "auth" else { return true }
         guard (try? ProviderAuthentication.resolveQuota(config)) != nil,
               let source = ProviderAuthentication.credentialFileURL(for: config),
               let modified = try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { return false }
@@ -1009,6 +1040,7 @@ final class DataEngine: ObservableObject {
     }
 
     func readCache(slug: String, manifest: ProviderManifest) -> UsageCache? {
+        guard queryMigrationErrors[slug] == nil else { return nil }
         let p = DataEngine.cachePath(for: PluginProvider(slug: slug, manifest: manifest, dir: hudDir),
                                      hudDir: hudDir)
         guard let data = try? Data(contentsOf: p),

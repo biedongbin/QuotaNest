@@ -6,22 +6,21 @@ import Foundation
 enum RefreshTrigger {
     /// 上栏测试: 发查询请求 (GET url + header), 看是否返回数据
     static func testQuery(config original: ProviderConfig) async -> String? {
-        let target = original.quotaCredentialMode == "inherit" ? (original.inheritQueryURL ?? original.queryUrl) : original.queryUrl
+        let target = original.inheritQueryURL ?? original.queryUrl
         guard !target.isEmpty else { return "未配置查询 url" }
         guard validHTTPURL(target) != nil else { return "查询 url 非法" }
         let config: ProviderConfig
         do { config = try ProviderAuthentication.resolveQuota(original) }
         catch { return error.localizedDescription }
         guard !config.queryUrl.isEmpty else { return "未配置查询 url" }
-        // 凭证: jwt/cookie 用 queryToken/queryCookie, 其他用 queryKey
-        let key = config.queryToken.isEmpty ? (config.queryCookie.isEmpty ? config.queryKey : config.queryCookie) : config.queryToken
+        let key = config.queryKey
         guard !key.isEmpty else { return "未配置查询凭证" }
         // P0: url 非法时 URL(string:) 返回 nil, 强解包会 crash 整个 App
         guard let u = URL(string: config.queryUrl) else { return "查询 url 非法" }
         var req = URLRequest(url: u)
         req.httpMethod = "GET"
         applyHeaders(&req, config.queryHeader, key: key, protocol: config.refreshProtocol)
-        return await send(req, redacting: [config.queryKey, config.queryToken, config.queryCookie])
+        return await send(req, redacting: [config.queryKey])
     }
 
     /// 下栏测试/触发刷新: 发 chat 请求 (POST url + header + model + prompt)

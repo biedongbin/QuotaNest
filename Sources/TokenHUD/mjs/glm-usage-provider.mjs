@@ -97,7 +97,7 @@ async function main() {
   // curl 的 UA + TLS 指纹被放行。header 从 auth.headers 动态构造。
   const headers = { ...(auth.headers || {}) };
   const token = headers.authorization;
-  if (NAME === 'glm' && !token && auth.quotaCredentialMode !== 'inherit') {
+  if (NAME === 'glm' && !token && auth.tokenhudResolvedAuth !== true) {
     writeCache({ ...prevBuckets, error: 'no-auth', lastAttemptAt: Date.now(), ttlMs: TTL_MS, stale: true });
     return;
   }
@@ -132,7 +132,7 @@ async function main() {
   }
 
   // Official plan endpoint: same API Key as model calls, bare Authorization (not web JWT).
-  if (auth.quotaCredentialMode === 'inherit') {
+  if (auth.tokenhudResolvedAuth === true) {
     const code = Number(data?.code);
     const fail = error => writeCache({ ...prevBuckets, error, stale: true, lastAttemptAt: Date.now(), ttlMs: TTL_MS });
     if (code === 401 || code === 403) { fail('auth'); return; }

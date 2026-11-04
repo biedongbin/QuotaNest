@@ -62,23 +62,20 @@ struct ProviderAuthenticationTests {
         let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: account)) as? [String: Any])
         #expect(saved["codexAuthFile"] as? String == oldFile.path)
         let fresh = ProviderConfigStore.read(authFile: providerDir.appendingPathComponent("auth-template.json"), manifest: manifest)
-        #expect(fresh.authMode == "auth" && fresh.quotaCredentialMode == "inherit")
+        #expect(fresh.authMode == "auth")
     }
 
     @Test func apiKeyQuotaInheritsBaseInsteadOfStaleWebCredentials() throws {
         var c = ProviderConfig()
         c.refreshKey = "base-api-key"
-        c.queryKey = "old-query-key"; c.queryToken = "old-web-token"; c.queryCookie = "old-cookie"
+        c.queryKey = "old-query-key"
         c.inheritQueryURL = "https://api.example.test/usage"
         c.inheritQueryHeader = "Authorization: <key>"
         let q = try ProviderAuthentication.resolveQuota(c)
         #expect(q.queryKey == "base-api-key")
-        #expect(q.queryToken.isEmpty && q.queryCookie.isEmpty)
         #expect(q.queryHeader == "Authorization: <key>")
         #expect(q.queryUrl == "https://api.example.test/usage")
-        #expect(c.queryToken == "old-web-token")
-        c.quotaCredentialMode = "legacy"
-        #expect(try ProviderAuthentication.resolveQuota(c).queryToken == "old-web-token")
+        #expect(c.queryKey == "old-query-key")
     }
 
     @Test func authSnapshotIsReadOnlyAndStableUntilNextRequest() throws {
@@ -111,21 +108,57 @@ struct ProviderAuthenticationTests {
         #expect(throws: ProviderAuthenticationError.self) { try ProviderAuthentication.resolveQuota(c) }
     }
 
-    @Test func schemaTwoKeepsIndependentCredentialsAsExplicitLegacy() throws {
+    @Test func oldIndependentCredentialsAreRemovedWithoutChangingBaseAuthentication() throws {
         let dir = try root(); defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("account.json")
         try JSONSerialization.data(withJSONObject: ["schemaVersion": 2, "refreshApiKey": "base-key", "queryKey": "query-key",
-            "headers": ["authorization": "old-web-token"], "cookieAuth": "old-web-cookie", "quotaMode": "none"]).write(to: file)
-        let m = ProviderManifest(name: "fixture", label: "fixture", quotaMode: "script")
-        var c = ProviderConfigStore.read(authFile: file, manifest: m)
-        #expect(c.authMode == "apikey" && c.quotaCredentialMode == "legacy")
-        #expect(c.quotaMode == "none")
-        c.quotaCredentialMode = "inherit"
-        try ProviderConfigStore.write(c, manifest: m, to: file)
-        let read = ProviderConfigStore.read(authFile: file, manifest: m)
-        #expect(read.quotaCredentialMode == "inherit")
-        #expect(read.queryToken == "old-web-token" && read.queryCookie == "old-web-cookie" && read.queryKey == "query-key")
-        #expect(try ProviderAuthentication.resolveQuota(read).queryKey == "base-key")
+            "headers": ["authorization": "old-web-token"], "cookieAuth": "old-web-cookie", "quotaMode": "none",
+            "quotaCredentialMode": "legacy"]).write(to: file)
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", quotaMode: "script")
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        #expect(config.authMode == "apikey" && config.quotaMode == "none")
+        #expect(config.queryKey.isEmpty)
+        #expect(try ProviderAuthentication.resolveQuota(config).queryKey == "base-key")
+        try ProviderConfigStore.write(config, manifest: manifest, to: file)
+        let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(saved["quotaCredentialMode"] == nil && saved["queryKey"] == nil && saved["cookieAuth"] == nil)
+        #expect(saved["headers"] == nil)
+        #expect(saved["refreshApiKey"] as? String == "base-key")
+    }
+
+    @Test func authSourceCannotBeUsedAsWritableAccountConfiguration() throws {
+        let dir = try root(); defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("login.json")
+        try login(file)
+        let original = try Data(contentsOf: file)
+        let config = authConfig(file)
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", credentialSource: config.credentialSource)
+        #expect(throws: ProviderAuthenticationError.self) {
+            try ProviderConfigStore.write(config, manifest: manifest, to: file)
+        }
+        #expect(try Data(contentsOf: file) == original)
+    }
+
+    @Test func apiKeySnapshotReplacesEveryOldQueryIdentity() throws {
+        let dir = try root(); defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("account.json")
+        try JSONSerialization.data(withJSONObject: ["refreshApiKey": "base-key", "queryKey": "old-key",
+            "apiKey": "old-api-key", "cookieAuth": "old-cookie", "queryToken": "old-token", "accountId": "old-account",
+            "quotaCredentialMode": "legacy", "headers": ["authorization": "old-jwt", "Cookie": "old-cookie"]]).write(to: file)
+        let original = try Data(contentsOf: file)
+        let manifest = ProviderManifest(name: "fixture", label: "fixture", queryUrl: "https://api.example.test/usage",
+            queryAuth: "bearer", queryKeyField: "apiKey")
+        let config = ProviderConfigStore.read(authFile: file, manifest: manifest)
+        let snapshot = try ProviderQuerySnapshot.make(config: config, manifest: manifest, originalAuth: file)
+        defer { snapshot.cleanup() }
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: snapshot.file)) as? [String: Any])
+        #expect(object["queryKey"] as? String == "base-key")
+        #expect(object["apiKey"] as? String == "base-key")
+        #expect(object["cookieAuth"] == nil && object["queryToken"] == nil && object["accountId"] == nil)
+        let headers = try #require(object["headers"] as? [String: String])
+        #expect(headers.first { $0.key.lowercased() == "authorization" }?.value == "Bearer base-key")
+        #expect(!headers.keys.contains { $0.lowercased() == "cookie" })
+        #expect(try Data(contentsOf: file) == original)
     }
 
     @Test func instantiatePreservesDeclaredAuthCapabilities() throws {

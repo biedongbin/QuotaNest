@@ -5,16 +5,12 @@ struct ConfigTabView: View {
     let row: AccountRow
     private var config: ProviderConfig { model.readConfig(row.plugin) }
     private var quotaAddress: String {
-        let saved = config
-        if saved.quotaCredentialMode == "inherit" {
-            do {
-                let resolved = try ProviderAuthentication.resolveQuota(saved)
-                return resolved.queryUrl.isEmpty ? "供应商脚本" : resolved.queryUrl
-            } catch {
-                return "基础认证解析失败，查询地址暂不可用"
-            }
+        do {
+            let resolved = try ProviderAuthentication.resolveQuota(config)
+            return resolved.queryUrl.isEmpty ? "供应商脚本" : resolved.queryUrl
+        } catch {
+            return "基础认证解析失败，查询地址暂不可用"
         }
-        return saved.queryUrl.isEmpty ? "供应商脚本" : saved.queryUrl
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -70,8 +66,8 @@ struct ConfigTabView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if row.canQuery && config.quotaMode != "none" {
                         KeyValueRow("查询地址", mono: true) { Text(quotaAddress) }
-                        KeyValueRow("查询认证") { Text(config.quotaCredentialMode == "inherit" ? "跟随基础接入" : "旧版独立凭证") }
-                        Text(model.quotaConfigured(row) ? "用量查询配置已就绪。" : "请检查基础认证或旧版查询兼容配置。")
+                        KeyValueRow("查询认证") { Text("跟随基础接入") }
+                        Text(model.quotaConfigured(row) ? "用量查询配置已就绪。" : "请检查基础接入的认证配置。")
                             .font(.callout).foregroundStyle(.secondary)
                         Button("查看额度", systemImage: "chart.bar") { model.tab = .quota }
                     } else {

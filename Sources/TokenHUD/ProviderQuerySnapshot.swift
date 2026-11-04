@@ -13,13 +13,12 @@ struct ProviderQuerySnapshot {
         var object = (try? Data(contentsOf: originalAuth)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
         } ?? [:]
+        object = ProviderConfigStore.removingQueryCredentials(from: object, manifest: manifest)
         object["authMode"] = config.authMode
-        object["quotaCredentialMode"] = "inherit"
         object["tokenhudResolvedAuth"] = true
         object["queryKey"] = resolved.queryKey
         object["apiKey"] = resolved.queryKey
         object["refreshApiKey"] = resolved.queryKey
-        object["cookieAuth"] = ""
         object["apiUrl"] = resolved.queryUrl
         object["queryUrl"] = resolved.queryUrl
         if let field = manifest.queryKeyField { object[field] = resolved.queryKey }
@@ -27,9 +26,7 @@ struct ProviderQuerySnapshot {
         RefreshTrigger.applyHeaders(&request, resolved.queryHeader, key: resolved.queryKey, protocol: resolved.refreshProtocol)
         let headers = request.allHTTPHeaderFields ?? [:]
         object["headers"] = headers
-        if let account = headers.first(where: { $0.key.lowercased() == "chatgpt-account-id" })?.value {
-            object["accountId"] = account
-        }
+        object["accountId"] = headers.first(where: { $0.key.lowercased() == "chatgpt-account-id" })?.value
         if let key = config.credentialSource?.fileConfigKey,
            let source = ProviderAuthentication.credentialFileURL(for: config) { object[key] = source.path }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-query-\(UUID().uuidString)", isDirectory: true)
