@@ -402,7 +402,7 @@ final class DataEngine: ObservableObject {
         }
     }
 
-    /// 模板升级同步 (字段级): 实例 manifest 缺失的能力字段按模板补齐; 已有字段 (含用户手改) 不动
+    /// 模板升级同步 (字段级): 缺失能力字段按模板补齐；refreshHeader 仅追加缺失名称，已有值不动
     /// 补齐范围 = 协议/能力字段 (testModel/testPrompt/queryUrl/queryAuth/queryKeyField/
     /// refreshUrl/refreshProtocol/refreshAuth/refreshHeader/needsCredential/buckets/accent/icon/intervalSec)
     /// 身份/用户字段 (displayName/enabled/authMode/origin) 不在补齐范围
@@ -429,6 +429,27 @@ final class DataEngine: ObservableObject {
         }
         for k in mergeKeys where obj[k] == nil {
             if let v = tmpl[k] { obj[k] = v; changed = true }
+        }
+        // Header 模板按名称补新增声明，已有值（含用户自定义认证）始终保留。
+        if let existing = obj["refreshHeader"] as? String, let declared = template.refreshHeader {
+            func headerName(_ line: Substring) -> String? {
+                let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2 else { return nil }
+                let name = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                return name.isEmpty ? nil : name
+            }
+            var names = Set(existing.split(separator: "\n").compactMap(headerName))
+            var additions: [String] = []
+            for line in declared.split(separator: "\n") {
+                if let name = headerName(line), names.insert(name).inserted {
+                    additions.append(String(line))
+                }
+            }
+            if !additions.isEmpty {
+                let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
+                obj["refreshHeader"] = existing + separator + additions.joined(separator: "\n")
+                changed = true
+            }
         }
         guard changed else { return }
         if let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {

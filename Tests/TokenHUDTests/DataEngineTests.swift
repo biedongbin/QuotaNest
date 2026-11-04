@@ -4,6 +4,50 @@ import Testing
 
 @Suite
 struct DataEngineTests {
+    @Test func manifestHeaderUpgradeAddsMissingNamesAndPreservesExistingValues() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-header-upgrade-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("manifest.json")
+        let auth = root.appendingPathComponent("account.json")
+        let credentials = Data(#"{"refreshApiKey":"fixture-account-key","scheduleTimes":["09:00"]}"#.utf8)
+        try credentials.write(to: auth)
+        let existingHeader = "authorization: Bearer user-value\nX-Own: keep\nuSeR-aGeNt: CustomClient/2.0"
+        let original: [String: Any] = ["name": "Custom", "label": "C", "displayName": "User name",
+            "enabled": false, "authFile": auth.path, "refreshHeader": existingHeader,
+            "customMetadata": ["keep": true]]
+        try JSONSerialization.data(withJSONObject: original).write(to: path)
+        // An arbitrary type name ensures upgrade behavior does not depend on a supplier slug.
+        let template = ProviderManifest(name: "arbitrary-type", label: "T",
+            refreshHeader: "Authorization: Bearer <key>\nx-opencode-session: tokenhud-<session>\nUser-Agent: TokenHUD/1.0")
+        DataEngine.mergeManifestCapabilities(template: template, into: path)
+        let upgraded = try Data(contentsOf: path)
+        let object = try #require(try JSONSerialization.jsonObject(with: upgraded) as? [String: Any])
+        #expect(object["refreshHeader"] as? String == existingHeader + "\nx-opencode-session: tokenhud-<session>")
+        #expect(object["displayName"] as? String == "User name")
+        #expect(object["enabled"] as? Bool == false)
+        #expect(object["customMetadata"] as? [String: Bool] == ["keep": true])
+        #expect(try Data(contentsOf: auth) == credentials)
+        DataEngine.mergeManifestCapabilities(template: template, into: path)
+        #expect(try Data(contentsOf: path) == upgraded)
+    }
+
+    @Test func manifestHeaderUpgradeRetainsNilAndEmptyHeaderBehavior() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-header-defaults-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let template = ProviderManifest(name: "type", label: "T", refreshHeader: "X-First: one\nX-Second: two")
+        for hasEmptyHeader in [false, true] {
+            let path = root.appendingPathComponent("\(hasEmptyHeader).json")
+            var object: [String: Any] = ["name": "Account", "label": "A"]
+            if hasEmptyHeader { object["refreshHeader"] = "" }
+            try JSONSerialization.data(withJSONObject: object).write(to: path)
+            DataEngine.mergeManifestCapabilities(template: template, into: path)
+            let upgraded = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+            #expect(upgraded["refreshHeader"] as? String == template.refreshHeader)
+        }
+    }
+
     @Test @MainActor func startupMigrationRemovesTheOldQueryIdentityAndItsCache() throws {
         let (engine, root, hud, _) = makeEngine("query-identity-upgrade")
         defer { try? FileManager.default.removeItem(at: root) }

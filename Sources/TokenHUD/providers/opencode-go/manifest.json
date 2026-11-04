@@ -17,7 +17,7 @@
   "needsCredential": false,
   "queryAuth": "bearer",
   "refreshAuth": "bearer",
-  "refreshHeader": "Authorization: Bearer <key>",
+  "refreshHeader": "Authorization: Bearer <key>\nx-opencode-session: tokenhud-<session>\nUser-Agent: TokenHUD/1.0",
   "refreshProtocol": "openai",
   "refreshUrl": "https://opencode.ai/zen/go/v1/chat/completions",
   "testModel": "deepseek-v4-flash",

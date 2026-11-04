@@ -74,7 +74,7 @@ enum RefreshTrigger {
     }
 
     /// 触发额度刷新 (兼容旧调用: 用 auth 文件读配置)
-    static func trigger(manifest: ProviderManifest, authFile: URL) async -> String? {
+    static func trigger(manifest: ProviderManifest, authFile: URL, session: URLSession? = nil) async -> String? {
         var config = ProviderConfigStore.read(authFile: authFile, manifest: manifest)
         // auth 文件无 testModel 时回退 manifest 默认, 否则 POST body model 为空不触发计费
         if config.testModel.isEmpty {
@@ -83,13 +83,16 @@ enum RefreshTrigger {
         if config.testPrompt.isEmpty {
             config.testPrompt = manifest.testPrompt ?? ProviderConfig.defaultPrompt
         }
-        return await testRefresh(config: config)
+        return await testRefresh(config: config, session: session)
     }
 
-    /// 按协议应用 header: 解析 header 文本 (每行 "k: v"), <key> 占位符替换
+    /// 每次调用代表独立单轮 conversation；同一模板中的 <session> 共用一个 UUID。
+    /// 按协议应用 header: 解析 header 文本 (每行 "k: v"), 替换 <key>/<session> 占位符
     /// anthropic 额外加 anthropic-version (internal 供测试)
     static func applyHeaders(_ req: inout URLRequest, _ headerStr: String, key: String, protocol: String) {
-        for line in headerStr.split(separator: "\n") {
+        let sessionID = headerStr.contains("<session>") ? UUID().uuidString : ""
+        let headers = headerStr.replacingOccurrences(of: "<session>", with: sessionID)
+        for line in headers.split(separator: "\n") {
             let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
             let v = parts[1].trimmingCharacters(in: .whitespaces)
