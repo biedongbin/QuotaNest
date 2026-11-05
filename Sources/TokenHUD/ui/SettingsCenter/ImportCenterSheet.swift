@@ -43,7 +43,7 @@ final class ImportCenterModel: ObservableObject {
             }
         }
         var pickable: Bool {
-            self == .addable || self == .unadapted || self == .convertible
+            self == .addable || self == .convertible
         }
     }
 
@@ -241,17 +241,25 @@ final class ImportCenterModel: ObservableObject {
         if c.unsupportedReason != nil { return .unsupported }
         // 去重按 origin (source+sourceRecordId): 同源同记录才算已存在; 显示名相同不算 (FR-07.5)
         guard let reference = c.sourceReference else { return .unsupported }
-        if existing.contains(where: { $0.manifest.sourceReference == reference }) { return .exists }
+        if existing.contains(where: { $0.manifest.sourceReference?.sameSourceRecord(as: reference) == true }) { return .exists }
         let legacy = existing.filter { $0.manifest.sourceReference == nil && ProviderImporter.matchesExisting(c, manifest: $0.manifest) }
         if legacy.count > 1 { return .unsupported }
+        guard quotaAdapted(c, templateLookup: templateLookup) else { return .unadapted }
         if legacy.count == 1 { return .convertible }
-        if c.template == nil { return .unadapted }
-        // 与 AccountRow.canQuery 同口径: 脚本型模板只声明 cacheFile 也算能查额度
-        if let t = c.template, let tmpl = templateLookup(t),
-           tmpl.queryUrl == nil, tmpl.cacheFile == nil {
-            return .unadapted
-        }
         return .addable
+    }
+
+    /// Adapter capability and this source record's importability are separate facts.
+    nonisolated static func quotaAdapted(_ candidate: ImportCandidate,
+                                        templateLookup: (String) -> ProviderManifest?) -> Bool {
+        guard let slug = candidate.template, let manifest = templateLookup(slug), manifest.supportsQuota else { return false }
+        if let modes = manifest.quotaAuthModes, !modes.contains(candidate.sourceAuthMode) { return false }
+        if candidate.sourceAuthMode == "auth" && manifest.credentialSource == nil { return false }
+        return !(["jwt", "cookie"].contains(manifest.queryAuth ?? "") && manifest.inheritQueryUrl == nil)
+    }
+
+    func quotaAdapted(_ candidate: ImportCandidate) -> Bool {
+        Self.quotaAdapted(candidate, templateLookup: { [engine] in engine.template(bySlug: $0)?.manifest })
     }
 
     private func noteOf(_ a: ImportCandidate, state: RowState) -> String {
@@ -259,10 +267,12 @@ final class ImportCenterModel: ObservableObject {
         switch state {
         case .exists: note = "已存在（同源同账号），默认跳过，不覆盖现有配置"
         case .convertible: note = "转换为源引用：保留原账号，清除本地旧凭据与缓存，今后随源更新"
-        case .unsupported: note = a.unsupportedReason ?? "缺少凭证且无通用调用协议，无法导入"
+        case .unsupported:
+            if let reason = a.unsupportedReason { note = reason }
+            else if a.sourceReference == nil { note = "缺少有效来源引用，无法导入" }
+            else { note = "来源记录存在冲突或无法唯一关联，无法导入" }
         case .unadapted:
-            note = a.enabled ? "导入后可手动调用，额度查询需自行适配"
-                             : "在源工具中已停用，可手动勾选导入；导入后可手动调用，额度查询需自行适配"
+            note = "该类型未提供适用于当前认证方式的额度查询适配，不能选择导入"
         case .addable:
             note = a.enabled ? a.note : "在源工具中已停用，可手动勾选导入 · \(a.note)"
         }
@@ -362,10 +372,19 @@ struct ImportCenterSheet: View {
             header
             Rectangle().fill(Palette.border).frame(height: 1)
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 12, pinnedViews: [.sectionHeaders]) {
                     SourceSyncControls(engine: engine).disabled(im.importing)
                     sourcePicker.disabled(im.importing)
-                    bodyContent
+                    if im.scanState == .scanned {
+                        Section {
+                            previewTable
+                        } header: {
+                            previewHeader
+                        }
+                    } else {
+                        bodyContent
+                    }
+                    sourceBox
                 }
                 .padding(20)
             }
@@ -428,25 +447,32 @@ struct ImportCenterSheet: View {
             ResultBox(kind: .neutral, title: "此源无可导入项",
                       detail: "可能未安装、未登录，或凭证格式不支持。空结果与扫描失败不同。")
         case .scanned:
-            previewTable
+            EmptyView()
         }
-        sourceBox
+    }
+
+    private var previewHeader: some View {
+        HStack(spacing: 8) {
+            Text("").frame(width: 22)
+            Text("名称").frame(maxWidth: .infinity, alignment: .leading)
+            Text("授权方式").frame(width: 88, alignment: .leading)
+            Text("额度适配").frame(width: 78, alignment: .leading)
+                .help("该供应商类型是否已提供适用于此认证方式的额度查询适配；不代表这条来源记录可导入或已经在线验证")
+            Text("导入状态").frame(width: 78, alignment: .leading)
+                .help("综合检查来源引用、认证格式、重复或冲突后，决定这条记录是否可导入；具体原因见名称下方")
+        }
+        .font(Typo.small).foregroundStyle(Palette.muted)
+        .padding(.vertical, 9)
+        .background(Palette.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
+        .accessibilityIdentifier("import.column-header")
     }
 
     private var previewTable: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("").frame(width: 22)
-                Text("名称").frame(maxWidth: .infinity, alignment: .leading)
-                Text("授权方式").frame(width: 88, alignment: .leading)
-                Text("额度适配").frame(width: 78, alignment: .leading)
-                Text("状态").frame(width: 78, alignment: .leading)
-            }
-            .font(Typo.small).foregroundStyle(Palette.muted)
-            .padding(.vertical, 6)
-            .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
-
             ForEach(im.rows) { row in
+                let unavailable = !row.state.pickable && !row.imported
+                let adapted = im.quotaAdapted(row.candidate)
                 HStack(alignment: .top, spacing: 8) {
                     Button { im.toggle(row) } label: {
                         Image(systemName: row.imported ? "checkmark.square.fill"
@@ -462,7 +488,7 @@ struct ImportCenterSheet: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.candidate.name).font(Typo.small)
-                            .foregroundStyle(row.imported ? Palette.muted : Palette.ink)
+                            .foregroundStyle(row.imported || unavailable ? Palette.muted : Palette.ink)
                             .strikethrough(row.imported)
                         Text("\(row.candidate.source) · provider: \(row.candidate.sourceReference?.providerId ?? "—") · record: \(row.candidate.sourceRecordId)")
                             .font(Typo.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
@@ -477,11 +503,9 @@ struct ImportCenterSheet: View {
                     Text(row.candidate.authLabel)
                         .font(Typo.small).foregroundStyle(Palette.muted)
                         .frame(width: 88, alignment: .leading)
-                    Text(row.candidate.unsupportedReason != nil ? "—"
-                         : (row.candidate.template != nil ? "已适配" : "未适配"))
+                    Text(adapted ? "已适配" : "未适配")
                         .font(Typo.small)
-                        .foregroundStyle(row.candidate.unsupportedReason != nil ? Palette.muted
-                                         : (row.candidate.template != nil ? Palette.ok : Palette.warn))
+                        .foregroundStyle(unavailable ? Palette.muted : (adapted ? Palette.ok : Palette.warn))
                         .frame(width: 78, alignment: .leading)
                     Text(row.imported ? "已导入" : row.state.text)
                         .font(Typo.small)
@@ -489,6 +513,8 @@ struct ImportCenterSheet: View {
                         .frame(width: 78, alignment: .leading)
                 }
                 .padding(.vertical, 7)
+                .opacity(unavailable ? 0.65 : 1)
+                .help(unavailable ? row.note : "")
                 .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
             }
         }
@@ -497,6 +523,7 @@ struct ImportCenterSheet: View {
     private func stateColor(_ row: ImportModelRow) -> Color {
         if row.imported { return Palette.ok }
         if row.failure != nil { return Palette.danger }
+        if !row.state.pickable { return Palette.muted }
         switch row.state {
         case .addable, .convertible: return Palette.ok
         case .exists: return Palette.muted

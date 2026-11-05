@@ -327,7 +327,7 @@ struct ImportTests {
         try write(["buckets": ["old": 1]], to: cacheURL)
         let source = try #require(candidate.sourceReference)
         let sourceBefore = try Data(contentsOf: URL(fileURLWithPath: source.path))
-        #expect(ImportCenterModel.stateOf(candidate, existing: ProviderRegistry.scan(dir: userDir), templateLookup: { _ in nil }) == .convertible)
+        #expect(ImportCenterModel.stateOf(candidate, existing: ProviderRegistry.scan(dir: userDir), templateLookup: { _ in nil }) == .unadapted)
         let converted = try ProviderImporter.apply(candidate, templates: [], userDir: userDir, hudDir: hudDir)
         #expect(converted == slug)
         #expect(ProviderRegistry.scan(dir: userDir).count == 1)
@@ -420,8 +420,9 @@ struct ImportTests {
             runner: ProviderRunner(nodePath: nil, logDir: hudDir), defaults: defaults,
             settingsURL: home.appendingPathComponent("settings.json"))
         let model = ImportCenterModel(engine: engine, hudDir: hudDir, userDir: userDir)
-        model.rows = [ImportCenterModel.Row(candidate: first, state: .unadapted, note: ""),
-                      ImportCenterModel.Row(candidate: second, state: .unadapted, note: "")]
+        // Exercise cancellation after eligibility has already admitted the fixture rows.
+        model.rows = [ImportCenterModel.Row(candidate: first, state: .addable, note: ""),
+                      ImportCenterModel.Row(candidate: second, state: .addable, note: "")]
         model.picked = Set(model.rows.map(\.id))
         model.importSelected()
         model.cancelImport()
