@@ -10,7 +10,7 @@
   "displayName": "OpenCode Go",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "globe",
+  "icon": "logo-mono:opencode",
   "intervalSec": 60,
   "label": "OC",
   "name": "OC-Go",

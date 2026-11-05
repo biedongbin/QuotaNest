@@ -7,7 +7,7 @@
   "name": "CodeBuddy 国际",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "globe",
+  "icon": "logo:codebuddy-color",
   "intervalSec": 60,
   "needsCredential": true,
   "autoCreateDefault": false,

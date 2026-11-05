@@ -2,7 +2,7 @@
   "name": "zcode-start",
   "displayName": "ZCode Start",
   "label": "ZC",
-  "icon": "globe",
+  "icon": "logo:zcode",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

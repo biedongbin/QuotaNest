@@ -7,7 +7,7 @@
   "name": "Z.ai Coding",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "globe",
+  "icon": "logo-mono:zai",
   "intervalSec": 60,
   "needsCredential": true,
   "autoCreateDefault": false,

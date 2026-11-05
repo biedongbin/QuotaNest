@@ -2,7 +2,7 @@
   "name": "agnes-code",
   "displayName": "Agnes Code",
   "label": "Ag",
-  "icon": "globe",
+  "icon": "logo:agnes-code",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

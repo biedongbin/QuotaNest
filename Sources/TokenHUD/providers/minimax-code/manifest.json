@@ -2,7 +2,7 @@
   "name": "minimax-code",
   "displayName": "MiniMax Code 国际",
   "label": "MiniMax Code 国际",
-  "icon": "globe",
+  "icon": "logo:minimax-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

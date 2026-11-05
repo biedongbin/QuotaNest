@@ -2,7 +2,7 @@
   "name": "codearts",
   "displayName": "CodeArts",
   "label": "CodeArts",
-  "icon": "globe",
+  "icon": "logo:huawei-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

@@ -2,7 +2,7 @@
   "name": "openrouter",
   "displayName": "OpenRouter",
   "label": "Op",
-  "icon": "globe",
+  "icon": "logo-mono:openrouter",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

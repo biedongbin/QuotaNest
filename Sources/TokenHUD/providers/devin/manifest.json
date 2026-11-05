@@ -2,7 +2,7 @@
   "name": "devin",
   "displayName": "Devin CLI",
   "label": "Dv",
-  "icon": "globe",
+  "icon": "logo-mono:devin",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

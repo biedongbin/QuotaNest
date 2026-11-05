@@ -2,7 +2,7 @@
   "name": "loomy",
   "displayName": "Loomy",
   "label": "Lo",
-  "icon": "globe",
+  "icon": "logo:loomy",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

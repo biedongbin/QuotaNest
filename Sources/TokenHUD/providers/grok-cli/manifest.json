@@ -2,7 +2,7 @@
   "name": "grok-cli",
   "displayName": "Grok CLI",
   "label": "Gr",
-  "icon": "globe",
+  "icon": "logo-mono:grok",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

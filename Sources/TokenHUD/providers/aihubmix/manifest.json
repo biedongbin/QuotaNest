@@ -2,7 +2,7 @@
   "name": "aihubmix",
   "displayName": "AiHubmix",
   "label": "Ai",
-  "icon": "globe",
+  "icon": "logo:aihubmix-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

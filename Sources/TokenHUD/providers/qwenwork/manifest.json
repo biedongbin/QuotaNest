@@ -2,7 +2,7 @@
   "name": "qwenwork",
   "displayName": "QwenWork",
   "label": "QwenWork",
-  "icon": "globe",
+  "icon": "logo:qwen-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

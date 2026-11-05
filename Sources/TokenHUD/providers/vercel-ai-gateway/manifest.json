@@ -2,7 +2,7 @@
   "name": "vercel-ai-gateway",
   "displayName": "Vercel AI Gateway",
   "label": "VG",
-  "icon": "globe",
+  "icon": "logo-mono:vercel",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

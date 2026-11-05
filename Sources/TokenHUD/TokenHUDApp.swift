@@ -145,6 +145,21 @@ struct TokenHUDApp: App {
         preferences.navPage = .settings
         shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
              size: NSSize(width: 1000, height: 1100), dark: false)
+        let logoProviders = Bundle.appResources.resourceURL.map {
+            ProviderRegistry.scan(dir: $0.appendingPathComponent("providers"))
+        } ?? []
+        for dark in [false, true] {
+            let board = LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 16) {
+                ForEach(logoProviders, id: \.slug) { provider in
+                    VStack(spacing: 7) {
+                        ProviderLogo(manifest: provider.manifest, slug: provider.slug, size: 32)
+                        Text(provider.manifest.fullName).font(.system(size: 11)).lineLimit(2)
+                    }.frame(maxWidth: .infinity, minHeight: 60)
+                }
+            }.padding(24).frame(width: 1100, height: 1050, alignment: .top).background(Palette.canvas)
+            shot("provider-logos-\(dark ? "dark" : "light")", board,
+                 size: NSSize(width: 1100, height: 1050), dark: dark)
+        }
         let quick = model()
         let panel = PanelController(engine: fixture.engine, defaults: fixture.defaults)
         for dark in [false, true] {

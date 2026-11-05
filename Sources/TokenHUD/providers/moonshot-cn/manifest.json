@@ -2,7 +2,7 @@
   "name": "moonshot-cn",
   "displayName": "Moonshot 中国",
   "label": "Mo",
-  "icon": "globe",
+  "icon": "logo-mono:moonshot",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

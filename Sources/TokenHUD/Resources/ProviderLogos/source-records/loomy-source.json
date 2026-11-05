@@ -1,0 +1,44 @@
+{
+  "brand": "loomy",
+  "officialHomepage": "https://loomy.xunfei.cn/",
+  "sourceURL": "https://loomy.xunfei.cn/icon.png?5f7e7b8be5d4c76b",
+  "acquisition": "Downloaded and visually checked by the parent agent; incorporated locally without a further network request.",
+  "retrievalDate": "2026-11-05",
+  "homepageHTMLSHA256": "dffa46f638b9f29389ce02541cef7bd0c9d263f6671cb0689bd2328c08cdc804",
+  "matchingIconLinks": [
+    {
+      "rel": "icon",
+      "href": "/icon.png?5f7e7b8be5d4c76b",
+      "type": "image/png",
+      "sizes": "1024x1024"
+    }
+  ],
+  "originalContentType": "image/png",
+  "originalPixelSize": [
+    1024,
+    1024
+  ],
+  "originalAssetSHA256": "0d26afe1c650807f52ba47f0c750a480b75cd554d7edd44ab871856c13d17499",
+  "preservedOriginal": "source-raster/loomy-upstream.png",
+  "runtimeFile": "loomy.png",
+  "pngSHA256": "558b86df02f92144b759b2cf86200a1e9ef881daafce9f9bcbda621123839f7e",
+  "transform": {
+    "tool": "Pillow 12.3.0",
+    "filter": "LANCZOS",
+    "canvas": [
+      512,
+      512
+    ],
+    "artworkRasterSize": [
+      512,
+      512
+    ],
+    "offset": [
+      0,
+      0
+    ],
+    "preserveAspectRatio": true,
+    "note": "Uniform scale, integer pixel rounding, transparent padding; no crop, stretch, recoloring or added gradients."
+  },
+  "rights": "Official website brand artwork. Vendor rights retained; no MIT license or endorsement is asserted for this asset."
+}

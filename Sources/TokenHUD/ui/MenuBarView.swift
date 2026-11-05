@@ -86,9 +86,7 @@ struct MenuBarView: View {
     }
     private func providerHeading(_ provider: String, rows: [AccountRow]) -> some View {
         HStack(spacing: 6) {
-            if let icon = rows.first?.plugin.manifest.icon {
-                Image(systemName: icon).font(.system(size: 11)).accessibilityHidden(true)
-            }
+            ProviderLogo(manifest: rows.first?.plugin.manifest, slug: rows.first?.id, size: 14)
             Text(provider).font(.system(size: 10.5, weight: .semibold)).tracking(0.5)
             Text("\(rows.count)").font(.system(size: 10, weight: .medium)).monospacedDigit()
                 .padding(.horizontal, 5).padding(.vertical, 1)

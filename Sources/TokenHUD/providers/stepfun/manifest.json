@@ -2,7 +2,7 @@
   "name": "stepfun",
   "displayName": "StepFun 国际",
   "label": "St",
-  "icon": "globe",
+  "icon": "logo:stepfun-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

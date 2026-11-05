@@ -9,7 +9,7 @@
   "cacheFile": "~/.claude/hud/.cline-usage-cache.json",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "bolt",
+  "icon": "logo-mono:cline",
   "intervalSec": 300,
   "label": "Cline",
   "name": "Cline",

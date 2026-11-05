@@ -7,7 +7,7 @@
   "name": "Kimi Code 中国",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "globe",
+  "icon": "logo-mono:kimi",
   "intervalSec": 60,
   "needsCredential": true,
   "autoCreateDefault": false,

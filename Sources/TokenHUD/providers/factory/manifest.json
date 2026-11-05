@@ -2,7 +2,7 @@
   "name": "factory",
   "displayName": "Factory / Droid",
   "label": "Fa",
-  "icon": "globe",
+  "icon": "logo-mono:factory",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

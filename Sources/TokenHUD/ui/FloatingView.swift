@@ -162,6 +162,7 @@ struct FloatingView: View {
         let snapshot = QuotaPresentation(state: state)
         return HStack(spacing: 9) {
             HStack(spacing: 3) {
+                ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
                 Text(state.manifest.fullName).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 if snapshot.isOld {
                     Text(L10n.tr("旧值")).font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
@@ -198,6 +199,7 @@ struct FloatingView: View {
             if snapshot.metrics.isEmpty { inlineAccount(state) }
             ForEach(snapshot.metrics) { metric in
                 HStack(spacing: 8) {
+                    ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
                     Text(state.manifest.fullName + " · " + compactLabel(metric.label))
                         .font(.system(size: 10.5)).lineLimit(1).frame(width: 102, alignment: .leading)
                     if snapshot.isOld {
@@ -218,6 +220,7 @@ struct FloatingView: View {
         let snapshot = QuotaPresentation(state: state)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
+                ProviderLogo(manifest: state.manifest, slug: state.slug, size: 15)
                 Text(state.manifest.fullName).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 5)
                 if !state.manifest.supportsQuota {
@@ -270,6 +273,7 @@ struct FloatingView: View {
             HStack(spacing: 7) {
                 Button { SettingsWindowManager.shared.showAccount(state.slug) } label: {
                     HStack(spacing: 6) {
+                        ProviderLogo(manifest: state.manifest, slug: state.slug, size: 18)
                         Text(state.manifest.fullName).font(.system(size: 12, weight: .medium)).lineLimit(1)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)

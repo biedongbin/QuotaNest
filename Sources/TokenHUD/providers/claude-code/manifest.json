@@ -2,7 +2,7 @@
   "name": "claude-code",
   "displayName": "Claude Code",
   "label": "Cl",
-  "icon": "globe",
+  "icon": "logo:claudecode-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

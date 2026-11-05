@@ -2,7 +2,7 @@
   "name": "qoder",
   "displayName": "Qoder 国际",
   "label": "Qoder 国际",
-  "icon": "globe",
+  "icon": "logo-mono:qoder",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

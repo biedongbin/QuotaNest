@@ -2,7 +2,7 @@
   "name": "deepseek",
   "displayName": "DeepSeek",
   "label": "De",
-  "icon": "globe",
+  "icon": "logo:deepseek-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

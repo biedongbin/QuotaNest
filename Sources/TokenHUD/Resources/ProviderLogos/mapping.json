@@ -1,0 +1,1480 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Build-time provenance and manifest icon mapping; no runtime network dependency.",
+  "prefixes": {
+    "logo:": "Color PNG; preserve colors and aspect ratio.",
+    "logo-mono:": "PNG alpha mask; NSImage.isTemplate=true; appearance-aware system tint.",
+    "network": "Neutral SF Symbol for unconfirmed or custom brands."
+  },
+  "sources": {
+    "magpie": {
+      "repository": "https://github.com/yetone/magpie",
+      "commit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "licenseNotice": "LICENSE-Magpie.txt",
+      "upstreamAttributionEvidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/app.js#L8440",
+      "note": "Upstream states vendor/platform marks come from lobehub/icons. The exact LobeHub commit and per-asset official-site origins are not established by local metadata."
+    },
+    "plugins": {
+      "repository": "https://github.com/magpie-community/plugins",
+      "commit": "3e24e228377ed17a9e5991c4e715dfde0244a1ea",
+      "licenseNotice": "LICENSE-Magpie-Plugins.txt"
+    },
+    "official-websites": {
+      "acquisition": "Official site HTML and original PNG downloads supplied by parent agent on 2026-11-05; no additional network requests in this asset task.",
+      "homepages": [
+        "https://catpaw.meituan.com/",
+        "https://loomy.xunfei.cn/"
+      ],
+      "rights": "Vendor brand artwork; separate from repository MIT notices. Source records preserve page hashes and exact icon links."
+    }
+  },
+  "renderer": {
+    "program": "rsvg-convert",
+    "version": "2.62.1",
+    "svgTargetSize": [
+      512,
+      512
+    ],
+    "keepAspectRatio": true,
+    "rasterPolicy": "Five local distribution PNGs retain original bytes/native dimensions. Two official PNGs are uniformly scaled to fit transparent 512x512 canvases with Pillow 12.3.0 LANCZOS; original bytes are preserved separately."
+  },
+  "assets": [
+    {
+      "asset": "agnes-code",
+      "icon": "logo:agnes-code",
+      "monochrome": false,
+      "runtimeFile": "agnes-code.png",
+      "pixelSize": [
+        32,
+        32
+      ],
+      "sourceRepository": "plugins",
+      "sourcePath": "packages/agnes-code/package.json",
+      "sourceURL": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/agnes-code/package.json#L27",
+      "sourceCommit": "3e24e228377ed17a9e5991c4e715dfde0244a1ea",
+      "extraction": "magpie.icon data URI (base64)",
+      "preservedOriginal": "source-raster/agnes-code-upstream.png",
+      "sourceFileSHA256": "f22426d469f8588d15904a064c1c4a302bd566b4e9c1cd33af651e5e33d52664",
+      "originalAssetSHA256": "47615707e1ddc0901605246eb40f545cc7c6d41d9de38a6161ddfb84670fe91a",
+      "pngSHA256": "47615707e1ddc0901605246eb40f545cc7c6d41d9de38a6161ddfb84670fe91a",
+      "paintEvidence": "Packaged color raster; preserve RGB, alpha, source pixels and native dimensions.",
+      "licenseNotices": [
+        "LICENSE-Magpie-Plugins.txt",
+        "LICENSE-Agnes-Code.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "aihubmix-color",
+      "icon": "logo:aihubmix-color",
+      "monochrome": false,
+      "runtimeFile": "aihubmix-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/aihubmix-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/aihubmix-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/aihubmix-color.svg",
+      "sourceFileSHA256": "e0ba11dd4b14fce9df434604cb081749b8f3347392d263d7d6f291b81f113f7f",
+      "originalAssetSHA256": "e0ba11dd4b14fce9df434604cb081749b8f3347392d263d7d6f291b81f113f7f",
+      "pngSHA256": "45b2bc4ac11b5cb2d810f39e9e62a7f39f5e90130e2ed6d4a8cdfb6b3f456c1f",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "anthropic",
+      "icon": "logo-mono:anthropic",
+      "monochrome": true,
+      "runtimeFile": "anthropic.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/anthropic.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/anthropic.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/anthropic.svg",
+      "sourceFileSHA256": "e833fdfa7e7187a86a05b870925067556a506dcd4239089aed73e1e58c9366a3",
+      "originalAssetSHA256": "e833fdfa7e7187a86a05b870925067556a506dcd4239089aed73e1e58c9366a3",
+      "pngSHA256": "9c8b94390d96cd74c0592738e14c3f2eaac215cf048f9d759543191872bf08bf",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "antigravity-color",
+      "icon": "logo:antigravity-color",
+      "monochrome": false,
+      "runtimeFile": "antigravity-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/antigravity-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/antigravity-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/antigravity-color.svg",
+      "sourceFileSHA256": "652128cf55a28bb958563ee372d0bd00208d9e6fd446f523f77aafd811eef8ca",
+      "originalAssetSHA256": "652128cf55a28bb958563ee372d0bd00208d9e6fd446f523f77aafd811eef8ca",
+      "pngSHA256": "8c830fbd90efb8aea7426d361584ff718be79bd5b6583c67a5c824599cf93589",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "catpaw",
+      "icon": "logo:catpaw",
+      "monochrome": false,
+      "runtimeFile": "catpaw.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "official-websites",
+      "sourcePath": "https://s3plus.meituan.net/catpaw-external-resources/login/logo.png",
+      "sourceURL": "https://s3plus.meituan.net/catpaw-external-resources/login/logo.png",
+      "sourceCommit": null,
+      "extraction": "Official homepage link rel=icon, downloaded by parent agent",
+      "preservedOriginal": "source-raster/catpaw-upstream.png",
+      "sourceRecord": "source-records/catpaw-source.json",
+      "sourceFileSHA256": "56e9cd216dd197d7bc960e4d290627ddf26909002cf6e6f3b5d4ad5b39eaee55",
+      "originalAssetSHA256": "56e9cd216dd197d7bc960e4d290627ddf26909002cf6e6f3b5d4ad5b39eaee55",
+      "pngSHA256": "00b7d930cabcfab31304d9a7472556ebd2712d69785f69742bbd9206dd4c3af4",
+      "paintEvidence": "Original color raster uniformly scaled to fit transparent 512x512 canvas; preserve colors and do not set NSImage.isTemplate.",
+      "licenseNotices": [],
+      "provenance": "Direct official-homepage icon reference confirmed from the parent-supplied HTML. Vendor rights retained; no separate reuse license or endorsement is claimed."
+    },
+    {
+      "asset": "chatglm-color",
+      "icon": "logo:chatglm-color",
+      "monochrome": false,
+      "runtimeFile": "chatglm-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/chatglm-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/chatglm-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/chatglm-color.svg",
+      "sourceFileSHA256": "6e935f6ccad7a776edef259b33bbbfe5b51d6486318d4a0f423708ffe2a27287",
+      "originalAssetSHA256": "6e935f6ccad7a776edef259b33bbbfe5b51d6486318d4a0f423708ffe2a27287",
+      "pngSHA256": "2dbedccf7f60a8ed55d38250b14c7a8255ffc8180277bcd6841646963b9aa085",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "claudecode-color",
+      "icon": "logo:claudecode-color",
+      "monochrome": false,
+      "runtimeFile": "claudecode-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/claudecode-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/claudecode-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/claudecode-color.svg",
+      "sourceFileSHA256": "670b3d8d749d0815ad8f7e62a59d51cb5e2053cb19403f3541a8aed7036a877f",
+      "originalAssetSHA256": "670b3d8d749d0815ad8f7e62a59d51cb5e2053cb19403f3541a8aed7036a877f",
+      "pngSHA256": "98459ac3f392aba47395d34eaeaedbc3f665de4660cf21170aab43874e7f7008",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "cline",
+      "icon": "logo-mono:cline",
+      "monochrome": true,
+      "runtimeFile": "cline.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/cline.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/cline.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/cline.svg",
+      "sourceFileSHA256": "9003d2cdce82b016147b732abb4def60af55c348ba2cea2ba0b69a3c7d159b19",
+      "originalAssetSHA256": "9003d2cdce82b016147b732abb4def60af55c348ba2cea2ba0b69a3c7d159b19",
+      "pngSHA256": "b2fafef722f36a27253e03acdef85bc15afa722297afd2a5f46506170b52f43f",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "codebuddy-color",
+      "icon": "logo:codebuddy-color",
+      "monochrome": false,
+      "runtimeFile": "codebuddy-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/codebuddy-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/codebuddy-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/codebuddy-color.svg",
+      "sourceFileSHA256": "033d5da624460e686046f22b4e242b6b86484ad84ec4877e4efa15a9fb642b97",
+      "originalAssetSHA256": "033d5da624460e686046f22b4e242b6b86484ad84ec4877e4efa15a9fb642b97",
+      "pngSHA256": "b507349231986f6f17108f0816bb67e9021134a8f535c04f512c1274f55f95a5",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "commandcode",
+      "icon": "logo-mono:commandcode",
+      "monochrome": true,
+      "runtimeFile": "commandcode.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/commandcode.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/commandcode.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/commandcode.svg",
+      "sourceFileSHA256": "472cf8f2f7a62ca5ee79e146aa7cb8ac34b26ae33446e5fd32572d7206540f34",
+      "originalAssetSHA256": "472cf8f2f7a62ca5ee79e146aa7cb8ac34b26ae33446e5fd32572d7206540f34",
+      "pngSHA256": "daa1390d4a73b862ec587c60059271d7c318962f1f6d44cdd60392fa3a4ece09",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "cursor",
+      "icon": "logo-mono:cursor",
+      "monochrome": true,
+      "runtimeFile": "cursor.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/cursor.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/cursor.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/cursor.svg",
+      "sourceFileSHA256": "0cb51bddf264ae108926fd554c063ef40fc1aac3c5c921ddb39ad184e4e5d0ef",
+      "originalAssetSHA256": "0cb51bddf264ae108926fd554c063ef40fc1aac3c5c921ddb39ad184e4e5d0ef",
+      "pngSHA256": "35e3bc909136221d797e00e8eacaf683945e8f1cc997b3051d75a6becde52c40",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "deepseek-color",
+      "icon": "logo:deepseek-color",
+      "monochrome": false,
+      "runtimeFile": "deepseek-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/deepseek-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/deepseek-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/deepseek-color.svg",
+      "sourceFileSHA256": "deba5f98a5c1796e20fcac3149bcd7eb8a32f0bdd04d048819400b1f28bd1439",
+      "originalAssetSHA256": "deba5f98a5c1796e20fcac3149bcd7eb8a32f0bdd04d048819400b1f28bd1439",
+      "pngSHA256": "7a56e2e72697024b10b167a39a21a0bd0416c623be8d25e73dcffddd24dc0eef",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "devin",
+      "icon": "logo-mono:devin",
+      "monochrome": true,
+      "runtimeFile": "devin.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/devin.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/devin.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/devin.svg",
+      "sourceFileSHA256": "8d197b0c31522517ffa896cd4a1ee65719eb73bff9eb9bbf7edf64db6b1a573d",
+      "originalAssetSHA256": "8d197b0c31522517ffa896cd4a1ee65719eb73bff9eb9bbf7edf64db6b1a573d",
+      "pngSHA256": "978c421d4d0ae901d01ee74441100e6f0e700b612ab47171d08b0a333d4e8ddd",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "factory",
+      "icon": "logo-mono:factory",
+      "monochrome": true,
+      "runtimeFile": "factory.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/factory.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/factory.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/factory.svg",
+      "sourceFileSHA256": "6a502c844029a326e77aff6554210629ee3e735d81ae42d2b98be0eb20c48bf3",
+      "originalAssetSHA256": "6a502c844029a326e77aff6554210629ee3e735d81ae42d2b98be0eb20c48bf3",
+      "pngSHA256": "4a1d10d286daa9cb12f57615ca59a0468789283cf64be2badf1d98f0dc4a36df",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "geminicli-color",
+      "icon": "logo:geminicli-color",
+      "monochrome": false,
+      "runtimeFile": "geminicli-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/geminicli-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/geminicli-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/geminicli-color.svg",
+      "sourceFileSHA256": "c2f54ebaa4c3b9191c6a07f7b0c66bc78e4abe486003dc564469cf650672663e",
+      "originalAssetSHA256": "c2f54ebaa4c3b9191c6a07f7b0c66bc78e4abe486003dc564469cf650672663e",
+      "pngSHA256": "62d096c399ea237c0664e79aa75f61ee15f900af0ac3654bc87bfaa3eb18a810",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "githubcopilot",
+      "icon": "logo-mono:githubcopilot",
+      "monochrome": true,
+      "runtimeFile": "githubcopilot.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/githubcopilot.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/githubcopilot.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/githubcopilot.svg",
+      "sourceFileSHA256": "bbc7fddc13448236e5edea8c399d2072dc40aa5da5bca07f7a2f412405c500a3",
+      "originalAssetSHA256": "bbc7fddc13448236e5edea8c399d2072dc40aa5da5bca07f7a2f412405c500a3",
+      "pngSHA256": "2795c7323bbb653aa6f9d1de96c33db055469dcaaa86a659be378391a33ed5d9",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "grok",
+      "icon": "logo-mono:grok",
+      "monochrome": true,
+      "runtimeFile": "grok.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/grok.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/grok.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/grok.svg",
+      "sourceFileSHA256": "9175fc90c22655160231976c849f25a03b888d7cc0e04c5f1b987b659bb07c95",
+      "originalAssetSHA256": "9175fc90c22655160231976c849f25a03b888d7cc0e04c5f1b987b659bb07c95",
+      "pngSHA256": "e84c76c74506adf08c03f45b6c7fcad39b2f28d72fa06840ab468eb7cff92a3a",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "huawei-color",
+      "icon": "logo:huawei-color",
+      "monochrome": false,
+      "runtimeFile": "huawei-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/huawei-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/huawei-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/huawei-color.svg",
+      "sourceFileSHA256": "ca9af4229ba3d538811cad7939b5f3f9edc87ec9448eae579506c659cd133d4a",
+      "originalAssetSHA256": "ca9af4229ba3d538811cad7939b5f3f9edc87ec9448eae579506c659cd133d4a",
+      "pngSHA256": "747627e377a8e9130a418d5e76ee74756077462ccc9d6749911ec7cd95a2dcfe",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "joycode",
+      "icon": "logo:joycode",
+      "monochrome": false,
+      "runtimeFile": "joycode.png",
+      "pixelSize": [
+        40,
+        40
+      ],
+      "sourceRepository": "plugins",
+      "sourcePath": "packages/joycode/icon.png",
+      "sourceURL": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/joycode/icon.png",
+      "sourceCommit": "3e24e228377ed17a9e5991c4e715dfde0244a1ea",
+      "extraction": null,
+      "preservedOriginal": "source-raster/joycode-upstream.png",
+      "sourceFileSHA256": "a6526695b11f6cd71ea4868cae118afb6aa245628a271479a5daf85e92c921af",
+      "originalAssetSHA256": "a6526695b11f6cd71ea4868cae118afb6aa245628a271479a5daf85e92c921af",
+      "pngSHA256": "a6526695b11f6cd71ea4868cae118afb6aa245628a271479a5daf85e92c921af",
+      "paintEvidence": "Packaged color raster; preserve RGB, alpha, source pixels and native dimensions.",
+      "licenseNotices": [
+        "LICENSE-Magpie-Plugins.txt",
+        "LICENSE-JoyCode.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "kimi",
+      "icon": "logo-mono:kimi",
+      "monochrome": true,
+      "runtimeFile": "kimi.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/kimi.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/kimi.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/kimi.svg",
+      "sourceFileSHA256": "ed08131b46acf70e6e2144eceb775e74098b58ea65fa21eaee04be7b05cfe63b",
+      "originalAssetSHA256": "ed08131b46acf70e6e2144eceb775e74098b58ea65fa21eaee04be7b05cfe63b",
+      "pngSHA256": "a7402249de444ec62ab3c615c9be228369ef47b30e68cb034d4379f5182c2c19",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "kiro-color",
+      "icon": "logo:kiro-color",
+      "monochrome": false,
+      "runtimeFile": "kiro-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/kiro-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/kiro-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/kiro-color.svg",
+      "sourceFileSHA256": "4eae4d6e818da7342c32c7d443ab7c97b93c544db9af379d5b5bf7f0a3127d66",
+      "originalAssetSHA256": "4eae4d6e818da7342c32c7d443ab7c97b93c544db9af379d5b5bf7f0a3127d66",
+      "pngSHA256": "048b6a62bc20144e49fb5d80ee3d673c2401053d800047c847e2d752d2f8cca8",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "loomy",
+      "icon": "logo:loomy",
+      "monochrome": false,
+      "runtimeFile": "loomy.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "official-websites",
+      "sourcePath": "https://loomy.xunfei.cn/icon.png?5f7e7b8be5d4c76b",
+      "sourceURL": "https://loomy.xunfei.cn/icon.png?5f7e7b8be5d4c76b",
+      "sourceCommit": null,
+      "extraction": "Official homepage link rel=icon, downloaded by parent agent",
+      "preservedOriginal": "source-raster/loomy-upstream.png",
+      "sourceRecord": "source-records/loomy-source.json",
+      "sourceFileSHA256": "0d26afe1c650807f52ba47f0c750a480b75cd554d7edd44ab871856c13d17499",
+      "originalAssetSHA256": "0d26afe1c650807f52ba47f0c750a480b75cd554d7edd44ab871856c13d17499",
+      "pngSHA256": "558b86df02f92144b759b2cf86200a1e9ef881daafce9f9bcbda621123839f7e",
+      "paintEvidence": "Original color raster uniformly scaled to fit transparent 512x512 canvas; preserve colors and do not set NSImage.isTemplate.",
+      "licenseNotices": [],
+      "provenance": "Direct official-homepage icon reference confirmed from the parent-supplied HTML. Vendor rights retained; no separate reuse license or endorsement is claimed."
+    },
+    {
+      "asset": "mimocode",
+      "icon": "logo-mono:mimocode",
+      "monochrome": true,
+      "runtimeFile": "mimocode.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/mimocode.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/mimocode.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/mimocode.svg",
+      "sourceFileSHA256": "a1cf318ef84e3bba3d22886150ca45f0865ed339b3d25e858223b51db692e93d",
+      "originalAssetSHA256": "a1cf318ef84e3bba3d22886150ca45f0865ed339b3d25e858223b51db692e93d",
+      "pngSHA256": "7ca2ae0f259b45df7dad2bcad39aae8acda1924568c059a912a0e60e3c47be7d",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "minimax-color",
+      "icon": "logo:minimax-color",
+      "monochrome": false,
+      "runtimeFile": "minimax-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/minimax-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/minimax-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/minimax-color.svg",
+      "sourceFileSHA256": "7f7187fa6d9b341ac5f22f6c5a970523afb439dc45566d64eb4f4b9b604d6b01",
+      "originalAssetSHA256": "7f7187fa6d9b341ac5f22f6c5a970523afb439dc45566d64eb4f4b9b604d6b01",
+      "pngSHA256": "383ced63eacd237e8e117fb22790473d1b40393be85cf83fb1130f0a2f24aaa6",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "moonshot",
+      "icon": "logo-mono:moonshot",
+      "monochrome": true,
+      "runtimeFile": "moonshot.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/moonshot.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/moonshot.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/moonshot.svg",
+      "sourceFileSHA256": "435f41b74e6a87639b6bf860e9628f20cbe7d6229bece412d548f4cea3081852",
+      "originalAssetSHA256": "435f41b74e6a87639b6bf860e9628f20cbe7d6229bece412d548f4cea3081852",
+      "pngSHA256": "c2d5ced274db7b23fa7c2efa3629a20d5d6f360f90429e3e2dab4a8bd92804b3",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "officeace",
+      "icon": "logo:officeace",
+      "monochrome": false,
+      "runtimeFile": "officeace.png",
+      "pixelSize": [
+        128,
+        128
+      ],
+      "sourceRepository": "plugins",
+      "sourcePath": "packages/codearts/index.mjs",
+      "sourceURL": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/codearts/index.mjs#L3077",
+      "sourceCommit": "3e24e228377ed17a9e5991c4e715dfde0244a1ea",
+      "extraction": "OFFICEACE_ICON data URI (base64)",
+      "preservedOriginal": "source-raster/officeace-upstream.png",
+      "sourceFileSHA256": "a0ae629d487e3bfcacd938f602c2639f83c318bdb81badc4afa2bbfb562d8bae",
+      "originalAssetSHA256": "d8dfedc7508de622f3f8c07a2e7218c1a3d07e67bb6545257b296eb608db603d",
+      "pngSHA256": "d8dfedc7508de622f3f8c07a2e7218c1a3d07e67bb6545257b296eb608db603d",
+      "paintEvidence": "Packaged color raster; preserve RGB, alpha, source pixels and native dimensions.",
+      "licenseNotices": [
+        "LICENSE-Magpie-Plugins.txt",
+        "LICENSE-CodeArts.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "ollama",
+      "icon": "logo-mono:ollama",
+      "monochrome": true,
+      "runtimeFile": "ollama.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/ollama.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/ollama.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/ollama.svg",
+      "sourceFileSHA256": "3a268218fb2e6e81fa31df70f70b51331625047794db81db21d35359428fae7a",
+      "originalAssetSHA256": "3a268218fb2e6e81fa31df70f70b51331625047794db81db21d35359428fae7a",
+      "pngSHA256": "b77e8ef8b5b2b308f61ce696ee015b168ac55db93c3421098962640a5e016a1a",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "openai",
+      "icon": "logo-mono:openai",
+      "monochrome": true,
+      "runtimeFile": "openai.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/openai.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/openai.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/openai.svg",
+      "sourceFileSHA256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186",
+      "originalAssetSHA256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186",
+      "pngSHA256": "2df3bfaea2ba057a911c2305ddd8ed974de32e7590fa581c26c5a5782064792c",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "opencode",
+      "icon": "logo-mono:opencode",
+      "monochrome": true,
+      "runtimeFile": "opencode.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/opencode.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/opencode.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/opencode.svg",
+      "sourceFileSHA256": "7cfa6e9d6726f7c9fa26c7d9aef0dfec52d20a137380454340f30f12ccbfd302",
+      "originalAssetSHA256": "7cfa6e9d6726f7c9fa26c7d9aef0dfec52d20a137380454340f30f12ccbfd302",
+      "pngSHA256": "ce44ed021971e2b78bef3e2324dcef77f265a3beaf37dca7e15341a5467f32cc",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "openrouter",
+      "icon": "logo-mono:openrouter",
+      "monochrome": true,
+      "runtimeFile": "openrouter.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/openrouter.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/openrouter.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/openrouter.svg",
+      "sourceFileSHA256": "ae671cc83de9bd45db97a47ed5e38a4e1bd9f93a12be495ba4b4f8b284026bca",
+      "originalAssetSHA256": "ae671cc83de9bd45db97a47ed5e38a4e1bd9f93a12be495ba4b4f8b284026bca",
+      "pngSHA256": "ccea6708c9911e3b16dc07429732c7e5e418e99e2c83e402e9c157a8b2dd9f5c",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "qoder",
+      "icon": "logo-mono:qoder",
+      "monochrome": true,
+      "runtimeFile": "qoder.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/qoder.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/qoder.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/qoder.svg",
+      "sourceFileSHA256": "f8503aacc41a58e723430488d082f6730c8a6a9ffecdd0a00c522e6bcdb4abb9",
+      "originalAssetSHA256": "f8503aacc41a58e723430488d082f6730c8a6a9ffecdd0a00c522e6bcdb4abb9",
+      "pngSHA256": "8fab2769ca20e713b88c898906e67032cd28e49e3e48612f8b1de1199f68c44f",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "qwen-color",
+      "icon": "logo:qwen-color",
+      "monochrome": false,
+      "runtimeFile": "qwen-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/qwen-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/qwen-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/qwen-color.svg",
+      "sourceFileSHA256": "77f5768c66d08ce1d3d14e73373975c1bc0454be88c81523ddd0ffd7e2974029",
+      "originalAssetSHA256": "77f5768c66d08ce1d3d14e73373975c1bc0454be88c81523ddd0ffd7e2974029",
+      "pngSHA256": "c02ffa7f449913f9254196ce1e7e1817d7c95a49b4a7f8c9027a1619afdb30a1",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "raccoon",
+      "icon": "logo:raccoon",
+      "monochrome": false,
+      "runtimeFile": "raccoon.png",
+      "pixelSize": [
+        64,
+        64
+      ],
+      "sourceRepository": "plugins",
+      "sourcePath": "packages/raccoon/package.json",
+      "sourceURL": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/raccoon/package.json#L23",
+      "sourceCommit": "3e24e228377ed17a9e5991c4e715dfde0244a1ea",
+      "extraction": "magpie.icon data URI (base64)",
+      "preservedOriginal": "source-raster/raccoon-upstream.png",
+      "sourceFileSHA256": "d2f7dade66a195b42aa5ff044aa0846c952b9c55cd1624384e6219ac0b7413c0",
+      "originalAssetSHA256": "40acbfb132ea045853d5b0625cb015bc208c0f99866fb26a4d71bf28ef342648",
+      "pngSHA256": "40acbfb132ea045853d5b0625cb015bc208c0f99866fb26a4d71bf28ef342648",
+      "paintEvidence": "Packaged color raster; preserve RGB, alpha, source pixels and native dimensions.",
+      "licenseNotices": [
+        "LICENSE-Magpie-Plugins.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "stepfun-color",
+      "icon": "logo:stepfun-color",
+      "monochrome": false,
+      "runtimeFile": "stepfun-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/stepfun-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/stepfun-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/stepfun-color.svg",
+      "sourceFileSHA256": "f55afc0e6004c8854f76bd5bbcc0fce9fc0ed9316691d54fb02d088c24fab40d",
+      "originalAssetSHA256": "f55afc0e6004c8854f76bd5bbcc0fce9fc0ed9316691d54fb02d088c24fab40d",
+      "pngSHA256": "af8e947aebc77175e9200a6e77a5ceb84c0614023dbcc43124f5512af09f1fbc",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "tencentcloud-color",
+      "icon": "logo:tencentcloud-color",
+      "monochrome": false,
+      "runtimeFile": "tencentcloud-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/tencentcloud-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/tencentcloud-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/tencentcloud-color.svg",
+      "sourceFileSHA256": "f860dae064a3afd24970efd2bc5892f39438526bf52c3a9748f61fc05c1cfd58",
+      "originalAssetSHA256": "f860dae064a3afd24970efd2bc5892f39438526bf52c3a9748f61fc05c1cfd58",
+      "pngSHA256": "1458326d75274b25a427829113efce2d8d5286015ac2427f44cf4307921ab474",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "trae",
+      "icon": "logo-mono:trae",
+      "monochrome": true,
+      "runtimeFile": "trae.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/trae.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/trae.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/trae.svg",
+      "sourceFileSHA256": "59ef6255dfce52d4b1e77aff4e1b4ee3cda71cda735b4fb45575e9874a1c11f6",
+      "originalAssetSHA256": "59ef6255dfce52d4b1e77aff4e1b4ee3cda71cda735b4fb45575e9874a1c11f6",
+      "pngSHA256": "c25d4677ba416cf25e45e83ecc91137841a617e690b90ab3130c9272713360ab",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "vercel",
+      "icon": "logo-mono:vercel",
+      "monochrome": true,
+      "runtimeFile": "vercel.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/vercel.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/vercel.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/vercel.svg",
+      "sourceFileSHA256": "4874d52d8b2ce7c309cbd10c424fee123b2c9483e76d76ad0dca41794483eb24",
+      "originalAssetSHA256": "4874d52d8b2ce7c309cbd10c424fee123b2c9483e76d76ad0dca41794483eb24",
+      "pngSHA256": "cc05c13b86ada70fd1968c3219ae970e5754af1bba55084d84c9cca4b98e05f2",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "workbuddy-color",
+      "icon": "logo:workbuddy-color",
+      "monochrome": false,
+      "runtimeFile": "workbuddy-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/workbuddy-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/workbuddy-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/workbuddy-color.svg",
+      "sourceFileSHA256": "ade134028e69e03453bff956059a0e7f23c7341a0295f16994cecd8d03fc2fd4",
+      "originalAssetSHA256": "ade134028e69e03453bff956059a0e7f23c7341a0295f16994cecd8d03fc2fd4",
+      "pngSHA256": "f1302b65aedbbdaf0c46fe1fa7bf3a151f0266c086e65e6fe63c61fd38f684f0",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "workersai-color",
+      "icon": "logo:workersai-color",
+      "monochrome": false,
+      "runtimeFile": "workersai-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/workersai-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/workersai-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/workersai-color.svg",
+      "sourceFileSHA256": "22617d11289857c70fe9d626e1622e0eb77f53a875177d866ffc3f95def6ab7e",
+      "originalAssetSHA256": "22617d11289857c70fe9d626e1622e0eb77f53a875177d866ffc3f95def6ab7e",
+      "pngSHA256": "3bbea1f15b965f4a1cce16e7bddb8763e9a60c204681c38ae05ee427c29c0682",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "zai",
+      "icon": "logo-mono:zai",
+      "monochrome": true,
+      "runtimeFile": "zai.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/zai.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zai.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/zai.svg",
+      "sourceFileSHA256": "e748cb5108ce37b116d7a5ba97d37e0ae97eadf6849b0de11afb248e244a01e1",
+      "originalAssetSHA256": "e748cb5108ce37b116d7a5ba97d37e0ae97eadf6849b0de11afb248e244a01e1",
+      "pngSHA256": "4035d6a1e446e18388b03d1834b8b92daa8c04a13522a0537550b05b5de84509",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "zcode",
+      "icon": "logo:zcode",
+      "monochrome": false,
+      "runtimeFile": "zcode.png",
+      "pixelSize": [
+        128,
+        128
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/zcode.png",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zcode.png",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-raster/zcode-upstream.png",
+      "sourceFileSHA256": "df3aba17ddb55b9cfb21f1f30d11fde7ea93d3193c40b3d6433cf684af942b99",
+      "originalAssetSHA256": "df3aba17ddb55b9cfb21f1f30d11fde7ea93d3193c40b3d6433cf684af942b99",
+      "pngSHA256": "df3aba17ddb55b9cfb21f1f30d11fde7ea93d3193c40b3d6433cf684af942b99",
+      "paintEvidence": "Packaged color raster; preserve RGB, alpha, source pixels and native dimensions.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "zed",
+      "icon": "logo-mono:zed",
+      "monochrome": true,
+      "runtimeFile": "zed.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/zed.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zed.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/zed.svg",
+      "sourceFileSHA256": "f0529485410560c5be58f724330c4f61d84537c4ffc1a5099b3bd58062efd58c",
+      "originalAssetSHA256": "f0529485410560c5be58f724330c4f61d84537c4ffc1a5099b3bd58062efd58c",
+      "pngSHA256": "9f2819693183bce3b189df6997e9d6662b018df332decc36cd183f7fe87bcaac",
+      "paintEvidence": "SVG root fill=currentColor; no fixed color paints/gradients. Raster alpha is the template mask.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    },
+    {
+      "asset": "zhipu-color",
+      "icon": "logo:zhipu-color",
+      "monochrome": false,
+      "runtimeFile": "zhipu-color.png",
+      "pixelSize": [
+        512,
+        512
+      ],
+      "sourceRepository": "magpie",
+      "sourcePath": "internal/gui/assets/icons/zhipu-color.svg",
+      "sourceURL": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zhipu-color.svg",
+      "sourceCommit": "0414bbeddbfc2028508b610fd1e7c194143454a0",
+      "extraction": null,
+      "preservedOriginal": "source-svg/zhipu-color.svg",
+      "sourceFileSHA256": "8174e65ff71647d5c705c920c953a82bd723d9e3e42887bdd4ffc9dfe51207a0",
+      "originalAssetSHA256": "8174e65ff71647d5c705c920c953a82bd723d9e3e42887bdd4ffc9dfe51207a0",
+      "pngSHA256": "6c89145de93d82ec98f139ae2b2e3c95b5f729cc3e0c7d57890a5774337704a6",
+      "paintEvidence": "Fixed source colors/gradients preserved; do not set NSImage.isTemplate.",
+      "licenseNotices": [
+        "LICENSE-Magpie.txt"
+      ],
+      "provenance": "Copied from the pinned local upstream distribution. Direct official-site origin was not independently established."
+    }
+  ],
+  "templates": {
+    "agnes-code": {
+      "icon": "logo:agnes-code",
+      "asset": "agnes-code",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/agnes-code/package.json#L27"
+    },
+    "aihubmix": {
+      "icon": "logo:aihubmix-color",
+      "asset": "aihubmix-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/aihubmix-color.svg"
+    },
+    "antigravity": {
+      "icon": "logo:antigravity-color",
+      "asset": "antigravity-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/antigravity-color.svg"
+    },
+    "autoclaw": {
+      "icon": "logo:zhipu-color",
+      "asset": "zhipu-color",
+      "mappingBasis": "vendor",
+      "note": "Zhipu manufacturer mark; reject upstream synthetic SVG containing the character 蟹.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/autoclaw/package.json#L4"
+    },
+    "autoclaw-cn": {
+      "icon": "logo:zhipu-color",
+      "asset": "zhipu-color",
+      "mappingBasis": "vendor",
+      "note": "Zhipu manufacturer mark; reject upstream synthetic SVG containing the character 蟹.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/autoclaw/package.json#L4"
+    },
+    "catpaw": {
+      "icon": "logo:catpaw",
+      "asset": "catpaw",
+      "mappingBasis": "product",
+      "note": "Product icon referenced by the current official homepage; parent supplied the fetched page and original image. See preserved source record.",
+      "evidence": "https://catpaw.meituan.com/"
+    },
+    "claude-code": {
+      "icon": "logo:claudecode-color",
+      "asset": "claudecode-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/claudecode-color.svg"
+    },
+    "cline": {
+      "icon": "logo-mono:cline",
+      "asset": "cline",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/cline.svg"
+    },
+    "cloudflare-workers-ai": {
+      "icon": "logo:workersai-color",
+      "asset": "workersai-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/workersai-color.svg"
+    },
+    "codearts": {
+      "icon": "logo:huawei-color",
+      "asset": "huawei-color",
+      "mappingBasis": "vendor",
+      "note": "Huawei manufacturer mark; upstream package explicitly identifies CodeArts as Huawei Cloud. No exact CodeArts product asset in local source.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/codearts/package.json#L4"
+    },
+    "codebuddy": {
+      "icon": "logo:codebuddy-color",
+      "asset": "codebuddy-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/codebuddy-color.svg"
+    },
+    "codebuddy-cn": {
+      "icon": "logo:codebuddy-color",
+      "asset": "codebuddy-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/codebuddy-color.svg"
+    },
+    "commandcode": {
+      "icon": "logo-mono:commandcode",
+      "asset": "commandcode",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/commandcode.svg"
+    },
+    "cursor": {
+      "icon": "logo-mono:cursor",
+      "asset": "cursor",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/cursor.svg"
+    },
+    "deepseek": {
+      "icon": "logo:deepseek-color",
+      "asset": "deepseek-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/deepseek-color.svg"
+    },
+    "devin": {
+      "icon": "logo-mono:devin",
+      "asset": "devin",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/devin.svg"
+    },
+    "factory": {
+      "icon": "logo-mono:factory",
+      "asset": "factory",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/factory.svg"
+    },
+    "gemini-cli": {
+      "icon": "logo:geminicli-color",
+      "asset": "geminicli-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/geminicli-color.svg"
+    },
+    "github-copilot": {
+      "icon": "logo-mono:githubcopilot",
+      "asset": "githubcopilot",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/githubcopilot.svg"
+    },
+    "glm": {
+      "icon": "logo:chatglm-color",
+      "asset": "chatglm-color",
+      "mappingBasis": "brand-family",
+      "note": "ChatGLM product-family mark for GLM; source SVG title is ChatGLM. BigModel/Zhipu endpoint is retained. Z.ai international uses its distinct zai mark.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/chatglm-color.svg#L1"
+    },
+    "gpt": {
+      "icon": "logo-mono:openai",
+      "asset": "openai",
+      "mappingBasis": "vendor",
+      "note": "OpenAI / ChatGPT mark: existing template is a ChatGPT subscription backed by Codex auth; Magpie SUBS maps codex and chatgpt-api to openai.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/app.js#L12219"
+    },
+    "grok-cli": {
+      "icon": "logo-mono:grok",
+      "asset": "grok",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/grok.svg"
+    },
+    "joycode": {
+      "icon": "logo:joycode",
+      "asset": "joycode",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/joycode/icon.png"
+    },
+    "kimi-code": {
+      "icon": "logo-mono:kimi",
+      "asset": "kimi",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/kimi.svg"
+    },
+    "kimi-code-cn": {
+      "icon": "logo-mono:kimi",
+      "asset": "kimi",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/kimi.svg"
+    },
+    "kiro": {
+      "icon": "logo:kiro-color",
+      "asset": "kiro-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/kiro-color.svg"
+    },
+    "loomy": {
+      "icon": "logo:loomy",
+      "asset": "loomy",
+      "mappingBasis": "product",
+      "note": "Product icon referenced by the current official homepage; parent supplied the fetched page and original image. See preserved source record.",
+      "evidence": "https://loomy.xunfei.cn/"
+    },
+    "minimax-code": {
+      "icon": "logo:minimax-color",
+      "asset": "minimax-color",
+      "mappingBasis": "brand-family",
+      "note": "MiniMax family mark shared with MiniMax Coding; no exact Code product mark in local source.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/provider/presets.go#L236"
+    },
+    "minimax-code-cn": {
+      "icon": "logo:minimax-color",
+      "asset": "minimax-color",
+      "mappingBasis": "brand-family",
+      "note": "MiniMax family mark shared with MiniMax Coding; no exact Code product mark in local source.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/provider/presets.go#L239"
+    },
+    "minimax-coding": {
+      "icon": "logo:minimax-color",
+      "asset": "minimax-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/minimax-color.svg"
+    },
+    "minimax-coding-cn": {
+      "icon": "logo:minimax-color",
+      "asset": "minimax-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/minimax-color.svg"
+    },
+    "moonshot": {
+      "icon": "logo-mono:moonshot",
+      "asset": "moonshot",
+      "mappingBasis": "vendor",
+      "note": "Moonshot AI vendor mark for the Moonshot API template; Kimi Code retains the separate kimi mark.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/moonshot.svg#L1"
+    },
+    "moonshot-cn": {
+      "icon": "logo-mono:moonshot",
+      "asset": "moonshot",
+      "mappingBasis": "vendor",
+      "note": "Moonshot AI vendor mark for the Moonshot API template; Kimi Code retains the separate kimi mark.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/moonshot.svg#L1"
+    },
+    "officeace": {
+      "icon": "logo:officeace",
+      "asset": "officeace",
+      "mappingBasis": "product",
+      "note": "Local upstream explicitly labels this OfficeAce's own .ico converted to 128x128 PNG.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/codearts/index.mjs#L3076"
+    },
+    "ollama": {
+      "icon": "logo-mono:ollama",
+      "asset": "ollama",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/ollama.svg"
+    },
+    "opencode-go": {
+      "icon": "logo-mono:opencode",
+      "asset": "opencode",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/opencode.svg"
+    },
+    "opencode-zen": {
+      "icon": "logo-mono:opencode",
+      "asset": "opencode",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/opencode.svg"
+    },
+    "openrouter": {
+      "icon": "logo-mono:openrouter",
+      "asset": "openrouter",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/openrouter.svg"
+    },
+    "orcaterm": {
+      "icon": "logo:tencentcloud-color",
+      "asset": "tencentcloud-color",
+      "mappingBasis": "vendor",
+      "note": "Tencent Cloud vendor mark; provider catalog identifies 腾讯云OrcaTerm. No exact OrcaTerm product mark in local source.",
+      "evidence": "docs/provider-catalog.md#L94"
+    },
+    "qoder": {
+      "icon": "logo-mono:qoder",
+      "asset": "qoder",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/qoder.svg"
+    },
+    "qoder-cn": {
+      "icon": "logo-mono:qoder",
+      "asset": "qoder",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/qoder.svg"
+    },
+    "qwenwork": {
+      "icon": "logo:qwen-color",
+      "asset": "qwen-color",
+      "mappingBasis": "brand-family",
+      "note": "Qwen family mark; source explicitly identifies QwenWork as Alibaba's own 千问办公 service. Not an exact QwenWork product mark.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/qoder/index.mjs#L2747"
+    },
+    "qwenwork-enterprise": {
+      "icon": "logo:qwen-color",
+      "asset": "qwen-color",
+      "mappingBasis": "brand-family",
+      "note": "Qwen family mark; enterprise edition of the same QwenWork service. Not an exact QwenWork product mark.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/qoder/index.mjs#L2935"
+    },
+    "raccoon": {
+      "icon": "logo:raccoon",
+      "asset": "raccoon",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/magpie-community/plugins/blob/3e24e228377ed17a9e5991c4e715dfde0244a1ea/packages/raccoon/package.json#L23"
+    },
+    "stepfun": {
+      "icon": "logo:stepfun-color",
+      "asset": "stepfun-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/stepfun-color.svg"
+    },
+    "stepfun-cn": {
+      "icon": "logo:stepfun-color",
+      "asset": "stepfun-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/stepfun-color.svg"
+    },
+    "trae": {
+      "icon": "logo-mono:trae",
+      "asset": "trae",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/trae.svg"
+    },
+    "trae-cn": {
+      "icon": "logo-mono:trae",
+      "asset": "trae",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/trae.svg"
+    },
+    "vercel-ai-gateway": {
+      "icon": "logo-mono:vercel",
+      "asset": "vercel",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/vercel.svg"
+    },
+    "workbuddy": {
+      "icon": "logo:workbuddy-color",
+      "asset": "workbuddy-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/workbuddy-color.svg"
+    },
+    "workbuddy-cn": {
+      "icon": "logo:workbuddy-color",
+      "asset": "workbuddy-color",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/workbuddy-color.svg"
+    },
+    "xiaomi-mimo-desktop": {
+      "icon": "logo-mono:mimocode",
+      "asset": "mimocode",
+      "mappingBasis": "product",
+      "note": "Magpie SUBS explicitly maps Xiaomi MiMo app to mimocode; original 108:72 SVG viewBox is preserved.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/app.js#L12262"
+    },
+    "zai-coding": {
+      "icon": "logo-mono:zai",
+      "asset": "zai",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zai.svg"
+    },
+    "zcode-start": {
+      "icon": "logo:zcode",
+      "asset": "zcode",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zcode.png"
+    },
+    "zed": {
+      "icon": "logo-mono:zed",
+      "asset": "zed",
+      "mappingBasis": "product",
+      "note": "Matching product/vendor asset name from the pinned upstream distribution.",
+      "evidence": "https://github.com/yetone/magpie/blob/0414bbeddbfc2028508b610fd1e7c194143454a0/internal/gui/assets/icons/zed.svg"
+    }
+  },
+  "missingProductMarks": {},
+  "rendererHandoff": {
+    "anthropic-api": {
+      "icon": "logo-mono:anthropic",
+      "condition": "Only for an explicitly Anthropic-owned API template, not every Anthropic-compatible endpoint."
+    },
+    "openai-api": {
+      "icon": "logo-mono:openai",
+      "condition": "Only for an explicitly OpenAI-owned API template, not every OpenAI-compatible endpoint."
+    },
+    "customTypes": {
+      "count": 2,
+      "icon": "network",
+      "note": "No brand inference for user-defined Auth/API Key types."
+    }
+  },
+  "rights": "Source repository MIT notices are retained. Brand names, trademarks and logo artwork remain the rights of their respective vendors; no endorsement or individual official-site provenance is claimed."
+}

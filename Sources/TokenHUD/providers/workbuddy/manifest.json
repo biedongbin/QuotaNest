@@ -2,7 +2,7 @@
   "name": "workbuddy",
   "displayName": "WorkBuddy 国际",
   "label": "WorkBuddy 国际",
-  "icon": "globe",
+  "icon": "logo:workbuddy-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

@@ -2,7 +2,7 @@
   "name": "raccoon",
   "displayName": "商汤小浣熊",
   "label": "商汤",
-  "icon": "globe",
+  "icon": "logo:raccoon",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

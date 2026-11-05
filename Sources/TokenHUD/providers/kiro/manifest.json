@@ -2,7 +2,7 @@
   "name": "kiro",
   "displayName": "Kiro",
   "label": "Kiro",
-  "icon": "globe",
+  "icon": "logo:kiro-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

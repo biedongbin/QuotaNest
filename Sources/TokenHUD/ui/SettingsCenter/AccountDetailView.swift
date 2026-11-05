@@ -38,6 +38,7 @@ struct AccountDetailView: View {
 
     private func header(_ row: AccountRow) -> some View {
         HStack(spacing: 14) {
+            ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 20)
             QuietTabs(selection: sectionBinding, items: [("config", L10n.tr("基础接入与用量")), ("quota", L10n.tr("额度")), ("trigger", L10n.tr("API 调度")), ("display", L10n.tr("展示"))])
             Spacer(minLength: 0)
             Toggle(L10n.tr("启用账号"), isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))

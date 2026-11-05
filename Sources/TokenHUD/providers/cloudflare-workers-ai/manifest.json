@@ -2,7 +2,7 @@
   "name": "cloudflare-workers-ai",
   "displayName": "Cloudflare Workers AI",
   "label": "Cloudflare Workers AI",
-  "icon": "globe",
+  "icon": "logo:workersai-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

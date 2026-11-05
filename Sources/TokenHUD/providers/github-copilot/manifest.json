@@ -2,7 +2,7 @@
   "name": "github-copilot",
   "displayName": "GitHub Copilot",
   "label": "GH",
-  "icon": "globe",
+  "icon": "logo-mono:githubcopilot",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

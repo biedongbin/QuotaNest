@@ -9,7 +9,7 @@
   "displayName": "GLM",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "brain",
+  "icon": "logo:chatglm-color",
   "intervalSec": 60,
   "label": "GLM",
   "name": "CC-GLM",

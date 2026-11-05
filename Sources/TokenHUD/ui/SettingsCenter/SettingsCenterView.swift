@@ -209,7 +209,7 @@ private struct AccountSidebar: View {
                         Text(group.fullName).font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Palette.muted).padding(.horizontal, 10).padding(.top, 17).padding(.bottom, 3)
                         ForEach(group.rows) { row in
-                            navRow(row.name, icon: row.plugin.manifest.icon ?? "network", id: row.id, disabled: !row.enabled)
+                            navRow(row.name, icon: "network", id: row.id, disabled: !row.enabled, provider: row.plugin)
                                 .contextMenu { AccountContextMenu(model: model, row: row) }
                         }
                     }
@@ -230,11 +230,15 @@ private struct AccountSidebar: View {
             if selected == ids[next] { focusedRow = ids[next] }
         }
     }
-    private func navRow(_ text: String, icon: String, id: String, disabled: Bool = false) -> some View {
+    private func navRow(_ text: String, icon: String, id: String, disabled: Bool = false, provider: PluginProvider? = nil) -> some View {
         Button { choose(id) } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 14)).frame(width: 17)
-                    .foregroundStyle(selected == id ? Palette.ink : Palette.controlText)
+                if let provider {
+                    ProviderLogo(manifest: provider.manifest, slug: provider.slug, size: 17)
+                } else {
+                    Image(systemName: icon).font(.system(size: 14)).frame(width: 17)
+                        .foregroundStyle(selected == id ? Palette.ink : Palette.controlText)
+                }
                 Text(text).font(.system(size: 13, weight: selected == id ? .medium : .regular)).lineLimit(1)
                 Spacer(minLength: 0)
                 if disabled { StatusDot(color: Palette.muted) }
@@ -315,8 +319,8 @@ struct OverviewPage: View {
                         }) {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 7) {
-                                    Image(systemName: group.rows.first?.plugin.manifest.icon ?? "network")
-                                        .foregroundStyle(Palette.accent).frame(width: 17)
+                                    ProviderLogo(manifest: group.rows.first?.plugin.manifest,
+                                                 slug: group.rows.first?.id, size: 18)
                                     Text(group.fullName).font(.system(size: 13, weight: .semibold))
                                     Spacer(minLength: 0)
                                     Text(L10n.tr("%@ 个账号", String(describing: group.rows.count))).font(.system(size: 11)).foregroundStyle(Palette.muted)

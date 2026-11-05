@@ -8,7 +8,7 @@
   "cacheFile": "~/.claude/hud/.gpt-usage-cache.json",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "bolt",
+  "icon": "logo-mono:openai",
   "intervalSec": 60,
   "label": "GPT",
   "name": "GPT",

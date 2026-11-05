@@ -89,6 +89,7 @@ struct GlobalSettingsPage: View {
                                 get: { !engine.hudHiddenSlugs.contains(row.id) },
                                 set: { model.toggleHudSync(row.id, synced: $0) })) {
                                 HStack {
+                                    ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 16)
                                     Text(row.name).lineLimit(1)
                                     Spacer(minLength: 8)
                                     if !row.enabled {

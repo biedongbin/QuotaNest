@@ -2,7 +2,7 @@
   "name": "joycode",
   "displayName": "JoyCode",
   "label": "Jo",
-  "icon": "globe",
+  "icon": "logo:joycode",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

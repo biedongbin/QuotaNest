@@ -10,7 +10,7 @@
   "displayName": "Ollama",
   "enabled": true,
   "fetch": "./fetch.sh",
-  "icon": "shippingbox",
+  "icon": "logo-mono:ollama",
   "intervalSec": 60,
   "label": "Ol",
   "name": "Ollama",

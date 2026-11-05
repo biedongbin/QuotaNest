@@ -2,7 +2,7 @@
   "name": "officeace",
   "displayName": "OfficeAce",
   "label": "OfficeAce",
-  "icon": "globe",
+  "icon": "logo:officeace",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

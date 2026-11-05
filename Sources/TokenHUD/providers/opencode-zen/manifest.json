@@ -2,7 +2,7 @@
   "name": "opencode-zen",
   "displayName": "OpenCode Zen 套餐窗口",
   "label": "OZ",
-  "icon": "globe",
+  "icon": "logo-mono:opencode",
   "accent": "purple",
   "enabled": true,
   "autoCreateDefault": false,

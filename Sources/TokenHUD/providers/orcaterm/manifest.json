@@ -2,7 +2,7 @@
   "name": "orcaterm",
   "displayName": "OrcaTerm",
   "label": "OrcaTerm",
-  "icon": "globe",
+  "icon": "logo:tencentcloud-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

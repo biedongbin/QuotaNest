@@ -2,7 +2,7 @@
   "name": "trae",
   "displayName": "Trae 国际",
   "label": "Trae 国际",
-  "icon": "globe",
+  "icon": "logo-mono:trae",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

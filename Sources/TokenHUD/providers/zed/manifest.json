@@ -2,7 +2,7 @@
   "name": "zed",
   "displayName": "Zed",
   "label": "Zed",
-  "icon": "globe",
+  "icon": "logo-mono:zed",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

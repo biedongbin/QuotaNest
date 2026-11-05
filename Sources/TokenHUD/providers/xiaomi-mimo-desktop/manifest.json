@@ -2,7 +2,7 @@
   "name": "xiaomi-mimo-desktop",
   "displayName": "Xiaomi MiMo 桌面",
   "label": "Xiaomi MiMo 桌面",
-  "icon": "globe",
+  "icon": "logo-mono:mimocode",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

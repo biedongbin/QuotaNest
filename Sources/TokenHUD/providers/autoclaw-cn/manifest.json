@@ -2,7 +2,7 @@
   "name": "autoclaw-cn",
   "displayName": "AutoClaw 中国",
   "label": "Au",
-  "icon": "globe",
+  "icon": "logo:zhipu-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

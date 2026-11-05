@@ -491,9 +491,12 @@ struct ImportCenterSheet: View {
                     .accessibilityLabel(L10n.tr("选择 %@", String(describing: row.candidate.name)))
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.candidate.name).font(Typo.small)
-                            .foregroundStyle(row.imported || unavailable ? Palette.muted : Palette.ink)
-                            .strikethrough(row.imported)
+                        HStack(spacing: 6) {
+                            ProviderLogo(template: row.candidate.template, size: 15)
+                            Text(row.candidate.name).font(Typo.small)
+                                .foregroundStyle(row.imported || unavailable ? Palette.muted : Palette.ink)
+                                .strikethrough(row.imported)
+                        }
                         Text("\(row.candidate.source) · provider: \(row.candidate.sourceReference?.providerId ?? "—") · record: \(row.candidate.sourceRecordId)")
                             .font(Typo.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
                         Text(im.noteForDisplay(row)).font(Typo.small)

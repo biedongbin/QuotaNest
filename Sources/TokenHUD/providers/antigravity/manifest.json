@@ -2,7 +2,7 @@
   "name": "antigravity",
   "displayName": "Antigravity",
   "label": "AG",
-  "icon": "globe",
+  "icon": "logo:antigravity-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

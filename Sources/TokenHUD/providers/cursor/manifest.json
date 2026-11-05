@@ -2,7 +2,7 @@
   "name": "cursor",
   "displayName": "Cursor",
   "label": "Cursor",
-  "icon": "globe",
+  "icon": "logo-mono:cursor",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

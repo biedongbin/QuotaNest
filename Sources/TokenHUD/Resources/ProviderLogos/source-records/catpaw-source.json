@@ -1,0 +1,47 @@
+{
+  "brand": "catpaw",
+  "officialHomepage": "https://catpaw.meituan.com/",
+  "sourceURL": "https://s3plus.meituan.net/catpaw-external-resources/login/logo.png",
+  "acquisition": "Downloaded and visually checked by the parent agent; incorporated locally without a further network request.",
+  "retrievalDate": "2026-11-05",
+  "homepageHTMLSHA256": "acf75a1adfc89d07d1c0f70e279e4ba122105d8d3f1d0154326a5155e08ba80b",
+  "matchingIconLinks": [
+    {
+      "rel": "icon",
+      "type": "image/png",
+      "href": "https://s3plus.meituan.net/catpaw-external-resources/login/logo.png"
+    },
+    {
+      "rel": "shortcut icon",
+      "href": "https://s3plus.meituan.net/catpaw-external-resources/login/logo.png"
+    }
+  ],
+  "originalContentType": "image/png",
+  "originalPixelSize": [
+    110,
+    108
+  ],
+  "originalAssetSHA256": "56e9cd216dd197d7bc960e4d290627ddf26909002cf6e6f3b5d4ad5b39eaee55",
+  "preservedOriginal": "source-raster/catpaw-upstream.png",
+  "runtimeFile": "catpaw.png",
+  "pngSHA256": "00b7d930cabcfab31304d9a7472556ebd2712d69785f69742bbd9206dd4c3af4",
+  "transform": {
+    "tool": "Pillow 12.3.0",
+    "filter": "LANCZOS",
+    "canvas": [
+      512,
+      512
+    ],
+    "artworkRasterSize": [
+      512,
+      503
+    ],
+    "offset": [
+      0,
+      4
+    ],
+    "preserveAspectRatio": true,
+    "note": "Uniform scale, integer pixel rounding, transparent padding; no crop, stretch, recoloring or added gradients."
+  },
+  "rights": "Official website brand artwork. Vendor rights retained; no MIT license or endorsement is asserted for this asset."
+}

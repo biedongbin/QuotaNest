@@ -2,7 +2,7 @@
   "name": "workbuddy-cn",
   "displayName": "WorkBuddy 中国",
   "label": "WorkBuddy 中国",
-  "icon": "globe",
+  "icon": "logo:workbuddy-color",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,

@@ -2,7 +2,7 @@
   "name": "catpaw",
   "displayName": "妙手 CatPaw",
   "label": "Ca",
-  "icon": "globe",
+  "icon": "logo:catpaw",
   "accent": "blue",
   "enabled": true,
   "autoCreateDefault": false,
