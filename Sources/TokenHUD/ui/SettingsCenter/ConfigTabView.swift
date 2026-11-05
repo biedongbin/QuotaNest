@@ -274,8 +274,10 @@ struct TemplateCatalogView: View {
                 ForEach(choices) { choice in
                     Button { model.pickTemplate(choice) } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label(choice.label, systemImage: choice.manifest == nil ? "network" : "shippingbox")
-                                .font(.headline)
+                            HStack(spacing: 8) {
+                                ProviderLogo(manifest: choice.manifest, slug: choice.id, size: 18)
+                                Text(choice.label).font(.headline)
+                            }
                             Text(ProviderCapabilityPresentation(manifest: choice.manifest, generic: choice.manifest == nil).authenticationSummary)
                                 .font(.callout)
                             Text(ProviderCapabilityPresentation(manifest: choice.manifest, generic: choice.manifest == nil).capabilitySummary)
