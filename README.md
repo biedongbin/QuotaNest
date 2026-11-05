@@ -193,27 +193,16 @@ Standard quota JSON can include these fields, optionally wrapped in `data`:
 
 See the [provider catalog](docs/provider-catalog.md), [account/authentication contract](docs/account-management-rebuild.md), and [verification notes](docs/account-management-verification.md) for detailed boundaries. Built-in adaptation is not proof of live connectivity for every vendor or plan.
 
-## Development and media reproduction
+## Release notes
 
-```zsh
-export PATH="$HOME/.swiftly/bin:$PATH"
-swiftly run swift build
-# Choose the test suites appropriate to your change:
-swiftly run swift test
-```
+- **[Changelog](CHANGELOG.md)** — project updates and publication history.
 
-To capture isolated demo screens without starting real queries or schedules:
+## Acknowledgments
 
-```zsh
-QUOTANEST_RENDER="$PWD/.build/demo-en" \
-TOKENHUD_RENDER_ONLY=settings-light \
-.build/debug/QuotaNest -quotanest.appLanguage en
-```
+- [Magpie](https://github.com/yetone/magpie) — provider ecosystem and interface references.
+- [CCS](https://github.com/biedongbin/claude-code-session-manager) — README structure and demo-video approach.
+- [Claude Code](https://claude.com/claude-code) — Claude Code HUD integration.
 
-The historical `TOKENHUD_RENDER_ONLY` environment name remains a diagnostic compatibility alias. Publication images are indexed in [the capture manifest](docs/screenshots/capture-manifest.json). Video commands, the CCS reference trail, and duration/codec checks are documented in [the video source guide](docs/video-source/README.md).
+## License
 
-## Credits and brand assets
-
-README organization and video production were informed by [claude-code-session-manager / CCS](https://github.com/biedongbin/claude-code-session-manager). Provider artwork comes from the documented Magpie/LobeHub distributions, matching product packages, and official website assets. Some types use an evidenced manufacturer/family mark rather than an exact product mark.
-
-See [provider-logo provenance and third-party notices](Sources/TokenHUD/Resources/ProviderLogos/README.md). Trademarks and logo artwork remain the property of their respective owners; inclusion identifies a provider and does not imply endorsement.
+[MIT](LICENSE). Third-party assets retain their accompanying licenses and notices.

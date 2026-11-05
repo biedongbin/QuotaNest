@@ -193,27 +193,16 @@ open ~/Applications/QuotaNest.app
 
 详细边界见[供应商目录](docs/provider-catalog.md)、[账号与认证契约](docs/account-management-rebuild.md)和[验证记录](docs/account-management-verification.md)。内置适配不等于所有供应商、账号和套餐均已完成真实联通验证。
 
-## 开发与素材复现
+## 更新日志
 
-```zsh
-export PATH="$HOME/.swiftly/bin:$PATH"
-swiftly run swift build
-# 按改动范围选择测试：
-swiftly run swift test
-```
+- **[Changelog](CHANGELOG.md)** — 项目更新与发布记录。
 
-隔离截图不会启动真实账号查询或计划：
+## 致谢
 
-```zsh
-QUOTANEST_RENDER="$PWD/.build/demo-zh" \
-TOKENHUD_RENDER_ONLY=settings-light \
-.build/debug/QuotaNest -quotanest.appLanguage zh-Hans
-```
+- [Magpie](https://github.com/yetone/magpie) — 供应商生态与界面参考。
+- [CCS](https://github.com/biedongbin/claude-code-session-manager) — README 结构和演示视频制作方式参考。
+- [Claude Code](https://claude.com/claude-code) — Claude Code HUD 集成。
 
-`TOKENHUD_RENDER_ONLY` 是保留的诊断环境变量兼容名。全部公开图片见[截图清单](docs/screenshots/capture-manifest.json)。视频命令、CCS 历史链路取证及真实时长／编码检查见[视频源文件说明](docs/video-source/README.md)。
+## 许可
 
-## 参考与品牌素材
-
-README 组织方式和视频制作参考 [claude-code-session-manager / CCS](https://github.com/biedongbin/claude-code-session-manager)。品牌图来自已记录的 Magpie／LobeHub 分发素材、对应产品包和官网素材；部分类型使用有证据的官方厂商或品牌家族标志，并非精确产品 Logo。
-
-来源和第三方声明见[品牌素材说明](Sources/TokenHUD/Resources/ProviderLogos/README.md)。品牌名称、商标及图形归各供应商所有，仅用于标识，不表示获得其背书。
+[MIT](LICENSE)。第三方素材保留各自随附的许可证与声明。
