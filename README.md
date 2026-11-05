@@ -7,6 +7,7 @@
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-阅读中文版-red?style=for-the-badge" alt="简体中文" /></a>
 </p>
 <p align="center">
+  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-blue?style=flat-square" alt="Version 1.0.0" /></a>
   <img src="https://img.shields.io/badge/platform-macOS_14+-lightgrey?style=flat-square" alt="macOS 14 or later" />
   <img src="https://img.shields.io/badge/built_with-SwiftUI-orange?style=flat-square" alt="Built with SwiftUI" />
   <img src="https://img.shields.io/badge/provider_types-55-blue?style=flat-square" alt="55 built-in provider types" />
@@ -49,7 +50,21 @@ The demos use the current native app with isolated sample accounts and illustrat
 | English / 中文 | Change the interface language immediately in Settings & Appearance. The app follows the macOS light/dark appearance. |
 | History migration | Automatically migrate the former TokenHUD account directory and preferences to QuotaNest with verification, backup, and rollback. |
 
-## Install from source
+## Install
+
+**Homebrew (recommended):**
+
+```zsh
+brew install --cask biedongbin/tap/quotanest
+```
+
+The cask supports **Apple Silicon and Intel on macOS 14+** and installs Node.js for the quota adapters. It removes the quarantine attribute only from the installed QuotaNest app, matching the [CpampBar](https://github.com/biedongbin/cpamp-start-bar) installation approach. The app is ad-hoc signed, without Apple Developer ID signing or notarization.
+
+For later releases, use `brew upgrade --cask quotanest`. You can pass `--appdir="$HOME/Applications"` to keep applications in your home directory; quit and remove an older manually installed app bundle before taking it over with Homebrew. Account data is stored separately.
+
+**Manual download:** get [QuotaNest-1.0.0-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0/QuotaNest-1.0.0-universal.zip) from [Release v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0), verify it against `SHA256SUMS`, unzip it, and move `QuotaNest.app` to Applications. macOS may require approval in **System Settings → Privacy & Security** on first launch.
+
+### Build from source
 
 Requirements: **macOS 14+**, the **Swiftly-managed Swift toolchain**, and **Node.js** for the bundled JavaScript quota adapters. Node.js 18+ is recommended.
 
@@ -198,7 +213,8 @@ See the [provider catalog](docs/provider-catalog.md), [account/authentication co
 
 ## Release notes
 
-- **[Changelog](CHANGELOG.md)** — project updates and publication history.
+- **[Changelog](CHANGELOG.md)** — user-facing changes grouped by version.
+- **[v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0)** — current release and app downloads.
 
 ## Acknowledgments
 

@@ -1,27 +1,50 @@
 #!/bin/zsh
-# QuotaNest: build, package the icon, sign, and install the macOS application.
+# Build a local app, or a universal ZIP for a versioned GitHub Release.
 set -euo pipefail
 export PATH="$HOME/.swiftly/bin:$PATH"
 PROJECT_DIR="${0:A:h:h}"
 cd "$PROJECT_DIR"
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
-BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+
+RELEASE=0
+if [[ "${1:-}" == "--release" && $# == 1 ]]; then
+  RELEASE=1
+elif [[ $# != 0 ]]; then
+  echo "Usage: zsh scripts/package.sh [--release]" >&2
+  exit 2
+fi
+VERSION=$(tr -d '\r\n' < "$PROJECT_DIR/VERSION")
+[[ "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || { echo "Invalid VERSION" >&2; exit 1; }
+REVISION=$(git rev-parse HEAD)
+BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 OUT="$PROJECT_DIR/.build/QuotaNest.app"
 [[ "${OUT:A}" == "$PROJECT_DIR/.build/QuotaNest.app" ]] || exit 1
-if pgrep -x QuotaNest >/dev/null || pgrep -x TokenHUD >/dev/null; then
-  echo "QuotaNest 正在运行，请先退出再安装（菜单栏 → 退出）"; exit 1
+if [[ "$RELEASE" == 0 ]] && { pgrep -x QuotaNest >/dev/null || pgrep -x TokenHUD >/dev/null; }; then
+  echo "QuotaNest 正在运行，请先退出再安装（菜单栏 → 退出）" >&2
+  exit 1
 fi
-swiftly run swift build -c release
-BIN=$(swiftly run swift build -c release --show-bin-path)
+
+if [[ "$RELEASE" == 1 ]]; then
+  swiftly run swift build -c release --arch arm64
+  ARM_BIN=$(swiftly run swift build -c release --arch arm64 --show-bin-path)
+  swiftly run swift build -c release --arch x86_64
+  INTEL_BIN=$(swiftly run swift build -c release --arch x86_64 --show-bin-path)
+  BIN="$ARM_BIN"
+else
+  swiftly run swift build -c release
+  BIN=$(swiftly run swift build -c release --show-bin-path)
+fi
 [[ -f "$PROJECT_DIR/assets/branding/QuotaNest.icns" ]]
 [[ -d "$BIN/QuotaNest_QuotaNest.bundle" ]]
 rm -rf "$OUT"
 APP="$OUT/Contents"
 mkdir -p "$APP/MacOS" "$APP/Resources"
-cp "$BIN/QuotaNest" "$APP/MacOS/QuotaNest"
-# Keep resources in the signed macOS layout; Bundle.appResources resolves them here.
+if [[ "$RELEASE" == 1 ]]; then
+  lipo -create "$ARM_BIN/QuotaNest" "$INTEL_BIN/QuotaNest" -output "$APP/MacOS/QuotaNest"
+  lipo "$APP/MacOS/QuotaNest" -verify_arch arm64 x86_64
+else
+  cp "$BIN/QuotaNest" "$APP/MacOS/QuotaNest"
+fi
 cp -R "$BIN/QuotaNest_QuotaNest.bundle" "$APP/Resources/"
-# SwiftUI's default LocalizedStringKey lookup uses the application bundle.
 for language in zh-hans en; do
   [[ -d "$BIN/QuotaNest_QuotaNest.bundle/$language.lproj" ]]
   cp -R "$BIN/QuotaNest_QuotaNest.bundle/$language.lproj" "$APP/Resources/"
@@ -41,6 +64,10 @@ cat > "$APP/Info.plist" <<EOF
     <key>CFBundleIconFile</key><string>QuotaNest.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>QuotaNestSourceRevision</key><string>$REVISION</string>
+    <key>QuotaNestBuildTime</key><string>$BUILD_TIME</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
@@ -48,6 +75,25 @@ cat > "$APP/Info.plist" <<EOF
 EOF
 printf 'APPL????' > "$APP/PkgInfo"
 codesign --force --deep -s - "$OUT"
+codesign --verify --deep --strict "$OUT"
+PACKAGED=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
+[[ "$PACKAGED" == "$VERSION" ]] || { echo "✗ 打包版本不匹配" >&2; exit 1; }
+
+if [[ "$RELEASE" == 1 ]]; then
+  ARTIFACTS="$PROJECT_DIR/.build/release-artifacts"
+  ZIP="$ARTIFACTS/QuotaNest-$VERSION-universal.zip"
+  mkdir -p "$ARTIFACTS"
+  [[ "${ZIP:A}" == "$PROJECT_DIR/.build/release-artifacts/QuotaNest-$VERSION-universal.zip" ]] || exit 1
+  if [[ -e "$ZIP" ]]; then rm -f "$ZIP"; fi
+  ditto -c -k --sequesterRsrc --keepParent "$OUT" "$ZIP"
+  (cd "$ARTIFACTS" && shasum -a 256 "QuotaNest-$VERSION-universal.zip" > SHA256SUMS)
+  echo "✓ QuotaNest $VERSION universal release package"
+  echo "  ZIP: $ZIP"
+  echo "  Revision: $REVISION"
+  echo "  Architectures: $(lipo -archs "$APP/MacOS/QuotaNest")"
+  exit 0
+fi
+
 DEST="$HOME/Applications"
 INSTALL="$DEST/QuotaNest.app"
 LEGACY="$DEST/TokenHUD.app"
@@ -57,8 +103,7 @@ rm -rf "$INSTALL"
 cp -R "$OUT" "$DEST/"
 codesign --verify --deep --strict "$INSTALL"
 INSTALLED=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INSTALL/Contents/Info.plist")
-[[ "$INSTALLED" == "$VERSION" ]] || { echo "✗ 安装版本不匹配"; exit 1; }
-# Remove only the verified legacy bundle after the renamed application is installed.
+[[ "$INSTALLED" == "$VERSION" ]] || { echo "✗ 安装版本不匹配" >&2; exit 1; }
 if [[ -d "$LEGACY" && "${LEGACY:A}" == "${DEST:A}/TokenHUD.app" ]]; then
   LEGACY_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$LEGACY/Contents/Info.plist" 2>/dev/null || true)
   if [[ "$LEGACY_ID" == "local.tokenhud" ]]; then rm -rf "$LEGACY"; fi

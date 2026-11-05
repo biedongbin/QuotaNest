@@ -7,6 +7,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/English-Read_in_English-blue?style=for-the-badge" alt="English" /></a>
 </p>
 <p align="center">
+  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/版本-1.0.0-blue?style=flat-square" alt="版本 1.0.0" /></a>
   <img src="https://img.shields.io/badge/平台-macOS_14+-lightgrey?style=flat-square" alt="macOS 14 及以上" />
   <img src="https://img.shields.io/badge/原生界面-SwiftUI-orange?style=flat-square" alt="SwiftUI 原生界面" />
   <img src="https://img.shields.io/badge/内置供应商类型-55-blue?style=flat-square" alt="55 个内置供应商类型" />
@@ -49,7 +50,21 @@ https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e
 | 中英双语 | 在“设置与外观”即时切换简体中文／English，外观跟随 macOS 浅色／深色。 |
 | 历史配置迁移 | 将旧 TokenHUD 账号与偏好迁入 QuotaNest，包含校验、备份及失败回滚。 |
 
-## 从源码安装
+## 安装
+
+**Homebrew（推荐）：**
+
+```zsh
+brew install --cask biedongbin/tap/quotanest
+```
+
+cask 支持 **macOS 14+ 的 Apple Silicon 和 Intel**，并安装额度适配脚本所需的 Node.js。参考 [CpampBar](https://github.com/biedongbin/cpamp-start-bar) 的方式，仅移除已安装 QuotaNest 应用的隔离属性。应用使用 ad-hoc 签名，未进行 Apple Developer ID 签名或公证。
+
+后续版本使用 `brew upgrade --cask quotanest`。如需安装到用户目录，可附加 `--appdir="$HOME/Applications"`；交给 Homebrew 管理前，请先退出并移走旧的手工安装 App 包。账号数据独立存储，不在 App 包内。
+
+**手动下载：** 从 [Release v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0) 下载 [QuotaNest-1.0.0-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0/QuotaNest-1.0.0-universal.zip)，按 `SHA256SUMS` 校验后解压，将 `QuotaNest.app` 放入 Applications。首次启动可能需要在“系统设置 → 隐私与安全性”中允许打开。
+
+### 从源码构建
 
 需要 **macOS 14+**、**Swiftly 管理的 Swift 工具链**，以及供额度适配脚本使用的 **Node.js**，建议 Node.js 18+。
 
@@ -198,7 +213,8 @@ open ~/Applications/QuotaNest.app
 
 ## 更新日志
 
-- **[Changelog](CHANGELOG.md)** — 项目更新与发布记录。
+- **[更新日志](CHANGELOG.zh-CN.md)** — 按版本号归档的功能与发布记录。
+- **[v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0)** — 当前正式版本与安装包。
 
 ## 致谢
 
