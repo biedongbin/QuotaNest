@@ -165,6 +165,41 @@ struct QuotaNestApp: App {
                      size: NSSize(width: width, height: 780), dark: dark)
             }
         }
+        let catalog = model()
+        catalog.openTemplates()
+        shot("provider-catalog-light", SettingsCenterView(model: catalog, engine: fixture.engine),
+             size: NSSize(width: 1200, height: 900), dark: false)
+        let allPlans = model()
+        allPlans.navPage = .plan
+        shot("schedules-light", SettingsCenterView(model: allPlans, engine: fixture.engine),
+             size: NSSize(width: 1200, height: 850), dark: false)
+        let authAccount = model()
+        _ = authAccount.selectAccount("demo-auth", tab: .config)
+        shot("authentication-light", SettingsCenterView(model: authAccount, engine: fixture.engine),
+             size: NSSize(width: 1200, height: 900), dark: false)
+        if let row = authAccount.current {
+            shot("account-display-light", AccountDisplaySettings(model: authAccount, row: row)
+                .padding(20).frame(width: 780, height: 430).background(Palette.canvas)
+                .groupBoxStyle(QuietGroupBoxStyle()), size: NSSize(width: 780, height: 430), dark: false)
+        }
+        let importModel = model()
+        let importer = ImportCenterModel(engine: fixture.engine, hudDir: fixture.paths.hudDir, userDir: fixture.userDir)
+        importer.source = .magpie
+        importer.magpieDirectory = "/tmp/quotanest-demo/magpie"
+        importer.scanState = .scanned
+        let english = AppLanguageSettings.shared.selection == .english
+        for (id, name, mode) in [("cline", "Cline", "apikey"), ("gpt", "GPT", "auth"), ("glm", "GLM", "apikey")] {
+            let reference = ProviderSourceReference(source: "magpie", path: "/tmp/quotanest-demo/magpie/providers.json",
+                recordId: "demo-" + id, providerId: "demo-" + id, collection: "providers")
+            let candidate = ImportCandidate(source: "magpie", name: name + " · Demo", template: id, apiKey: "",
+                baseURL: "", proto: "openai", note: "", sourceRecordId: reference.recordId,
+                sourceReference: reference, sourceAuthMode: mode)
+            importer.rows.append(.init(candidate: candidate, state: .addable,
+                note: english ? "Ready to import · read-only source reference" : "可导入 · 只读来源引用"))
+        }
+        importer.picked = Set(importer.rows.map(\.id))
+        shot("import-light", ImportCenterSheet(model: importModel, engine: fixture.engine, im: importer)
+            .frame(width: 1000, height: 680), size: NSSize(width: 1000, height: 680), dark: false)
         let preferences = model()
         preferences.navPage = .settings
         shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
@@ -446,7 +481,7 @@ struct QuotaNestApp: App {
     private let defaultsName: String
 
     init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-diagnostic-\(UUID().uuidString)", isDirectory: true)
+        root = URL(fileURLWithPath: "/tmp", isDirectory: true).appendingPathComponent("quotanest-demo-\(UUID().uuidString)", isDirectory: true)
         paths = AppConfigPaths(environment: ["CLAUDE_CONFIG_DIR": root.appendingPathComponent("claude").path], userHome: root, workingDirectory: root)
         userDir = root.appendingPathComponent("accounts", isDirectory: true)
         templatesDir = root.appendingPathComponent("types", isDirectory: true)
@@ -455,21 +490,32 @@ struct QuotaNestApp: App {
         defaults = isolated
         for dir in [paths.hudDir, userDir, templatesDir] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
         try Data("{\"env\":{}}".utf8).write(to: paths.settingsURL)
+        if let directory = Bundle.appResources.resourceURL?.appendingPathComponent("providers") {
+            for provider in ProviderRegistry.scan(dir: directory) {
+                var declaration = provider.manifest
+                declaration.autoCreateDefault = false
+                declaration.authFile = paths.hudDir.appendingPathComponent(".preview-\(provider.slug)-auth.json").path
+                try PluginGenerator.writePlugin(slug: provider.slug, manifest: declaration,
+                                                script: "#!/bin/sh\nexit 1\n", into: templatesDir)
+                try Data("{}".utf8).write(to: templatesDir.appendingPathComponent(provider.slug + "/auth-template.json"))
+            }
+        }
+        let english = AppLanguageSettings.shared.selection == .english
         let examples: [(String, String, Bool, String?)] = [
-            ("demo-a", "日常开发账号", true, nil),
-            ("demo-long", "同供应商 · 跨团队文档与研发账号", true, nil),
-            ("demo-api", "仅用于 API 调用", false, nil),
-            ("demo-error", "需要检查网络的备用账号", true, "network")
+            ("demo-a", english ? "Personal development" : "日常开发账号", true, nil),
+            ("demo-long", english ? "Team workspace" : "团队协作账号", true, nil),
+            ("demo-api", english ? "API-only relay" : "仅用于 API 调用", false, nil),
+            ("demo-error", english ? "Backup account" : "备用账号", true, "network")
         ]
         let now = Date().timeIntervalSince1970 * 1000
         for (slug, name, quota, error) in examples {
             let auth = paths.hudDir.appendingPathComponent(".\(slug)-usage-auth.json")
             let cache = paths.hudDir.appendingPathComponent(".\(slug)-usage-cache.json")
-            let manifest = ProviderManifest(name: "Fixture-\(slug)", label: "示例供应商", displayName: name, intervalSec: 300,
+            let manifest = ProviderManifest(name: "Fixture-\(slug)", label: english ? "Demo provider" : "示例供应商", displayName: name, intervalSec: 300,
                                             buckets: [:], cacheFile: quota ? cache.path : nil, authFile: auth.path,
                                             queryUrl: quota ? "https://example.invalid/usage" : nil, queryAuth: "bearer", queryKeyField: "apiKey",
                                             refreshUrl: "https://example.invalid/v1/chat/completions", refreshProtocol: "openai", refreshAuth: "bearer",
-                                            template: quota ? "demo-type" : nil, authMode: "apikey")
+                                            authMode: "apikey")
             try PluginGenerator.writePlugin(slug: slug, manifest: manifest, script: "#!/bin/sh\nexit 1\n", into: userDir)
             let values: [String: Any] = ["apiUrl": "https://example.invalid/usage", "apiKey": quota ? "FIXTURE-QUERY" : "",
                                          "apiBaseURL": "https://example.invalid/v1", "refreshApiKey": "FIXTURE-CALL",
@@ -480,20 +526,28 @@ struct QuotaNestApp: App {
             if quota {
                 let snapshot = UsageCache(generatedAt: now - (error == nil ? 0 : 600_000), error: error,
                                           stale: error != nil, lastAttemptAt: now, windows: [
-                                            WindowBucket(label: "7 天额度", usedPercentage: slug == "demo-long" ? 71 : 28, period: "7天", resetsAt: Int(now / 1000) + 400_000),
-                                            WindowBucket(label: "附加模型 · 24 小时", usedPercentage: 46, period: "24小时", resetsAt: Int(now / 1000) + 70_000)
+                                            WindowBucket(label: "5小时", usedPercentage: slug == "demo-long" ? 71 : 28, period: "5h", resetsAt: Int(now / 1000) + 12_000),
+                                            WindowBucket(label: "本周", usedPercentage: 46, period: "7d", resetsAt: Int(now / 1000) + 400_000)
                                           ], accountId: "fixture-\(slug)")
                 try JSONEncoder().encode(snapshot).write(to: cache)
             }
-            if slug == "demo-a" {
-                var type = manifest
-                type.displayName = "示例供应商"
-                try PluginGenerator.writePlugin(slug: "demo-type", manifest: type, script: "#!/bin/sh\nexit 1\n", into: templatesDir)
-                try JSONSerialization.data(withJSONObject: values).write(to: templatesDir.appendingPathComponent("demo-type/auth-template.json"))
-            }
         }
-        defaults.set(examples.map { $0.0 }, forKey: DataEngine.defaultsOrderKey)
-        engine = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: nil, userProvidersDir: userDir,
+        let cliAuth = root.appendingPathComponent("demo-cli-auth.json")
+        try Data("{\"access_token\":\"DEMO-TOKEN-NOT-VALID\"}".utf8).write(to: cliAuth)
+        let authConfig = paths.hudDir.appendingPathComponent(".demo-auth-usage-auth.json")
+        let authCache = paths.hudDir.appendingPathComponent(".demo-auth-usage-cache.json")
+        let authManifest = ProviderManifest(name: "DemoAuth", label: english ? "Auth provider" : "Auth 示例",
+            displayName: english ? "CLI authorization" : "CLI 授权账号", cacheFile: authCache.path, authFile: authConfig.path,
+            queryUrl: "https://example.invalid/usage", queryAuth: "bearer", refreshUrl: "https://example.invalid/v1/chat/completions",
+            refreshProtocol: "openai", refreshAuth: "bearer", authMode: "auth", quotaMode: "endpoint", quotaAuthModes: ["auth"],
+            credentialSource: ProviderCredentialSource(file: cliAuth.path, tokenPath: "access_token"),
+            authCallUrl: "https://example.invalid/v1/chat/completions", authCallProtocol: "openai", authCallHeader: "Authorization: Bearer <token>")
+        try PluginGenerator.writePlugin(slug: "demo-auth", manifest: authManifest, script: "#!/bin/sh\nexit 1\n", into: userDir)
+        try JSONSerialization.data(withJSONObject: ["schemaVersion": 2, "authMode": "auth", "authCredentialFile": cliAuth.path,
+            "testModel": "demo-model", "testPrompt": "OK", "quotaMode": "endpoint"]).write(to: authConfig)
+        try JSONEncoder().encode(UsageCache(generatedAt: now, windows: [WindowBucket(label: "5小时", usedPercentage: 35)], accountId: "fixture-demo-auth")).write(to: authCache)
+        defaults.set(examples.map { $0.0 } + ["demo-auth"], forKey: DataEngine.defaultsOrderKey)
+        engine = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: templatesDir, userProvidersDir: userDir,
                             runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")), defaults: defaults, settingsURL: paths.settingsURL)
         engine.reloadRegistry()
     }

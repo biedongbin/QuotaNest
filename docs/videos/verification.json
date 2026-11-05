@@ -1,0 +1,168 @@
+[
+  {
+    "file": "docs/videos/quotanest-demo-en.mp4",
+    "duration": 27.0,
+    "bytes": 5062436,
+    "codec": "h264",
+    "pixelFormat": "yuv420p",
+    "width": 1440,
+    "height": 900,
+    "fps": 30,
+    "audio": "none",
+    "faststart": true,
+    "sha256": "7d40dc3cedb3263cceb3437d5dd7d2e0e171e87c3487f6ab0cd30f0aa51d372b",
+    "inputs": {
+      "accounts": "docs/screenshots/en/overview.png",
+      "authentication": "docs/screenshots/en/authentication.png",
+      "import": "docs/screenshots/en/import.png",
+      "schedule": "docs/screenshots/en/schedule.png",
+      "hud": [
+        "docs/screenshots/en/floating-card.png",
+        "docs/screenshots/en/floating-glass.png",
+        "docs/screenshots/en/floating-compact.png",
+        "docs/screenshots/en/floating-list.png"
+      ]
+    },
+    "inputHashes": [
+      {
+        "source": "docs/video-source/app-icon.png",
+        "sha256": "e91a78ce37993d43722935af09282ba8f75da30dee1c8d774ac2fa21a9ffa012"
+      },
+      {
+        "source": "docs/screenshots/en/overview.png",
+        "sha256": "8fb0ab24e06f78461eff607a4683efb101c4622a81818dd4c870348d5619cba9",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 700
+        }
+      },
+      {
+        "source": "docs/screenshots/en/authentication.png",
+        "sha256": "4b1f9b86d26597f3f15449bf87ba0ea7b03e6355f7ed877a8aa7fdfb6413ab1f",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 620
+        }
+      },
+      {
+        "source": "docs/screenshots/en/import.png",
+        "sha256": "7c5ed1c50c6fc2a2a324b50598185e9e85667e62d5ce6222a40d2f9cae1d2a60"
+      },
+      {
+        "source": "docs/screenshots/en/schedule.png",
+        "sha256": "c2494a0b220ed3b6719806833e3ef266bf4801933124d2706383b0d7f75cd52a",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 550
+        }
+      },
+      {
+        "source": "docs/screenshots/en/floating-card.png",
+        "sha256": "acb58d9f7b8e984f14103a4bef261940398e508ead02043d70f8abf3e2c29539"
+      },
+      {
+        "source": "docs/screenshots/en/floating-glass.png",
+        "sha256": "4259436b76027dbb58d8df0fdbfd6278e9ff90f6501bea8255e8a127866ca868"
+      },
+      {
+        "source": "docs/screenshots/en/floating-compact.png",
+        "sha256": "a7a0aa80ed3e9bdbb0d49a405579a67a0c83d11924f25d892d02b6e842685d24"
+      },
+      {
+        "source": "docs/screenshots/en/floating-list.png",
+        "sha256": "6f82d2eefd83c63a797cd3173f712cee62cdfd5c68ab3a57c971ed2eb47551b8"
+      },
+      {
+        "source": "docs/screenshots/en/overview.png",
+        "sha256": "8fb0ab24e06f78461eff607a4683efb101c4622a81818dd4c870348d5619cba9",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 700
+        }
+      }
+    ]
+  },
+  {
+    "file": "docs/videos/quotanest-demo-zh-CN.mp4",
+    "duration": 27.0,
+    "bytes": 4440424,
+    "codec": "h264",
+    "pixelFormat": "yuv420p",
+    "width": 1440,
+    "height": 900,
+    "fps": 30,
+    "audio": "none",
+    "faststart": true,
+    "sha256": "b02b264cbdffab0643b1202507d30235abd2bc3098ae1cc0d5e3576cbda64b4b",
+    "inputs": {
+      "accounts": "docs/screenshots/zh-CN/overview.png",
+      "authentication": "docs/screenshots/zh-CN/authentication.png",
+      "import": "docs/screenshots/zh-CN/import.png",
+      "schedule": "docs/screenshots/zh-CN/schedule.png",
+      "hud": [
+        "docs/screenshots/zh-CN/floating-card.png",
+        "docs/screenshots/zh-CN/floating-glass.png",
+        "docs/screenshots/zh-CN/floating-compact.png",
+        "docs/screenshots/zh-CN/floating-list.png"
+      ]
+    },
+    "inputHashes": [
+      {
+        "source": "docs/video-source/app-icon.png",
+        "sha256": "e91a78ce37993d43722935af09282ba8f75da30dee1c8d774ac2fa21a9ffa012"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/overview.png",
+        "sha256": "95e70f48f133390b3a049bfc1dae3e6f4adf62618dfd347c5ea984860e82a611",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 700
+        }
+      },
+      {
+        "source": "docs/screenshots/zh-CN/authentication.png",
+        "sha256": "c8ddd835e13a24e29978bc121d38f7f458c77558a0f0efec2ea75804116395e0",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 620
+        }
+      },
+      {
+        "source": "docs/screenshots/zh-CN/import.png",
+        "sha256": "5a7a9b4ef16f5dc5e61c1c758c899cd90df698e6a4ac525a3a28e17ed72f1921"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/schedule.png",
+        "sha256": "6dc45d68d59e63d85cb4d5d5cfbccd15176fb0ded7647e69ed3b5df872d8f73e",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 550
+        }
+      },
+      {
+        "source": "docs/screenshots/zh-CN/floating-card.png",
+        "sha256": "67183aee83779e2c26140c559e6a3528b803d8ac624b3b22df72d71da0422b6f"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/floating-glass.png",
+        "sha256": "d4c576d99fde48ad40bff5d627d5a829f66bea5252114477e03217d8be0ce3fa"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/floating-compact.png",
+        "sha256": "9711c92e02738d98f5a2dc1e878cd0d0ab7b43121f60d27d9b1cd9866abb89ca"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/floating-list.png",
+        "sha256": "7b572a426ea6d848c8b8005e4082560577be671a50c9af17065243401bb30d5d"
+      },
+      {
+        "source": "docs/screenshots/zh-CN/overview.png",
+        "sha256": "95e70f48f133390b3a049bfc1dae3e6f4adf62618dfd347c5ea984860e82a611",
+        "cropTopLeft": {
+          "width": 1200,
+          "height": 700
+        }
+      }
+    ]
+  }
+]

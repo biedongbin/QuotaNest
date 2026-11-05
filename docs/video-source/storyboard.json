@@ -1,0 +1,34 @@
+{
+  "duration": 27,
+  "fps": 30,
+  "width": 1440,
+  "height": 900,
+  "languages": {
+    "en": {
+      "brand": "QuotaNest",
+      "tagline": "AI quota, always in view.",
+      "fixtureLabel": "Demo accounts · illustrative quota",
+      "scenes": [
+        {"start": 0, "duration": 4.5, "shot": "accounts", "title": "Every account. One clear view.", "subtitle": "55 provider types · account quotas in one macOS app", "label": "01 / ACCOUNT QUOTAS"},
+        {"start": 4.5, "duration": 4.5, "shot": "authentication", "title": "Connect once. Reuse the same identity.", "subtitle": "Auth or API Key · usage queries inherit account authentication", "label": "02 / AUTHENTICATION"},
+        {"start": 9, "duration": 4.5, "shot": "import", "title": "Bring your accounts. Keep sources read-only.", "subtitle": "9router · cc-switch · CPAMP · Magpie", "note": "Hourly source sync · corrections require a unique identity match", "label": "03 / SOURCE IMPORT"},
+        {"start": 13.5, "duration": 4.5, "shot": "schedule", "title": "Plan small calls around your workday.", "subtitle": "Try to start a dynamic 5h window with scheduled API calls", "note": "Provider rules apply. Starting a window is not guaranteed.", "label": "04 / SCHEDULED CALLS"},
+        {"start": 18, "duration": 6, "shot": "hud", "title": "Your quota. In your preferred style.", "subtitle": "Card · Glass · Compact · List", "note": "Account selection stays in sync with the HUD", "label": "05 / FLOATING HUD"},
+        {"start": 24, "duration": 3, "shot": "accounts", "title": "QuotaNest", "subtitle": "AI quota, always in view.", "note": "github.com/biedongbin/QuotaNest · macOS 14+", "label": "QUOTANEST"}
+      ]
+    },
+    "zh-CN": {
+      "brand": "QuotaNest · 额度巢",
+      "tagline": "AI 额度，随时可见。",
+      "fixtureLabel": "演示账号 · 示例额度",
+      "scenes": [
+        {"start": 0, "duration": 4.5, "shot": "accounts", "title": "所有账号，一眼看清。", "subtitle": "55 种供应商类型 · 一个 macOS App 管理账号额度", "label": "01 / 账号额度"},
+        {"start": 4.5, "duration": 4.5, "shot": "authentication", "title": "一次接入，查询沿用同一认证。", "subtitle": "支持 Auth 与 API Key · 用量查询继承账号认证", "label": "02 / 统一认证"},
+        {"start": 9, "duration": 4.5, "shot": "import", "title": "导入既有账号，来源保持只读。", "subtitle": "9router · cc-switch · CPAMP · Magpie", "note": "每小时同步来源记录 · 仅身份唯一匹配时订正", "label": "03 / 来源导入"},
+        {"start": 13.5, "duration": 4.5, "shot": "schedule", "title": "围绕工作时间，安排小调用。", "subtitle": "定时 API 调用，尝试开启动态 5h 窗口", "note": "窗口受供应商规则约束，不保证开启。", "label": "04 / 定时调用"},
+        {"start": 18, "duration": 6, "shot": "hud", "title": "你的额度，你喜欢的悬浮样式。", "subtitle": "卡片 · 玻璃 · 紧凑 · 列表", "note": "账号展示选择与 HUD 联动", "label": "05 / 悬浮 HUD"},
+        {"start": 24, "duration": 3, "shot": "accounts", "title": "QuotaNest · 额度巢", "subtitle": "AI 额度，随时可见。", "note": "github.com/biedongbin/QuotaNest · macOS 14+", "label": "QUOTANEST"}
+      ]
+    }
+  }
+}

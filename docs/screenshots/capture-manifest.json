@@ -1,0 +1,281 @@
+[
+  {
+    "file": "docs/screenshots/en/overview.png",
+    "language": "en",
+    "scene": "accounts-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/connection-api-key.png",
+    "language": "en",
+    "scene": "connection-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/api-only.png",
+    "language": "en",
+    "scene": "api-only-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/quota.png",
+    "language": "en",
+    "scene": "quota-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/schedule.png",
+    "language": "en",
+    "scene": "plan-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/account-editor.png",
+    "language": "en",
+    "scene": "editor-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/settings.png",
+    "language": "en",
+    "scene": "settings-light",
+    "width": 1000,
+    "height": 983,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/menu.png",
+    "language": "en",
+    "scene": "menu-light",
+    "width": 420,
+    "height": 563,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/authentication.png",
+    "language": "en",
+    "scene": "authentication-light",
+    "width": 1200,
+    "height": 980,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/provider-catalog.png",
+    "language": "en",
+    "scene": "provider-catalog-light",
+    "width": 1200,
+    "height": 980,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/schedules.png",
+    "language": "en",
+    "scene": "schedules-light",
+    "width": 1200,
+    "height": 930,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/import.png",
+    "language": "en",
+    "scene": "import-light",
+    "width": 1000,
+    "height": 708,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/account-display.png",
+    "language": "en",
+    "scene": "account-display-light",
+    "width": 780,
+    "height": 458,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/floating-card.png",
+    "language": "en",
+    "scene": "floating-style-card-light",
+    "width": 340,
+    "height": 566,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/floating-glass.png",
+    "language": "en",
+    "scene": "floating-style-glass-dark",
+    "width": 340,
+    "height": 528,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/floating-list.png",
+    "language": "en",
+    "scene": "floating-style-list-light",
+    "width": 340,
+    "height": 219,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/en/floating-compact.png",
+    "language": "en",
+    "scene": "floating-style-compact-light",
+    "width": 300,
+    "height": 137,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/overview.png",
+    "language": "zh-CN",
+    "scene": "accounts-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/connection-api-key.png",
+    "language": "zh-CN",
+    "scene": "connection-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/api-only.png",
+    "language": "zh-CN",
+    "scene": "api-only-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/quota.png",
+    "language": "zh-CN",
+    "scene": "quota-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/schedule.png",
+    "language": "zh-CN",
+    "scene": "plan-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/account-editor.png",
+    "language": "zh-CN",
+    "scene": "editor-1200-light",
+    "width": 1200,
+    "height": 860,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/settings.png",
+    "language": "zh-CN",
+    "scene": "settings-light",
+    "width": 1000,
+    "height": 983,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/menu.png",
+    "language": "zh-CN",
+    "scene": "menu-light",
+    "width": 420,
+    "height": 563,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/authentication.png",
+    "language": "zh-CN",
+    "scene": "authentication-light",
+    "width": 1200,
+    "height": 980,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/provider-catalog.png",
+    "language": "zh-CN",
+    "scene": "provider-catalog-light",
+    "width": 1200,
+    "height": 980,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/schedules.png",
+    "language": "zh-CN",
+    "scene": "schedules-light",
+    "width": 1200,
+    "height": 930,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/import.png",
+    "language": "zh-CN",
+    "scene": "import-light",
+    "width": 1000,
+    "height": 708,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/account-display.png",
+    "language": "zh-CN",
+    "scene": "account-display-light",
+    "width": 780,
+    "height": 458,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/floating-card.png",
+    "language": "zh-CN",
+    "scene": "floating-style-card-light",
+    "width": 340,
+    "height": 566,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/floating-glass.png",
+    "language": "zh-CN",
+    "scene": "floating-style-glass-dark",
+    "width": 340,
+    "height": 528,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/floating-list.png",
+    "language": "zh-CN",
+    "scene": "floating-style-list-light",
+    "width": 340,
+    "height": 219,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/zh-CN/floating-compact.png",
+    "language": "zh-CN",
+    "scene": "floating-style-compact-light",
+    "width": 300,
+    "height": 137,
+    "data": "isolated illustrative fixtures"
+  },
+  {
+    "file": "docs/screenshots/claude-code-hud.png",
+    "language": "zh-CN",
+    "width": 652,
+    "height": 36,
+    "data": "user-supplied HUD; project path row removed"
+  }
+]

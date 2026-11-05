@@ -1,0 +1,26 @@
+{
+  "en": {
+    "accounts": "docs/screenshots/en/overview.png",
+    "authentication": "docs/screenshots/en/authentication.png",
+    "import": "docs/screenshots/en/import.png",
+    "schedule": "docs/screenshots/en/schedule.png",
+    "hud": [
+      "docs/screenshots/en/floating-card.png",
+      "docs/screenshots/en/floating-glass.png",
+      "docs/screenshots/en/floating-compact.png",
+      "docs/screenshots/en/floating-list.png"
+    ]
+  },
+  "zh-CN": {
+    "accounts": "docs/screenshots/zh-CN/overview.png",
+    "authentication": "docs/screenshots/zh-CN/authentication.png",
+    "import": "docs/screenshots/zh-CN/import.png",
+    "schedule": "docs/screenshots/zh-CN/schedule.png",
+    "hud": [
+      "docs/screenshots/zh-CN/floating-card.png",
+      "docs/screenshots/zh-CN/floating-glass.png",
+      "docs/screenshots/zh-CN/floating-compact.png",
+      "docs/screenshots/zh-CN/floating-list.png"
+    ]
+  }
+}

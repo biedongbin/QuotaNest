@@ -1,91 +1,219 @@
-# QuotaNest · 额度巢
+<p align="center">
+  <img src="assets/branding/QuotaNest.png" width="112" alt="QuotaNest app icon" />
+</p>
+<h1 align="center">QuotaNest</h1>
+<p align="center">AI quotas, accounts, and Claude Code HUD — together on your Mac.</p>
+<p align="center">
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-阅读中文版-red?style=for-the-badge" alt="简体中文" /></a>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS_14+-lightgrey?style=flat-square" alt="macOS 14 or later" />
+  <img src="https://img.shields.io/badge/built_with-SwiftUI-orange?style=flat-square" alt="Built with SwiftUI" />
+  <img src="https://img.shields.io/badge/provider_types-55-blue?style=flat-square" alt="55 built-in provider types" />
+  <img src="https://img.shields.io/badge/languages-English_/_简体中文-green?style=flat-square" alt="English and Simplified Chinese" />
+</p>
 
-<img src="assets/branding/QuotaNest.png" width="128" alt="QuotaNest 图标：薄荷青色额度环与聚合账号的巢" />
+> A native macOS menu-bar app for keeping track of AI account quotas, viewing usage in a floating panel, reusing existing credentials, and choosing what appears in Claude Code HUD.
 
-macOS 菜单栏 AI 额度与账号管理 App，原名 TokenHUD。每个账号以 **Auth 认证调用／API Key 调用**为基础接入，用量查询统一继承同一认证，定时 API 调用用于尝试主动开启动态 5h 窗口，提高工作时间内的额度利用机会。
+## The 10-second pitch
 
-当前需求与技术契约以 [2026-11-04 三层需求](docs/account-management-rebuild.md) 为准。该文档区分目标与待验项；Auth 与认证继承改造的最终结果须由本轮验证证明，不能从本 README 推断所有供应商已经真实联通。
+Stop switching between provider dashboards just to find out which account still has room. QuotaNest puts your quota windows, balances, account controls, and schedules in one place — with four floating layouts when you want the numbers to stay visible.
 
-## 使用
+**Existing credentials stay at their source.** Imports from 9router, cc-switch, CPAMP, and Magpie use read-only references instead of creating another persistent credential copy.
 
-- 单击菜单栏打开／关闭账号快览，双击切换悬浮速览，右键打开常用操作菜单。
-- “设置与外观 → 语言”可切换简体中文／English，立即生效并保存；账号名称、模型ID和供应商返回的原始内容保留原样。
-- “设置与外观 → Claude Code HUD”可逐账号勾选显示，与“供应商 → 显示”的 HUD 开关共用同一配置；修改立即同步，写入失败时恢复原选择，停用账号保留偏好。
-- 悬浮窗任意位置按住拖动可移动；标题默认隐藏，点击悬浮窗后显示，鼠标移出 5 秒后隐藏，移回时取消待隐藏计时。
-- 在账号管理选择“添加账号”→内置供应商类型，可按供应商名称搜索；选择类型只创建草稿，新增模板不会自动创建账号。
-- 填写账号名称，再按该类型实际提供的模式填写基础 API Key，或填写／选择已有 Auth 文件；保存后采用类型内置的默认查询，无需填写查询脚本、额外 Token 或查询凭证。没有默认 Auth 来源的类型需要明确选择文件，不能留空自动猜测账号。
-- 认证模式按类型能力显示。Auth 只读取类型已声明的 JSON 格式；各类型支持的来源和字段映射见[供应商目录](docs/provider-catalog.md)。明文导出文件可用，不等于已能自动导入原客户端的 Keychain、SQLite、TOML 或加密凭证；App不提供浏览器 OAuth 登录，也不自动刷新或写回外部 Token。
-- 用量查询继承同一基础认证。当前55个内置类型按实际声明分为22个“查询加模型调用”和33个“仅查询”；仅查询类型尚未接入模型调用协议，不能测试模型或设置调度，这不表示用户漏填 API Key。完整分类和17个不启用候选见[供应商目录](docs/provider-catalog.md)。
-- 支持模型调用的类型，新模板的模型默认留空；请为目标套餐／用量池选择实际模型后再测试或启用计划。复制账号可沿用非敏感配置，所有凭证需重新填写，计划默认暂停。
-- 定时小请求用于尝试主动开启按首次使用计时的动态 5h 窗口，不是强制 reset 或余额刷新；例如工作 09:00–18:00 时可考虑 05:00／10:00／15:00，但效果取决于真实供应商机制。调度模型必须适用于目标套餐／用量池，不能只按名称看起来便宜来推荐。
-- 每个账号可控制菜单／悬浮窗展示及 Claude HUD 输出；同类型账号使用各自缓存和稳定标识。
+![QuotaNest account overview](docs/screenshots/en/overview.png)
 
-## 开发与验证
+## Demo video · 27 seconds
 
-必须使用 swiftly 工具链：
+[![Watch the English QuotaNest demo](docs/videos/quotanest-demo-en-poster.png)](docs/videos/quotanest-demo-en.mp4)
+
+[Watch / download the English MP4](docs/videos/quotanest-demo-en.mp4) · [中文版视频](docs/videos/quotanest-demo-zh-CN.mp4)
+
+The demos use the current native app with isolated sample accounts and illustrative quota values. They do not send paid model requests. Video production follows the screenshot → GSAP → HyperFrames approach used by [CCS](https://github.com/biedongbin/claude-code-session-manager); reproducible sources and the verified toolchain are in [docs/video-source](docs/video-source/README.md).
+
+## What you get
+
+| Capability | What it does |
+| --- | --- |
+| Multi-account overview | View quota windows, balances, reset times, old data, and configuration health without opening each provider site. |
+| 55 built-in types | 22 types declare quota queries and model calls; 33 currently support quota queries only. See the [provider catalog](docs/provider-catalog.md). |
+| Auth or API Key | Use the authentication modes declared by each provider. Quota queries inherit the same base authentication. |
+| Read-only imports | Reference existing records from 9router, cc-switch, CPAMP, or Magpie, preserving original record and provider IDs. |
+| Source synchronization | Check imported references hourly while the app runs, or sync now. Correct changed record IDs only when the identity is uniquely established. |
+| Four floating layouts | Card, glass, compact, and list; drag from anywhere. The title appears on click and hides five seconds after the pointer leaves. |
+| Claude Code HUD | Choose displayed accounts in settings or the account display page; both controls share the same preference. |
+| Small scheduled calls | Configure local-time requests for eligible plans with dynamic usage windows. Calls consume quota and cannot guarantee opening or resetting a window. |
+| English / 中文 | Change the interface language immediately in Settings & Appearance. The app follows the macOS light/dark appearance. |
+| History migration | Automatically migrate the former TokenHUD account directory and preferences to QuotaNest with verification, backup, and rollback. |
+
+## Install from source
+
+Requirements: **macOS 14+**, the **Swiftly-managed Swift toolchain**, and **Node.js** for the bundled JavaScript quota adapters. Node.js 18+ is recommended.
 
 ```zsh
+git clone https://github.com/biedongbin/QuotaNest.git
+cd QuotaNest
 export PATH="$HOME/.swiftly/bin:$PATH"
-swiftly run swift build
-swiftly run swift test
-node --test scripts/test-account-query-providers.mjs scripts/test-provider-web-parsing.mjs
-node --test scripts/test-gpt-provider.mjs scripts/test-cline-provider.mjs
-```
-
-离线演示截图不会启动真实账号查询和计划：
-
-```zsh
-QUOTANEST_RENDER="$PWD/.build/account-preview" .build/debug/QuotaNest
-```
-
-## 打包安装
-
-```zsh
 zsh scripts/package.sh
 open ~/Applications/QuotaNest.app
 ```
 
-打包会安装带完整 macOS 图标的 QuotaNest，并在新包验证成功后移除旧 TokenHUD 应用包；需先退出运行中的 App。可执行目标为 `QuotaNest`，Bundle ID 为 `local.quotanest`。首次正常启动会在初始化语言、账号与后台任务之前自动迁移旧 TokenHUD 账号和偏好；备份及安全摘要保存在新数据目录中。迁移失败会保留旧配置并停止启动，不以空账号覆盖历史。
+Quit a running copy before packaging. The script builds a local app, includes its icon and resources, applies an ad-hoc signature, and installs it in `~/Applications`. This is a local build workflow; a notarized download is not assumed.
 
-## 供应商类型与账号
+The system Command Line Tools Swift version can be incompatible with this package's manifest ABI. Use `swiftly run swift …` rather than switching toolchains mid-build.
 
-内置类型来自 `Sources/TokenHUD/providers/`。每个类型提供 `manifest.json`、`fetch.sh` 和默认配置；协议、固定地址和查询逻辑由类型提供，主框架自动扫描，不按供应商名称分支。
+## Interface tour
 
-账号实例位于 `~/Library/Application Support/QuotaNest/providers/`，通过 `template` 引用类型，独立保存基础接入配置、缓存和调用计划。API Key 等 App 自有凭证写入 Claude 配置目录的 `hud` 子目录，权限为 0600；支持 `CLAUDE_CONFIG_DIR`。Auth 按只读 CLI／JSON 来源使用，不擅自写回外部授权来源。
+Screenshots show isolated demo data, not personal credentials or live service validation. Provider-returned text and user-defined account names remain unchanged when switching languages.
 
-用量查询统一继承基础 Auth／API Key。保存时应清理旧查询字段，同时保留基础 API Key 和授权文件引用；无需用户手工删除旧数据。旧网页查询已不再是当前启用方案，其取证和离线样本保留在 [历史网页查询契约](docs/provider-web-query-contracts.md)，仅供历史追溯。
+### 1. Choose a provider type
 
-## 导入已有账号：只读来源引用
+Search built-in types and inspect their authentication and quota/call capabilities before creating an account. Choosing a type opens a draft; it does not immediately create an account.
 
-在导入中心选择 9router、cc-switch、CPAMP 或 Magpie，扫描后勾选预览中可导入的记录。导入只保存来源路径、原始记录和供应商身份，不把 Auth／API Key 复制进 TokenHUD 账号文件；文件按原路径引用，数据库按记录主键只读查询。每次请求重新解析当前来源并冻结本次内存快照，源里的凭证变化会用于后续请求；记录删除、来源缺失或类型不匹配时显示不可用，不回退旧副本。
+![Provider catalog with official brand marks](docs/screenshots/en/provider-catalog.png)
 
-| 来源 | 当前范围 |
-|---|---|
-| 9router | 按连接记录主键与原 providerID 绑定，认证格式须匹配已适配类型；不代表所有路由供应商均可导入。 |
-| cc-switch | 当前支持 Claude 命名空间的记录，身份包含 `id + app_type`；其它类型可预览，但标为不支持。 |
-| CPAMP | 引用既有 CPA JSON 文件，按文件名和 `type` 校验；仅支持已有模板及其声明的认证格式。 |
-| Magpie | 默认读取绝对 `XDG_CONFIG_HOME` 下的 magpie 目录，否则使用 `~/.config/magpie`；界面可选择显式配置根目录，包括 portable data。支持已适配的 provider Key 与插件凭证槽，保留原 providerID；原生 logins 的 CLI／Keychain 持有凭证不支持，不自动登录或刷新。 |
+### 2. Connect with an API Key or an existing Auth file
 
-导入账号的名称、认证、地址、模型和计划配置只读，请到来源工具修改；本地仍可启停账号、调整显示、查询或删除关联，删除关联不改来源。内置模板固定调用协议与地址；通用来源账号的显式协议、地址随源记录更新，界面隐藏 URL 中的用户信息和查询参数。旧导入账号会先锁定，可重新扫描并转换为实时引用，保留原账号标识并清理旧本地 Key。来源变化会隔离旧缓存与迟到结果；HUD只接收安全依赖路径和修改时间，不查询来源数据库中的秘密。
+Each provider determines which modes are supported. Auth references declared JSON credential layouts; API Key accounts use their configured base connection. Quota queries reuse that authentication instead of asking for a separate query key.
 
-## 自定义额度接口
+| API Key connection | Existing Auth file |
+| --- | --- |
+| ![API Key connection](docs/screenshots/en/connection-api-key.png) | ![Read-only Auth connection](docs/screenshots/en/authentication.png) |
 
-自定义供应商保留 OpenAI 兼容和 Anthropic 兼容两种调用协议，仅支持基础 API Key，不支持自定义 Auth 文件。配置基础调用地址、模型及完整额度查询 URL；默认查询契约为 HTTP GET，继承同一基础 Key，返回标准 JSON。不提供独立查询 Key／Token／Cookie，不要求自写查询脚本，也不自动猜测 billing 路径。未提供真实额度查询接口的供应商不列入内置额度类型；Groq仅有速率头，已不启用。标准 JSON 解析接受以下格式，也支持 `data` 包装：
+<details>
+<summary>Account editor and API-only account</summary>
+
+![Account editor](docs/screenshots/en/account-editor.png)
+
+![API-only account](docs/screenshots/en/api-only.png)
+
+</details>
+
+### 3. Inspect quota and schedule requests
+
+Quota details keep the billing windows and account identity separate. Missing values stay unknown; a failed request is not presented as a successful refresh.
+
+![Quota detail](docs/screenshots/en/quota.png)
+
+For supported types, select a model that belongs to the intended plan or quota pool, then configure local-time calls. A small request can **attempt** to start a first-use window when the provider supports that behavior. It is not a reset command, and every request may consume quota.
+
+![Account API schedule](docs/screenshots/en/schedule.png)
+
+<details>
+<summary>All schedules</summary>
+
+![Schedule overview](docs/screenshots/en/schedules.png)
+
+</details>
+
+### 4. Import existing accounts
+
+Import previews show the source tool, provider identity, source record ID, authentication mode, quota adaptation, and import status. Unsupported or unadapted rows are disabled; the column header stays visible while scrolling.
+
+![Read-only import preview and source sync](docs/screenshots/en/import.png)
+
+| Source | Current boundary |
+| --- | --- |
+| 9router | References `providerConnections` records by original primary key and provider identity; the authentication layout must be adapted. |
+| cc-switch | Currently supports the Claude namespace, identified by `id + app_type`. Other namespaces are shown as unsupported. |
+| CPAMP | References supported CPA JSON authorization files by filename and type. |
+| Magpie | Supports adapted provider keys and plugin credential slots; preserves original provider IDs and supports an explicit portable configuration directory. Native CLI/Keychain-owned logins are not imported. |
+
+Imported connection fields are read-only. Maintain credentials in the source tool; local monitoring, visibility, quota queries, and removing the association remain available. Deleting the association does not delete the source.
+
+Automatic synchronization runs hourly **while QuotaNest is running**. A source record ID is corrected only with a unique, compatible identity match. Ambiguous records, missing evidence, or simultaneous ID/token changes without a trustworthy relationship need manual review. Source checks do not make model calls.
+
+### 5. Keep quotas visible — all four floating styles
+
+All layouts share the same account data and official provider brand mapping. Color marks retain their colors; monochrome marks adapt to appearance.
+
+| Card | Glass |
+| --- | --- |
+| ![Card floating panel](docs/screenshots/en/floating-card.png) | ![Glass floating panel in macOS dark appearance](docs/screenshots/en/floating-glass.png) |
+
+| Compact | List |
+| --- | --- |
+| ![Compact floating panel](docs/screenshots/en/floating-compact.png) | ![List floating panel](docs/screenshots/en/floating-list.png) |
+
+- **Card:** side-by-side quota windows in an account card.
+- **Glass:** the highest-used window takes priority, with the remaining periods below.
+- **Compact:** narrow rows with a small gap and no separator lines.
+- **List:** aligned account, period, progress, and value columns with account separators.
+
+Click the menu-bar item for the overview, double-click it to toggle the floating panel, or right-click for actions. Drag anywhere on the floating panel. Its title starts hidden, appears when clicked, and hides five seconds after the pointer leaves; returning cancels that timer. Appearance follows macOS — there is no separate in-app theme switch.
+
+<details>
+<summary>Menu-bar overview</summary>
+
+![Menu-bar overview](docs/screenshots/en/menu.png)
+
+</details>
+
+### 6. Select Claude Code HUD accounts and adjust preferences
+
+Use **Settings & Appearance → Claude Code HUD** to select accounts horizontally with automatic wrapping. The account's **Display** page uses the same state. Changes sync immediately; a failed HUD write restores the previous selection. Disabled accounts retain their preference for when they are enabled again.
+
+![Language, compact pickers, and HUD selection](docs/screenshots/en/settings.png)
+
+![Per-account display controls](docs/screenshots/en/account-display.png)
+
+The following is a user-supplied Claude Code HUD example. Its project-directory line was removed before publication; the Chinese usage labels are retained as provided.
+
+![Claude Code HUD output example](docs/screenshots/claude-code-hud.png)
+
+## Data, credentials, and migration
+
+| Item | Location / behavior |
+| --- | --- |
+| Application | `~/Applications/QuotaNest.app` |
+| Account manifests | `~/Library/Application Support/QuotaNest/providers/` |
+| Preference domain | `local.quotanest` |
+| Claude HUD integration | `~/.claude/hud/` and Claude's `settings.json`; `CLAUDE_CONFIG_DIR` is supported. |
+| Previous TokenHUD data | Migrated before initializing language, account state, or background work. The original data is archived under `QuotaNest/MigrationBackups/`, with a migration report. |
+
+Imported credentials are resolved from their source for the current request; persistent account settings store references. Manually configured API Keys are app-owned credentials and are stored with restrictive file permissions. External Auth files are not refreshed or overwritten.
+
+Do not manually move source files to the app directory. Unsupported Keychain, encrypted, or unadapted credential formats do not become supported merely because they can be exported. The app does not provide a browser OAuth login flow.
+
+## Custom quota endpoints
+
+Custom accounts support **API Key authentication** with OpenAI-compatible or Anthropic-compatible model calls. Supply the complete quota URL; the default query is HTTP GET and inherits the base key. There is no independent quota key/cookie field and no guessed billing URL.
+
+Standard quota JSON can include these fields, optionally wrapped in `data`:
 
 ```json
 {
   "five_hour": { "used_percentage": 25, "resets_at": 1793462400 },
   "seven_day": { "used_percentage": 40 },
   "windows": [
-    { "label": "本月", "amount": 12, "limit": 50, "unit": "USD" }
+    { "label": "Monthly", "amount": 12, "limit": 50, "unit": "USD" }
   ]
 }
 ```
 
-窗口与重置时间可以缺省。缺失数据保持未知；失败时只有确认同账号身份的旧数据才会保留，并标为旧值。
+See the [provider catalog](docs/provider-catalog.md), [account/authentication contract](docs/account-management-rebuild.md), and [verification notes](docs/account-management-verification.md) for detailed boundaries. Built-in adaptation is not proof of live connectivity for every vendor or plan.
 
-## Claude Code HUD
+## Development and media reproduction
 
-在账号的展示页选择需要同步的账号，再使用“写入 HUD”。App 为每个账号写入动态缓存映射并合并 `settings.json` 的 `ACCOUNT_ENVS`，保留其他工具的账号条目。HUD 渲染只读取这些 App 管理的快照。
+```zsh
+export PATH="$HOME/.swiftly/bin:$PATH"
+swiftly run swift build
+# Choose the test suites appropriate to your change:
+swiftly run swift test
+```
 
-本轮需求、改造边界与验证重点见 [账号管理重构说明](docs/account-management-rebuild.md)，实测结果和未验项见 [交付验证记录](docs/account-management-verification.md)。
+To capture isolated demo screens without starting real queries or schedules:
+
+```zsh
+QUOTANEST_RENDER="$PWD/.build/demo-en" \
+TOKENHUD_RENDER_ONLY=settings-light \
+.build/debug/QuotaNest -quotanest.appLanguage en
+```
+
+The historical `TOKENHUD_RENDER_ONLY` environment name remains a diagnostic compatibility alias. Publication images are indexed in [the capture manifest](docs/screenshots/capture-manifest.json). Video commands, the CCS reference trail, and duration/codec checks are documented in [the video source guide](docs/video-source/README.md).
+
+## Credits and brand assets
+
+README organization and video production were informed by [claude-code-session-manager / CCS](https://github.com/biedongbin/claude-code-session-manager). Provider artwork comes from the documented Magpie/LobeHub distributions, matching product packages, and official website assets. Some types use an evidenced manufacturer/family mark rather than an exact product mark.
+
+See [provider-logo provenance and third-party notices](Sources/TokenHUD/Resources/ProviderLogos/README.md). Trademarks and logo artwork remain the property of their respective owners; inclusion identifies a provider and does not imply endorsement.
