@@ -24,7 +24,7 @@ struct FloatingView: View {
             let count = max(1, QuotaPresentation(state: state).metrics.count)
             if expanded || controller.style == .card { return height + 118 + (expanded ? 24 : 0) }
             if controller.style == .glass { return height + 100 }
-            if controller.style == .compact { return height + 37 }
+            if controller.style == .compact { return height + 24 }
             return height + CGFloat(count) * 22 + 16
         }
     }
@@ -57,6 +57,8 @@ struct FloatingView: View {
                         if index > 0 {
                             if expanded || controller.style == .card {
                                 Color.clear.frame(height: 9)
+                            } else if controller.style == .compact {
+                                Color.clear.frame(height: 4)
                             } else {
                                 Rectangle().fill(Palette.inkSecondary.opacity(0.22))
                                     .frame(maxWidth: .infinity).frame(height: 1)
