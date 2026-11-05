@@ -112,7 +112,7 @@ struct TokenHUDApp: App {
         var observations: [[String: Any]] = []
         let onlyScene = ProcessInfo.processInfo.environment["TOKENHUD_RENDER_ONLY"]
         func shot<Content: View>(_ name: String, _ view: Content, size: NSSize, dark: Bool) {
-            guard onlyScene == nil || onlyScene == name else { return }
+            guard onlyScene == nil || onlyScene?.split(separator: ",").contains(Substring(name)) == true else { return }
             var observation = capture(view, to: output.appendingPathComponent(name + ".png"), size: size, dark: dark)
             observation["scene"] = name
             observation["resource_bundle"] = Bundle.appResources.bundleURL.path
@@ -167,6 +167,13 @@ struct TokenHUDApp: App {
             shot("menu-\(appearance)", MenuBarView(engine: fixture.engine, panelCtrl: panel, model: quick,
                  onOpenSettings: {}, onTogglePanel: {}, onRefresh: {}, onOpenAccount: { _ in }),
                  size: NSSize(width: 350, height: 560), dark: dark)
+            for style in PanelStyle.allCases {
+                panel.setStyle(style)
+                shot("floating-style-\(style.rawValue)-\(appearance)",
+                     FloatingView(engine: fixture.engine, controller: panel, expanded: false, onToggle: {}, operationModel: quick),
+                     size: NSSize(width: style.preferredWidth, height: 900), dark: dark)
+            }
+            panel.setStyle(.card)
             for expanded in [false, true] {
                 shot("floating-\(expanded ? "expanded" : "compact")-\(appearance)",
                      FloatingView(engine: fixture.engine, controller: panel, expanded: expanded, onToggle: {}, operationModel: quick),

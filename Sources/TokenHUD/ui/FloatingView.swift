@@ -19,14 +19,26 @@ struct FloatingView: View {
     }
     private var chromeHeight: CGFloat { (controller.titleVisible ? 37 : 0) + (expanded ? 34 : 0) }
     private var estimatedContentHeight: CGFloat {
-        if states.isEmpty { return expanded ? 104 : 36 }
-        return states.reduce(CGFloat(16)) { height, state in
+        if states.isEmpty { return 70 }
+        return states.reduce(CGFloat(20)) { height, state in
             let count = max(1, QuotaPresentation(state: state).metrics.count)
-            if expanded || controller.style == .glass { return height + 84 + CGFloat((count + 1) / 2) * 56 }
-            if controller.style == .compact { return height + 25 }
-            if controller.style == .list { return height + CGFloat(count) * 24 + 9 }
-            return height + 29 + CGFloat(count) * 20
+            if expanded || controller.style == .card { return height + 118 + (expanded ? 24 : 0) }
+            if controller.style == .glass { return height + 100 }
+            if controller.style == .compact { return height + 37 }
+            return height + CGFloat(count) * 22 + 16
         }
+    }
+    private var listNameWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: 10.5, weight: .medium)
+        let natural = states.map { ($0.manifest.fullName as NSString).size(withAttributes: [.font: font]).width + 19 }.max() ?? 50
+        return min(90, max(50, natural))
+    }
+    private var listPeriodWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: 10)
+        let natural = states.flatMap { QuotaPresentation(state: $0).metrics }.map {
+            (compactLabel($0.label) as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 18
+        return min(44, max(18, natural))
     }
     private var viewportHeight: CGFloat {
         min(max(1, measuredContentHeight > 0 ? measuredContentHeight : estimatedContentHeight),
@@ -37,25 +49,32 @@ struct FloatingView: View {
             header.frame(height: controller.titleVisible ? 37 : 0)
                 .clipped().opacity(controller.titleVisible ? 1 : 0)
                 .accessibilityHidden(!controller.titleVisible)
-            if expanded { Rectangle().fill(Palette.border).frame(height: 1) }
+            if expanded && controller.titleVisible { Rectangle().fill(Palette.border).frame(height: 1) }
             ScrollView {
-                VStack(alignment: .leading, spacing: expanded ? 9 : (controller.style == .compact ? 3 : 12)) {
+                VStack(alignment: .leading, spacing: 0) {
                     if states.isEmpty { emptyState }
-                    ForEach(states) { state in
-                        if expanded { floatingAccount(state) }
+                    ForEach(Array(states.enumerated()), id: \.element.slug) { index, state in
+                        if index > 0 {
+                            if expanded || controller.style == .card {
+                                Color.clear.frame(height: 9)
+                            } else {
+                                Rectangle().fill(Palette.border.opacity(0.85)).frame(height: 0.5)
+                                    .padding(.vertical, controller.style == .glass ? 11 : 8)
+                            }
+                        }
+                        if expanded { cardAccount(state, detailed: true) }
                         else {
                             switch controller.style {
                             case .compact: inlineAccount(state)
                             case .list: listAccount(state)
-                            case .glass: floatingAccount(state)
-                            case .card: compactAccount(state)
+                            case .glass: glassAccount(state)
+                            case .card: cardAccount(state)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, expanded ? 10 : 13)
-                .padding(.top, expanded ? 10 : 1)
-                .padding(.bottom, expanded ? 10 : (controller.style == .compact ? 4 : 12))
+                .padding(.horizontal, controller.style == .card || expanded ? 10 : 12)
+                .padding(.vertical, 10)
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: FloatingContentHeightKey.self, value: geometry.size.height)
                 })
@@ -87,15 +106,23 @@ struct FloatingView: View {
         .foregroundStyle(Palette.ink)
         .background {
             if controller.style == .glass && !reduceTransparency {
-                RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 12).fill(Palette.canvas.opacity(controller.bgOpacity * 0.22)))
+                RoundedRectangle(cornerRadius: 14).fill(.regularMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: 14).fill(Palette.canvas.opacity(controller.bgOpacity * 0.12)))
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Palette.canvas.opacity(reduceTransparency ? 1 : min(1, max(0.45, controller.bgOpacity))))
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.border, lineWidth: 0.8))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            if controller.style == .glass && !reduceTransparency {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(
+                    LinearGradient(colors: [.white.opacity(0.32), Palette.border.opacity(0.6)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8)
+            } else {
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.border, lineWidth: 0.8)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: controller.style == .glass ? 14 : 12))
         .contextMenu {
             Button(expanded ? L10n.tr("收起明细") : L10n.tr("展开明细"), action: onToggle)
             Button(L10n.tr("关闭悬浮速览")) { controller.hide() }
@@ -160,14 +187,14 @@ struct FloatingView: View {
     }
     private func inlineAccount(_ state: ProviderState) -> some View {
         let snapshot = QuotaPresentation(state: state)
-        return HStack(spacing: 9) {
+        return HStack(spacing: 7) {
             HStack(spacing: 3) {
                 ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
                 Text(state.manifest.fullName).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                if snapshot.isOld {
+                if state.manifest.supportsQuota && snapshot.isOld {
                     Text(L10n.tr("旧值")).font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
                 }
-            }.frame(width: 72, alignment: .leading)
+            }.frame(width: listNameWidth, alignment: .leading)
                 .help(snapshot.isOld ? state.manifest.fullName + " · " + snapshot.status : state.manifest.fullName)
             if snapshot.metrics.isEmpty {
                 Text(state.manifest.supportsQuota ? snapshot.status : L10n.tr("仅 API"))
@@ -198,117 +225,141 @@ struct FloatingView: View {
         return VStack(alignment: .leading, spacing: 7) {
             if snapshot.metrics.isEmpty { inlineAccount(state) }
             ForEach(snapshot.metrics) { metric in
-                HStack(spacing: 8) {
-                    ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
-                    Text(state.manifest.fullName + " · " + compactLabel(metric.label))
-                        .font(.system(size: 10.5)).lineLimit(1).frame(width: 102, alignment: .leading)
-                    if snapshot.isOld {
-                        Text(L10n.tr("旧值")).font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
-                    }
+                let summary = "\(state.manifest.fullName) · \(metric.label) · \(metric.value)"
+                let tooltip = snapshot.isOld ? summary + " · " + snapshot.status : summary
+                HStack(spacing: 5) {
+                    HStack(spacing: 5) {
+                        ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
+                        Text(state.manifest.fullName).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                    }.frame(width: listNameWidth, alignment: .leading)
+                    Text(compactLabel(metric.label)).font(.system(size: 10))
+                        .foregroundStyle(Palette.muted).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(width: listPeriodWidth, alignment: .leading)
                     if let percentage = metric.percentage {
                         ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+                    } else {
+                        Color.clear.frame(height: 3)
                     }
                     Text(metric.value).font(.system(size: 10.5, weight: .medium)).monospacedDigit()
                         .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
-                        .frame(minWidth: 38, alignment: .trailing)
-                        .fixedSize(horizontal: false, vertical: true)
-                }.help(metric.label + " · " + metric.value + (snapshot.isOld ? L10n.tr(" · 旧值") : ""))
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .frame(width: 42, alignment: .trailing)
+                }
+                .help(tooltip)
             }
         }.contextMenu { accountMenu(state) }
     }
-    private func compactAccount(_ state: ProviderState) -> some View {
+
+    private func accountHeading(_ state: ProviderState, snapshot: QuotaPresentation) -> some View {
+        HStack(spacing: 7) {
+            ProviderLogo(manifest: state.manifest, slug: state.slug, size: 19)
+            Button { SettingsWindowManager.shared.showAccount(state.slug) } label: {
+                Text(state.manifest.fullName).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L10n.tr("打开账号配置"))
+            if state.manifest.supportsQuota && snapshot.isOld {
+                Text(L10n.tr("旧值")).font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Palette.warn).padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Palette.warn.opacity(0.1), in: Capsule())
+            }
+            if state.manifest.supportsQuota, let model = operationModel {
+                FloatingQueryAction(model: model, slug: state.slug, name: state.manifest.fullName)
+            }
+        }.frame(minHeight: 22)
+    }
+
+    private func cardAccount(_ state: ProviderState, detailed: Bool = false) -> some View {
         let snapshot = QuotaPresentation(state: state)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                ProviderLogo(manifest: state.manifest, slug: state.slug, size: 15)
-                Text(state.manifest.fullName).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
-                Spacer(minLength: 5)
-                if !state.manifest.supportsQuota {
-                    Text(L10n.tr("仅 API")).font(.system(size: 10.5)).foregroundStyle(Palette.muted)
-                } else if snapshot.isOld {
-                    Text(L10n.tr("旧值")).font(.system(size: 10.5)).foregroundStyle(Palette.warn)
+        let columns = Array(repeating: GridItem(.flexible(), alignment: .leading), count: min(3, max(1, snapshot.metrics.count)))
+        return VStack(alignment: .leading, spacing: 11) {
+            accountHeading(state, snapshot: snapshot)
+            if snapshot.metrics.isEmpty {
+                Text(state.manifest.supportsQuota ? snapshot.status : L10n.tr("仅 API 调用"))
+                    .font(.system(size: 10.5)).foregroundStyle(Palette.muted)
+            } else {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    ForEach(snapshot.metrics) { metric in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(compactLabel(metric.label)).font(.system(size: 10))
+                                .foregroundStyle(Palette.muted).lineLimit(1).help(metric.label)
+                            Text(metric.value).font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+                                .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
+                            if let percentage = metric.percentage {
+                                ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
+                            }
+                            if detailed, let reset = metric.resetDescription {
+                                Text(reset).font(.system(size: 9)).foregroundStyle(Palette.muted)
+                                    .lineLimit(1).help(reset)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
-            if state.manifest.supportsQuota {
-                if snapshot.metrics.isEmpty {
-                    Text(snapshot.status).font(.system(size: 10.5)).foregroundStyle(Palette.muted)
-                }
-                ForEach(snapshot.metrics) { metric in
-                    HStack(spacing: 8) {
-                        Text(compactLabel(metric.label)).font(.system(size: 10.5))
-                            .foregroundStyle(Palette.muted).frame(width: 40, alignment: .leading)
-                            .lineLimit(1).help(metric.label)
-                        if let percentage = metric.percentage {
+            if state.manifest.supportsQuota && (detailed || snapshot.isOld) {
+                Text(snapshot.isOld ? snapshot.status : snapshot.updated)
+                    .font(.system(size: 9.5)).foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).lineLimit(2)
+            }
+        }
+        .padding(12)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Palette.border.opacity(0.85), lineWidth: 0.6))
+        .contextMenu { accountMenu(state) }
+    }
+
+    private func glassAccount(_ state: ProviderState) -> some View {
+        let snapshot = QuotaPresentation(state: state)
+        let primary = snapshot.metrics.filter { $0.percentage != nil }.max {
+            ($0.percentage ?? 0) < ($1.percentage ?? 0)
+        } ?? snapshot.metrics.first
+        return VStack(alignment: .leading, spacing: 10) {
+            accountHeading(state, snapshot: snapshot)
+            if let primary {
+                HStack(alignment: .center, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(primary.value).font(.system(size: 27, weight: .medium, design: .rounded))
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                        Text(compactLabel(primary.label)).font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let percentage = primary.percentage {
                             ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
-                            Text(metric.value).font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                                .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
-                                .frame(minWidth: 38, alignment: .trailing)
-                        } else {
-                            Text(metric.value).font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                                .foregroundStyle(snapshot.isOld ? Palette.muted : Palette.ink)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text(snapshot.isOld ? snapshot.status : snapshot.updated)
+                            .font(.system(size: 9.5)).foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).lineLimit(2)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                let secondary = snapshot.metrics.filter { $0.id != primary.id }
+                if !secondary.isEmpty {
+                    HStack(spacing: 14) {
+                        ForEach(secondary) { metric in
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(compactLabel(metric.label)).foregroundStyle(Palette.muted).lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(metric.value).monospacedDigit().fontWeight(.semibold).lineLimit(1)
+                            }.font(.system(size: 10.5)).frame(maxWidth: .infinity)
                         }
                     }
                 }
-                if snapshot.isOld && !snapshot.metrics.isEmpty {
-                    Text(snapshot.status).font(.system(size: 10)).foregroundStyle(Palette.warn).lineLimit(2)
-                }
+            } else {
+                Text(state.manifest.supportsQuota ? snapshot.status : L10n.tr("仅 API 调用"))
+                    .font(.system(size: 10.5)).foregroundStyle(Palette.muted)
             }
         }
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 2).padding(.vertical, 2)
         .contextMenu { accountMenu(state) }
     }
+
     private func compactLabel(_ label: String) -> String {
+        let english = AppLanguageSettings.shared.selection == .english
         switch label {
-        case "5小时": return "5h"
-        case "本周": return "周"
-        case "本月": return "月"
+        case "5小时", "5 hours": return "5h"
+        case "本周", "This week": return english ? "Week" : "周"
+        case "本月", "This month": return english ? "Month" : "月"
         default: return label
         }
-    }
-    private func floatingAccount(_ state: ProviderState) -> some View {
-        let snapshot = QuotaPresentation(state: state)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                Button { SettingsWindowManager.shared.showAccount(state.slug) } label: {
-                    HStack(spacing: 6) {
-                        ProviderLogo(manifest: state.manifest, slug: state.slug, size: 18)
-                        Text(state.manifest.fullName).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Palette.muted)
-                        Spacer(minLength: 0)
-                    }.contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).accessibilityLabel(L10n.tr("打开账号 %@", String(describing: state.manifest.fullName)))
-                .help(L10n.tr("打开账号配置"))
-                if state.manifest.supportsQuota, let model = operationModel {
-                    FloatingQueryAction(model: model, slug: state.slug, name: state.manifest.fullName)
-                }
-            }
-            if state.manifest.supportsQuota {
-                if snapshot.metrics.isEmpty {
-                    Text(snapshot.status).font(.system(size: 11)).foregroundStyle(Palette.muted)
-                } else {
-                    QuotaMetricGrid(metrics: snapshot.metrics, old: snapshot.isOld, compact: true)
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(snapshot.isOld ? snapshot.status : snapshot.updated)
-                        .foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).lineLimit(2)
-                    Spacer(minLength: 0)
-                    if snapshot.isOld {
-                        Text(snapshot.updated).foregroundStyle(Palette.muted).monospacedDigit()
-                    }
-                }
-                .font(.system(size: 10.5))
-            } else {
-                Text(L10n.tr("仅 API 调用")).font(.system(size: 11)).foregroundStyle(Palette.muted)
-            }
-        }
-        .padding(11)
-        .background(Palette.surface.opacity(controller.style == .glass && !reduceTransparency ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.border.opacity(0.8), lineWidth: 0.6))
-        .contextMenu { accountMenu(state) }
     }
     @ViewBuilder private func accountMenu(_ state: ProviderState) -> some View {
         Button(L10n.tr("打开账号")) { SettingsWindowManager.shared.showAccount(state.slug) }
