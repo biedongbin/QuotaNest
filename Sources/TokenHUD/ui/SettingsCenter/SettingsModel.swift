@@ -226,8 +226,8 @@ struct TemplateChoice: Identifiable {
 // MARK: - 跨重启记忆 (纯函数, 可测)
 
 enum SettingsPersist {
-    static let selectedKey = "tokenhud.settings.selected"
-    static let tabKey = "tokenhud.settings.tab"
+    static let selectedKey = "quotanest.settings.selected"
+    static let tabKey = "quotanest.settings.tab"
 
     /// 保存的 slug 仍存在则沿用, 否则回落第一个账号
     static func resumeSlug(saved: String?, available: [String]) -> String? {

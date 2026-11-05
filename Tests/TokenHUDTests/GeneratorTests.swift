@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// GeneratorTests: slug 化与 one-api 插件生成 (auth 文件读取版 fetch.sh)
 @Suite

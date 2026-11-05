@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite(.serialized)
 @MainActor

@@ -3,10 +3,12 @@ import Foundation
 /// Claude 配置路径只解析一次，HUD 与设置文件始终来自同一个根目录。
 struct AppConfigPaths {
     let configDir: URL
+    let userProvidersDir: URL
     var hudDir: URL { configDir.appendingPathComponent("hud", isDirectory: true) }
     var settingsURL: URL { configDir.appendingPathComponent("settings.json") }
 
     init(environment: [String: String], userHome: URL, workingDirectory: URL) {
+        userProvidersDir = userHome.appendingPathComponent("Library/Application Support/QuotaNest/providers", isDirectory: true)
         let configured = environment["CLAUDE_CONFIG_DIR"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let root: URL
@@ -33,11 +35,14 @@ enum AppLaunchMode: Equatable {
     case debugSettings
     case importScan
     case repairHud
+    case migrateConfiguration
 
     init(environment: [String: String]) {
-        if let destination = environment["TOKENHUD_RENDER"] {
+        if let destination = environment["QUOTANEST_RENDER"] ?? environment["TOKENHUD_RENDER"] {
             self = .render(destination)
-        } else if environment["TOKENHUD_DEBUG_SETTINGS"] == "1" {
+        } else if environment["QUOTANEST_MIGRATE_ONLY"] == "1" {
+            self = .migrateConfiguration
+        } else if environment["QUOTANEST_DEBUG_SETTINGS"] == "1" || environment["TOKENHUD_DEBUG_SETTINGS"] == "1" {
             self = .debugSettings
         } else if environment["TOKENHUD_IMPORT_SCAN"] == "1" {
             self = .importScan

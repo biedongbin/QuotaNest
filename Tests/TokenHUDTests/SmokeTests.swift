@@ -1,5 +1,5 @@
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite struct SmokeTests {
     @Test func smoke() { #expect(true) }

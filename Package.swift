@@ -7,12 +7,13 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "TokenHUD",
+            name: "QuotaNest",
+            path: "Sources/TokenHUD",
             resources: [.copy("providers"), .copy("mjs"), .process("Resources")]
         ),
         .testTarget(
-            name: "TokenHUDTests",
-            dependencies: ["TokenHUD"],
+            name: "QuotaNestTests",
+            dependencies: ["QuotaNest"],
             path: "Tests/TokenHUDTests"
         ),
     ]

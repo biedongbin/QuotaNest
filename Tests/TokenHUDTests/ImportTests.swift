@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// Every source, database, registry and HUD used here is an isolated temporary fixture.
 @Suite

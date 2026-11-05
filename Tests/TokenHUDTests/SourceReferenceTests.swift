@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite(.serialized)
 struct SourceReferenceTests {

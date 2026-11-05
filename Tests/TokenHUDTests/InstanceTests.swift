@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// 类型模板 -> 账号实例: manifest 派生 / fetch.sh {SLUG} 替换 / auth 不覆盖 / mjs 安装 / 迁移不变量
 struct InstanceTests {
@@ -89,7 +89,7 @@ struct InstanceTests {
 
         let defaults = UserDefaults(suiteName: "instance-tests")!
         defaults.removePersistentDomain(forName: "instance-tests")
-        defaults.set(["glm"], forKey: "tokenhud.deletedTemplates")
+        defaults.set(["glm"], forKey: "quotanest.deletedTemplates")
         let runner = ProviderRunner(nodePath: "/usr/bin/true", logDir: hudDir)
         let engine = DataEngine(hudDir: hudDir, bundleProvidersDir: bundleDir,
                                 userProvidersDir: userDir, runner: runner, defaults: defaults,
@@ -99,7 +99,7 @@ struct InstanceTests {
         #expect(!FileManager.default.fileExists(atPath: userDir.appendingPathComponent(m).path),
                 "tombstone 模板不得迁移复活")
 
-        defaults.set([], forKey: "tokenhud.deletedTemplates")
+        defaults.set([], forKey: "quotanest.deletedTemplates")
         engine.migrateAccounts()
         #expect(FileManager.default.fileExists(atPath: userDir.appendingPathComponent(m).path))
         engine.migrateAccounts()

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite
 struct AppConfigTests {
@@ -12,6 +12,7 @@ struct AppConfigTests {
         #expect(paths.configDir.path == home.appendingPathComponent(".claude").path)
         #expect(paths.hudDir == paths.configDir.appendingPathComponent("hud", isDirectory: true))
         #expect(paths.settingsURL == paths.configDir.appendingPathComponent("settings.json"))
+        #expect(paths.userProvidersDir == home.appendingPathComponent("Library/Application Support/QuotaNest/providers", isDirectory: true))
     }
 
     @Test func explicitConfigDirectoryAppliesToHudAndSettings() {
@@ -39,7 +40,9 @@ struct AppConfigTests {
             ["TOKENHUD_RENDER": ""],
             ["TOKENHUD_DEBUG_SETTINGS": "1"],
             ["TOKENHUD_IMPORT_SCAN": "1"],
-            ["TOKENHUD_ENVS_FIX": "1"]
+            ["TOKENHUD_ENVS_FIX": "1"],
+            ["QUOTANEST_MIGRATE_ONLY": "1"],
+            ["QUOTANEST_RENDER": "/tmp/quotanest-images"]
         ] {
             #expect(!AppLaunchMode(environment: environment).startsBackgroundEngine)
         }

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// In-process accessibility actions exercise the real SwiftUI controls. They do
 /// not establish physical mouse, keyboard or system menu-bar acceptance.

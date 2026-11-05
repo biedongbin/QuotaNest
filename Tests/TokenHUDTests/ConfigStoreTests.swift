@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// Account persistence keeps base authentication and removes obsolete query identities.
 @Suite

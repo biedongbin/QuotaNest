@@ -35,7 +35,7 @@ node --test scripts/test-gpt-provider.mjs scripts/test-cline-provider.mjs
 离线演示截图不会启动真实账号查询和计划：
 
 ```zsh
-TOKENHUD_RENDER="$PWD/.build/account-preview" .build/debug/TokenHUD
+QUOTANEST_RENDER="$PWD/.build/account-preview" .build/debug/QuotaNest
 ```
 
 ## 打包安装
@@ -45,13 +45,13 @@ zsh scripts/package.sh
 open ~/Applications/QuotaNest.app
 ```
 
-打包会安装带完整 macOS 图标的 QuotaNest，并在新包验证成功后移除旧 TokenHUD 应用包；需先退出运行中的 App。内部可执行目标、Bundle ID、偏好与账号目录保留兼容标识，已有账号和来源引用无需迁移。
+打包会安装带完整 macOS 图标的 QuotaNest，并在新包验证成功后移除旧 TokenHUD 应用包；需先退出运行中的 App。可执行目标为 `QuotaNest`，Bundle ID 为 `local.quotanest`。首次正常启动会在初始化语言、账号与后台任务之前自动迁移旧 TokenHUD 账号和偏好；备份及安全摘要保存在新数据目录中。迁移失败会保留旧配置并停止启动，不以空账号覆盖历史。
 
 ## 供应商类型与账号
 
 内置类型来自 `Sources/TokenHUD/providers/`。每个类型提供 `manifest.json`、`fetch.sh` 和默认配置；协议、固定地址和查询逻辑由类型提供，主框架自动扫描，不按供应商名称分支。
 
-账号实例位于 `~/Library/Application Support/TokenHUD/providers/`，通过 `template` 引用类型，独立保存基础接入配置、缓存和调用计划。API Key 等 App 自有凭证写入 Claude 配置目录的 `hud` 子目录，权限为 0600；支持 `CLAUDE_CONFIG_DIR`。Auth 按只读 CLI／JSON 来源使用，不擅自写回外部授权来源。
+账号实例位于 `~/Library/Application Support/QuotaNest/providers/`，通过 `template` 引用类型，独立保存基础接入配置、缓存和调用计划。API Key 等 App 自有凭证写入 Claude 配置目录的 `hud` 子目录，权限为 0600；支持 `CLAUDE_CONFIG_DIR`。Auth 按只读 CLI／JSON 来源使用，不擅自写回外部授权来源。
 
 用量查询统一继承基础 Auth／API Key。保存时应清理旧查询字段，同时保留基础 API Key 和授权文件引用；无需用户手工删除旧数据。旧网页查询已不再是当前启用方案，其取证和离线样本保留在 [历史网页查询契约](docs/provider-web-query-contracts.md)，仅供历史追溯。
 

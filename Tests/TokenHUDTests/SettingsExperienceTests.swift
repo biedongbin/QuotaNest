@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite(.serialized)
 @MainActor

@@ -15,8 +15,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 @Observable
 final class AppLanguageSettings {
     static let shared = AppLanguageSettings()
-    static let defaultsKey = "tokenhud.appLanguage"
-    static let didChange = Notification.Name("TokenHUD.AppLanguageDidChange")
+    static let defaultsKey = "quotanest.appLanguage"
+    static let didChange = Notification.Name("QuotaNest.AppLanguageDidChange")
 
     private let defaults: UserDefaults
     var selection: AppLanguage {

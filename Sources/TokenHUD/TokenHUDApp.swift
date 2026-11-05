@@ -3,9 +3,9 @@ import ImageIO
 import QuartzCore
 
 @main
-struct TokenHUDApp: App {
+struct QuotaNestApp: App {
     @StateObject private var engine: DataEngine
-    @State private var language = AppLanguageSettings.shared
+    @State private var language: AppLanguageSettings
 
     init() {
         let environment = ProcessInfo.processInfo.environment
@@ -13,6 +13,29 @@ struct TokenHUDApp: App {
         let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         let paths = AppConfigPaths(environment: environment, userHome: home,
                                    workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+        if mode == .normal || mode == .migrateConfiguration {
+            do {
+                let migration = try AppIdentityMigration.migrate(userHome: home)
+                if mode == .migrateConfiguration {
+                    print("QuotaNest migration verified; providers=\(migration.providersDir.path); changed=\(migration.migrated)")
+                    if let backup = migration.backupDirectory { print("Backup: \(backup.path)") }
+                    if let report = migration.reportURL { print("Report: \(report.path)") }
+                    exit(0)
+                }
+            } catch {
+                if mode == .migrateConfiguration {
+                    print("QuotaNest migration failed: \(error.localizedDescription)")
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "QuotaNest 历史配置迁移失败"
+                    alert.informativeText = "旧配置已保留，未启动后台查询或调用。\n" + error.localizedDescription
+                    alert.alertStyle = .critical
+                    alert.runModal()
+                }
+                exit(1)
+            }
+        }
+        _language = State(initialValue: AppLanguageSettings.shared)
         let bundle = Bundle.appResources.resourceURL?.appendingPathComponent("providers")
         switch mode {
         case .render(let directory):
@@ -48,9 +71,10 @@ struct TokenHUDApp: App {
         case .repairHud:
             print("请在 App 中使用「同步 HUD」，保留账号启停与显示选择。")
             exit(1)
+        case .migrateConfiguration: exit(0)
         case .normal: break
         }
-        let userDir = home.appendingPathComponent("Library/Application Support/TokenHUD/providers", isDirectory: true)
+        let userDir = paths.userProvidersDir
         let node = NodeLocator.find(nvmHome: home.appendingPathComponent(".nvm").path,
                                     extraPaths: ["/opt/homebrew/bin/node", "/usr/local/bin/node"],
                                     saved: UserDefaults.standard.string(forKey: DataEngine.defaultsNodeKey))
@@ -64,10 +88,10 @@ struct TokenHUDApp: App {
             SettingsModel(engine: engine, hudDir: paths.hudDir, userDir: userDir,
                           settingsURL: paths.settingsURL, bundleDir: bundle)
         }
-        if environment["TOKENHUD_AUTO_TOGGLE"] == "1" {
+        if environment["QUOTANEST_AUTO_TOGGLE"] == "1" || environment["TOKENHUD_AUTO_TOGGLE"] == "1" {
             Task { @MainActor in try? await Task.sleep(nanoseconds: 2_000_000_000); panel.toggle() }
         }
-        if environment["TOKENHUD_AUTO_SETTINGS"] == "1" {
+        if environment["QUOTANEST_AUTO_SETTINGS"] == "1" || environment["TOKENHUD_AUTO_SETTINGS"] == "1" {
             Task { @MainActor in try? await Task.sleep(nanoseconds: 1_500_000_000); SettingsWindowManager.shared.show() }
         }
     }

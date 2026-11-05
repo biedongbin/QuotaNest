@@ -8,23 +8,23 @@ VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
 BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 OUT="$PROJECT_DIR/.build/QuotaNest.app"
 [[ "${OUT:A}" == "$PROJECT_DIR/.build/QuotaNest.app" ]] || exit 1
-if pgrep -x TokenHUD >/dev/null; then
+if pgrep -x QuotaNest >/dev/null || pgrep -x TokenHUD >/dev/null; then
   echo "QuotaNest 正在运行，请先退出再安装（菜单栏 → 退出）"; exit 1
 fi
 swiftly run swift build -c release
 BIN=$(swiftly run swift build -c release --show-bin-path)
 [[ -f "$PROJECT_DIR/assets/branding/QuotaNest.icns" ]]
-[[ -d "$BIN/QuotaNest_TokenHUD.bundle" ]]
+[[ -d "$BIN/QuotaNest_QuotaNest.bundle" ]]
 rm -rf "$OUT"
 APP="$OUT/Contents"
 mkdir -p "$APP/MacOS" "$APP/Resources"
-cp "$BIN/TokenHUD" "$APP/MacOS/"
+cp "$BIN/QuotaNest" "$APP/MacOS/QuotaNest"
 # Keep resources in the signed macOS layout; Bundle.appResources resolves them here.
-cp -R "$BIN/QuotaNest_TokenHUD.bundle" "$APP/Resources/"
+cp -R "$BIN/QuotaNest_QuotaNest.bundle" "$APP/Resources/"
 # SwiftUI's default LocalizedStringKey lookup uses the application bundle.
 for language in zh-hans en; do
-  [[ -d "$BIN/QuotaNest_TokenHUD.bundle/$language.lproj" ]]
-  cp -R "$BIN/QuotaNest_TokenHUD.bundle/$language.lproj" "$APP/Resources/"
+  [[ -d "$BIN/QuotaNest_QuotaNest.bundle/$language.lproj" ]]
+  cp -R "$BIN/QuotaNest_QuotaNest.bundle/$language.lproj" "$APP/Resources/"
 done
 cp "$PROJECT_DIR/assets/branding/QuotaNest.icns" "$APP/Resources/QuotaNest.icns"
 cat > "$APP/Info.plist" <<EOF
@@ -32,8 +32,8 @@ cat > "$APP/Info.plist" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>TokenHUD</string>
-    <key>CFBundleIdentifier</key><string>local.tokenhud</string>
+    <key>CFBundleExecutable</key><string>QuotaNest</string>
+    <key>CFBundleIdentifier</key><string>local.quotanest</string>
     <key>CFBundleName</key><string>QuotaNest</string>
     <key>CFBundleDisplayName</key><string>QuotaNest</string>
     <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>

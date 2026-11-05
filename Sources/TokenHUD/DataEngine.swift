@@ -190,15 +190,15 @@ final class DataEngine: ObservableObject {
     /// P1-2 查询 op 体系: 手动 forceRefresh 与 timer refreshNow 走同一 gate (全局 3/每账号 1/同账号合并)
     let queryGate = QueryGate()
 
-    static let defaultsNodeKey = "tokenhud.nodePath"
-    static let defaultsIconKey = "tokenhud.iconProvider"
-    static let defaultsDisabledKey = "tokenhud.disabledProviders"
-    static let defaultsTriggerDisabledKey = "tokenhud.triggerDisabled.slugs"
-    static let defaultsOrderKey = "tokenhud.providerOrder"
-    static let defaultsDeletedKey = "tokenhud.deletedTemplates"
-    static let defaultsFloatingHiddenKey = "tokenhud.floatingHidden.slugs"
-    static let defaultsHudHiddenKey = "tokenhud.hudHidden.slugs"
-    static let defaultsSourceAutoSyncKey = "tokenhud.sourceAutoSync.enabled"
+    static let defaultsNodeKey = "quotanest.nodePath"
+    static let defaultsIconKey = "quotanest.iconProvider"
+    static let defaultsDisabledKey = "quotanest.disabledProviders"
+    static let defaultsTriggerDisabledKey = "quotanest.triggerDisabled.slugs"
+    static let defaultsOrderKey = "quotanest.providerOrder"
+    static let defaultsDeletedKey = "quotanest.deletedTemplates"
+    static let defaultsFloatingHiddenKey = "quotanest.floatingHidden.slugs"
+    static let defaultsHudHiddenKey = "quotanest.hudHidden.slugs"
+    static let defaultsSourceAutoSyncKey = "quotanest.sourceAutoSync.enabled"
 
     init(hudDir: URL, bundleProvidersDir: URL?, userProvidersDir: URL,
          runner: ProviderRunner, defaults: UserDefaults = .standard, settingsURL: URL? = nil) {
@@ -737,7 +737,7 @@ final class DataEngine: ObservableObject {
     /// scheduleTimes 缓存 (reloadRegistry 时重建, 免每 10s 重复读 auth 文件)
     private var cachedSchedules: [(slug: String, manifest: ProviderManifest, authFile: URL, times: [String])] = []
 
-    nonisolated static let defaultsScheduleFiredKey = "tokenhud.scheduleFired"
+    nonisolated static let defaultsScheduleFiredKey = "quotanest.scheduleFired"
 
     /// 本地日期键 (yyyy-MM-dd): DST/时区变化自然落在日期串里
     nonisolated static func scheduleKey(slug: String, date: Date = Date()) -> String {
@@ -943,7 +943,7 @@ final class DataEngine: ObservableObject {
 
     // MARK: v0.2 每账号查询间隔覆盖 (UserDefaults; 缺省用 manifest.interval)
 
-    nonisolated static func intervalKey(_ slug: String) -> String { "tokenhud.interval.\(slug)" }
+    nonisolated static func intervalKey(_ slug: String) -> String { "quotanest.interval.\(slug)" }
 
     /// 是否为该账号设置了独立的查询间隔。
     func hasIntervalOverride(_ slug: String) -> Bool {
@@ -1209,7 +1209,7 @@ final class DataEngine: ObservableObject {
     // MARK: P1-3 429 退避: error=ratelimit → 该账号暂停自动查询至 max(interval, 60s), 到期自动恢复
 
     /// 暂停截止时间戳 (epoch ms, slug → deadline); 内存 + UserDefaults (跨重启保持)
-    nonisolated static let defaultsRateLimitPausedKey = "tokenhud.ratelimit.pausedUntil"
+    nonisolated static let defaultsRateLimitPausedKey = "quotanest.ratelimit.pausedUntil"
 
     nonisolated static func loadPaused(defaults: UserDefaults) -> [String: Double] {
         guard let raw = defaults.string(forKey: defaultsRateLimitPausedKey),

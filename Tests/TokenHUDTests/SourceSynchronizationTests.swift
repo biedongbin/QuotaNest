@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite(.serialized)
 struct SourceSynchronizationTests {

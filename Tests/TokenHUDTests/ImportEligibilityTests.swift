@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite struct ImportEligibilityTests {
     private func candidate(template: String? = "demo", reason: String? = nil,

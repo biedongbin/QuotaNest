@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 /// Opt-in native sidebar acceptance through the actual accessibility tree.
 /// A missing or non-operable target fails the test; no coordinates or direct

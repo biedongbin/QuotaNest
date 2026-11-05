@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import TokenHUD
+@testable import QuotaNest
 
 @Suite struct ProviderLogoTests {
     private func providers() throws -> [PluginProvider] {

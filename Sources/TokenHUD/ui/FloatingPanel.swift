@@ -230,9 +230,9 @@ final class PanelController: ObservableObject {
         max(80, (panel?.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 800) - 24)
     }
 
-    static let defaultsStyleKey = "tokenhud.panelStyle"
-    static let defaultsBgOpacityKey = "tokenhud.panelBgOpacity"
-    static let defaultsTextOpacityKey = "tokenhud.panelTextOpacity"
+    static let defaultsStyleKey = "quotanest.panelStyle"
+    static let defaultsBgOpacityKey = "quotanest.panelBgOpacity"
+    static let defaultsTextOpacityKey = "quotanest.panelTextOpacity"
 
     init(engine: DataEngine, defaults: UserDefaults = .standard) {
         self.engine = engine
