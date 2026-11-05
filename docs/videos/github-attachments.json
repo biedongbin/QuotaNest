@@ -1,0 +1,18 @@
+{
+  "en": {
+    "url": "https://github.com/user-attachments/assets/fc02bbbb-19f0-4373-a21b-ed4076c4e8b5",
+    "repository_file": "docs/videos/quotanest-demo-en.mp4",
+    "sha256": "7d40dc3cedb3263cceb3437d5dd7d2e0e171e87c3487f6ab0cd30f0aa51d372b",
+    "storage_status": 204,
+    "preview_duration_seconds": 27,
+    "preview_ready_state": 4
+  },
+  "zh-CN": {
+    "url": "https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e",
+    "repository_file": "docs/videos/quotanest-demo-zh-CN.mp4",
+    "sha256": "b02b264cbdffab0643b1202507d30235abd2bc3098ae1cc0d5e3576cbda64b4b",
+    "storage_status": 204,
+    "preview_duration_seconds": 27,
+    "preview_ready_state": 4
+  }
+}

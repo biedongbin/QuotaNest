@@ -25,7 +25,7 @@
 
 ## 演示视频 · 27 秒
 
-[![观看 QuotaNest 中文演示](docs/videos/quotanest-demo-zh-CN-poster.png)](docs/videos/quotanest-demo-zh-CN.mp4)
+https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e
 
 [观看／下载中文 MP4](docs/videos/quotanest-demo-zh-CN.mp4) · [English video](docs/videos/quotanest-demo-en.mp4)
 

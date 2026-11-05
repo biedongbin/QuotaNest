@@ -25,7 +25,7 @@ Stop switching between provider dashboards just to find out which account still 
 
 ## Demo video · 27 seconds
 
-[![Watch the English QuotaNest demo](docs/videos/quotanest-demo-en-poster.png)](docs/videos/quotanest-demo-en.mp4)
+https://github.com/user-attachments/assets/fc02bbbb-19f0-4373-a21b-ed4076c4e8b5
 
 [Watch / download the English MP4](docs/videos/quotanest-demo-en.mp4) · [中文版视频](docs/videos/quotanest-demo-zh-CN.mp4)
 
