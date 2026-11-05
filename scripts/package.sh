@@ -19,7 +19,13 @@ rm -rf "$OUT"
 APP="$OUT/Contents"
 mkdir -p "$APP/MacOS" "$APP/Resources"
 cp "$BIN/TokenHUD" "$APP/MacOS/"
+# Keep resources in the signed macOS layout; Bundle.appResources resolves them here.
 cp -R "$BIN/QuotaNest_TokenHUD.bundle" "$APP/Resources/"
+# SwiftUI's default LocalizedStringKey lookup uses the application bundle.
+for language in zh-hans en; do
+  [[ -d "$BIN/QuotaNest_TokenHUD.bundle/$language.lproj" ]]
+  cp -R "$BIN/QuotaNest_TokenHUD.bundle/$language.lproj" "$APP/Resources/"
+done
 cp "$PROJECT_DIR/assets/branding/QuotaNest.icns" "$APP/Resources/QuotaNest.icns"
 cat > "$APP/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,6 +36,8 @@ cat > "$APP/Info.plist" <<EOF
     <key>CFBundleIdentifier</key><string>local.tokenhud</string>
     <key>CFBundleName</key><string>QuotaNest</string>
     <key>CFBundleDisplayName</key><string>QuotaNest</string>
+    <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+    <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
     <key>CFBundleIconFile</key><string>QuotaNest.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>

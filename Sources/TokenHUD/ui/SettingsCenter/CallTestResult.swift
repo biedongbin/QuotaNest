@@ -21,10 +21,10 @@ struct CallTestResult {
 
     var title: String {
         switch phase {
-        case .running: return "测试进行中"
-        case .success: return "测试成功"
-        case .failure: return "测试未成功"
-        case .uncertain: return "调用结果不确定"
+        case .running: return L10n.tr("测试进行中")
+        case .success: return L10n.tr("测试成功")
+        case .failure: return L10n.tr("测试未成功")
+        case .uncertain: return L10n.tr("调用结果不确定")
         }
     }
 
@@ -32,12 +32,12 @@ struct CallTestResult {
 
     static func targetDescription(_ raw: String) -> String {
         guard var components = URLComponents(string: raw),
-              components.host != nil else { return "未配置调用地址" }
+              components.host != nil else { return L10n.tr("未配置调用地址") }
         components.user = nil
         components.password = nil
         components.query = nil
         components.fragment = nil
-        return components.string ?? "调用地址"
+        return components.string ?? L10n.tr("调用地址")
     }
 }
 
@@ -59,18 +59,18 @@ struct CallTestResultView: View {
                 else { Image(systemName: result.phase == .success ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(color) }
                 Text(result.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.ink)
                 Spacer()
-                Button(copyLabel) {
+                Button(L10n.tr(copyLabel)) {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     copyLabel = pasteboard.setString(result.message, forType: .string) ? "已复制" : "复制失败"
-                }.barButton().help("复制已脱敏的完整结果")
+                }.barButton().help(L10n.tr("复制已脱敏的完整结果"))
             }
             CallResponseText(message: result.message)
                 .frame(height: result.message.count > 280 || result.message.contains("\n") ? 190 : 70)
                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Palette.border))
             HStack(alignment: .firstTextBaseline) {
-                Text(verbatim: "\(result.sourceLabel) · \(result.model)").fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: "\(L10n.tr(result.sourceLabel)) · \(result.model)").fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Text(result.date, style: .time)
             }.font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -121,12 +121,14 @@ private struct CallResponseText: NSViewRepresentable {
         text.textColor = .labelColor
         text.drawsBackground = false
         text.layoutManager?.allowsNonContiguousLayout = true
-        text.setAccessibilityLabel("完整测试结果，可选择和复制")
+        text.setAccessibilityLabel(L10n.tr("完整测试结果，可选择和复制"))
         scroll.documentView = text
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let text = scroll.documentView as? NSTextView, text.string != message else { return }
+        guard let text = scroll.documentView as? NSTextView else { return }
+        text.setAccessibilityLabel(L10n.tr("完整测试结果，可选择和复制"))
+        guard text.string != message else { return }
         text.string = message
         text.scrollRangeToVisible(NSRange(location: 0, length: 0))
     }

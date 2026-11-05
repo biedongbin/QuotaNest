@@ -11,16 +11,16 @@ struct AccountDetailView: View {
                 header(row)
             } else {
                 HStack(spacing: 14) {
-                    QuietTabs(selection: sectionBinding, items: [("config", "基础接入与用量"), ("trigger", "API 调度")])
+                    QuietTabs(selection: sectionBinding, items: [("config", L10n.tr("基础接入与用量")), ("trigger", L10n.tr("API 调度"))])
                     Spacer(minLength: 0)
-                    Text("保存后加入账号列表").font(Typo.small).foregroundStyle(Palette.muted)
+                    Text(L10n.tr("保存后加入账号列表")).font(Typo.small).foregroundStyle(Palette.muted)
                 }.padding(.horizontal, 20).padding(.vertical, 10)
             }
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if !model.topError.isEmpty {
-                        ResultBox(kind: .error, title: "请检查配置", detail: model.topError)
+                        ResultBox(kind: .error, title: L10n.tr("请检查配置"), detail: model.topError)
                     }
                     content
                 }
@@ -38,11 +38,11 @@ struct AccountDetailView: View {
 
     private func header(_ row: AccountRow) -> some View {
         HStack(spacing: 14) {
-            QuietTabs(selection: sectionBinding, items: [("config", "基础接入与用量"), ("quota", "额度"), ("trigger", "API 调度"), ("display", "展示")])
+            QuietTabs(selection: sectionBinding, items: [("config", L10n.tr("基础接入与用量")), ("quota", L10n.tr("额度")), ("trigger", L10n.tr("API 调度")), ("display", L10n.tr("展示"))])
             Spacer(minLength: 0)
-            Toggle("启用账号", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
+            Toggle(L10n.tr("启用账号"), isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
                 .toggleStyle(.switch).controlSize(.small).fixedSize().font(Typo.small)
-                .help("立即生效；停用后暂停后台查询和调用计划，保留配置。")
+                .help(L10n.tr("立即生效；停用后暂停后台查询和调用计划，保留配置。"))
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }
 
@@ -68,17 +68,17 @@ struct AccountDetailView: View {
             case .trigger: TriggerTabView(model: model, row: row)
             }
         } else {
-            ContentUnavailableView("选择一个账号", systemImage: "person.crop.circle")
+            ContentUnavailableView(L10n.tr("选择一个账号"), systemImage: "person.crop.circle")
         }
     }
     private var draftActions: some View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 12) {
-                Label("未保存的更改", systemImage: "pencil.circle").font(.callout).foregroundStyle(.secondary)
+                Label(L10n.tr("未保存的更改"), systemImage: "pencil.circle").font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Button("取消") { model.cancelEdit() }.barButton().keyboardShortcut(.cancelAction)
-                Button("保存") { model.save() }
+                Button(L10n.tr("取消")) { model.cancelEdit() }.barButton().keyboardShortcut(.cancelAction)
+                Button(L10n.tr("保存")) { model.save() }
                     .barButton(.primary).keyboardShortcut("s", modifiers: .command)
                     .disabled(model.isTestingCurrentConfig || model.draftConfigurationReadOnly)
             }.padding(.horizontal, 20).frame(minHeight: 48).background(Palette.surface)
@@ -91,25 +91,25 @@ struct AccountDisplaySettings: View {
     let row: AccountRow
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            GroupBox("显示位置") {
+            GroupBox(L10n.tr("显示位置")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("菜单快览与悬浮速览", isOn: Binding(get: {
+                    Toggle(L10n.tr("菜单快览与悬浮速览"), isOn: Binding(get: {
                         !model.engine.floatingHiddenSlugs.contains(row.id)
                     }, set: { model.toggleFloating(row.id, shown: $0) }))
                     Toggle("Claude Code HUD", isOn: Binding(get: {
                         !model.engine.hudHiddenSlugs.contains(row.id)
                     }, set: { model.toggleHudSync(row.id, synced: $0) }))
-                    Text("立即生效。停用的账号保留展示选择，重新启用后恢复显示。")
+                    Text(L10n.tr("立即生效。停用的账号保留展示选择，重新启用后恢复显示。"))
                         .font(.callout).foregroundStyle(.secondary)
                 }.padding(8)
             }
-            GroupBox("菜单栏图标") {
+            GroupBox(L10n.tr("菜单栏图标")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("用此账号的额度作为菜单栏数字", isOn: Binding(get: {
+                    Toggle(L10n.tr("用此账号的额度作为菜单栏数字"), isOn: Binding(get: {
                         model.engine.iconProviderSlug == row.id
                     }, set: { model.engine.setIconProvider($0 ? row.id : nil) }))
                         .disabled(!row.enabled || !row.canQuery)
-                    Text("取消指定后，显示所有已启用账号的最高已用比例；旧数据会注明。")
+                    Text(L10n.tr("取消指定后，显示所有已启用账号的最高已用比例；旧数据会注明。"))
                         .font(.callout).foregroundStyle(.secondary)
                 }.padding(8)
             }

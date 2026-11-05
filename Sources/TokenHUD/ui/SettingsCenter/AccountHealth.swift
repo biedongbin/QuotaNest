@@ -22,11 +22,11 @@ enum AccountStatusFilter: String, Identifiable, CaseIterable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .all: return "全部"
-        case .enabled: return "启用"
-        case .disabled: return "关闭"
-        case .abnormal: return "账号异常"
-        case .healthyEnabled: return "启用且正常"
+        case .all: return L10n.tr("全部")
+        case .enabled: return L10n.tr("启用")
+        case .disabled: return L10n.tr("关闭")
+        case .abnormal: return L10n.tr("账号异常")
+        case .healthyEnabled: return L10n.tr("启用且正常")
         }
     }
 
@@ -47,14 +47,14 @@ enum AccountHealthAssessment {
                               now: Date = Date(), scheduleEnabled: Bool = false,
                               resolve: (ProviderConfig) throws -> ProviderConfig = ProviderAuthentication.resolveQuota) -> AccountHealth {
         guard ["none", "endpoint", "script"].contains(config.quotaMode) else {
-            return .issue(reason: "不支持的额度查询模式")
+            return .issue(reason: L10n.tr("不支持的额度查询模式"))
         }
         if config.quotaMode != "none" && !manifest.supportsQuota {
-            return .issue(reason: "该类型不支持所选额度查询模式")
+            return .issue(reason: L10n.tr("该类型不支持所选额度查询模式"))
         }
         if config.quotaMode == "script", manifest.template == nil,
            manifest.quotaMode == "endpoint" {
-            return .issue(reason: "该类型未提供脚本额度查询适配")
+            return .issue(reason: L10n.tr("该类型未提供脚本额度查询适配"))
         }
         // With quota disabled only resolve the base identity, without requiring a call adapter.
         var input = config
@@ -64,29 +64,29 @@ enum AccountHealthAssessment {
         }
         let resolved: ProviderConfig
         do { resolved = try resolve(input) }
-        catch { return .issue(reason: error.localizedDescription) }
+        catch { return .issue(reason: L10n.errorDescription(error)) }
         if config.authMode == "auth", jwtExpired(resolved.refreshKey, now: now) {
-            return .issue(reason: "Auth 凭证已过期，请重新登录")
+            return .issue(reason: L10n.tr("Auth 凭证已过期，请重新登录"))
         }
         for address in [resolved.apiBaseURL, resolved.refreshUrl, resolved.authMode == "auth" ? (resolved.authCallURL ?? "") : ""]
             where !address.isEmpty {
-            if !SettingsValidation.isValidURL(address) { return .issue(reason: "基础接入地址无效") }
+            if !SettingsValidation.isValidURL(address) { return .issue(reason: L10n.tr("基础接入地址无效")) }
         }
         if config.quotaMode != "none" {
             // Script adapters may derive their route from declared Auth context.
             if config.quotaMode == "endpoint" || !resolved.queryUrl.isEmpty {
                 guard SettingsValidation.isValidURL(resolved.queryUrl) else {
-                    return .issue(reason: "额度查询地址缺失或无效")
+                    return .issue(reason: L10n.tr("额度查询地址缺失或无效"))
                 }
             }
         } else if resolved.authMode == "apikey" && resolved.apiBaseURL.isEmpty && resolved.refreshUrl.isEmpty {
-            return .issue(reason: "请填写基础接入的服务地址")
+            return .issue(reason: L10n.tr("请填写基础接入的服务地址"))
         }
         if scheduleEnabled && !config.scheduleTimes.isEmpty {
             let callURL = resolved.authMode == "auth" ? (resolved.authCallURL ?? "") : resolved.refreshUrl
-            if !SettingsValidation.isValidURL(callURL) { return .issue(reason: "调用计划缺少有效调用地址") }
+            if !SettingsValidation.isValidURL(callURL) { return .issue(reason: L10n.tr("调用计划缺少有效调用地址")) }
             if resolved.testModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return .issue(reason: "调用计划未配置模型")
+                return .issue(reason: L10n.tr("调用计划未配置模型"))
             }
         }
         return .healthy
@@ -118,20 +118,20 @@ enum AccountHealthAssessment {
         let text = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         // The actual response status outranks words quoted in its body.
         if matches(#"^http(?:/\d(?:\.\d)?)?\s+401\b"#, in: text) {
-            return "凭证无效或已过期，请检查基础认证"
+            return L10n.tr("凭证无效或已过期，请检查基础认证")
         }
         if matches(#"^http(?:/\d(?:\.\d)?)?\s+(?:429|5\d\d)\b"#, in: text) { return nil }
         let transient = ["timeout", "timed out", "network", "dns", "disconnect", "connection", "超时", "断连", "网络", "no-query", "parse", "busy", "繁忙", "uncertain"]
         if transient.contains(where: text.contains) { return nil }
         if ["auth", "no-auth", "expired", "authfail", "auth-failed", "invalid-api-key", "invalid_api_key"].contains(text)
             || ["unauthorized", "authentication failed", "authentication_error", "invalid api key", "invalid_api_key", "invalid token", "invalid_token", "token expired", "token_expired", "token has expired", "credential expired", "凭证无效", "凭证已过期", "认证失败", "授权已过期"].contains(where: text.contains) {
-            return "凭证无效或已过期，请检查基础认证"
+            return L10n.tr("凭证无效或已过期，请检查基础认证")
         }
         if ["insufficient permissions", "permission denied", "missing entitlement", "not entitled"].contains(where: text.contains) {
-            return "账号缺少所需权限或套餐授权"
+            return L10n.tr("账号缺少所需权限或套餐授权")
         }
         if ["invalid model", "invalid_model", "model_not_found", "invalid baseurl", "invalid base url", "invalid_base_url", "endpoint not found", "not found endpoint", "unknown endpoint", "模型不存在", "调用地址无效"].contains(where: text.contains) {
-            return "API 模型或接口地址配置错误"
+            return L10n.tr("API 模型或接口地址配置错误")
         }
         return nil
     }

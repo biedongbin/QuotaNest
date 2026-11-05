@@ -119,7 +119,7 @@ enum RefreshOutcome {
     var ok: Bool { if case .ok = self { return true }; return false }
     /// toast 文案: 成功带家名, 失败带原因
     func message(_ name: String) -> String {
-        ok ? "✓ 已刷新 \(name)" : "✗ \(name) 刷新失败: \(reason)"
+        ok ? L10n.tr("✓ 已刷新 %@", name) : L10n.tr("✗ %@ 刷新失败: %@", name, reason)
     }
     var reason: String { if case .failed(let r) = self { return r }; return "" }
 }
@@ -155,7 +155,8 @@ final class DataEngine: ObservableObject {
     @Published private(set) var sourceSyncing = false
     @Published private(set) var sourceSyncLastAttempt: Date?
     @Published private(set) var sourceSyncLastSuccess: Date?
-    @Published private(set) var sourceSyncMessage = "尚未检查来源"
+    @Published private var sourceSyncResource = L10n.resource("尚未检查来源")
+    var sourceSyncMessage: String { L10n.string(sourceSyncResource) }
     @Published private(set) var sourceSyncIssues: [String: String] = [:]
     @Published private(set) var sourceAutoSyncEnabled = true
     private var sourceSyncTask: Task<Void, Never>?
@@ -251,7 +252,13 @@ final class DataEngine: ObservableObject {
     func setSourceAutoSyncEnabled(_ enabled: Bool) {
         sourceAutoSyncEnabled = enabled
         defaults.set(enabled, forKey: Self.defaultsSourceAutoSyncKey)
-        sourceSyncMessage = enabled ? "已开启每小时自动检查来源" : "已关闭自动同步，仍可立即同步"
+        sourceSyncResource = enabled ? L10n.resource("已开启每小时自动检查来源") : L10n.resource("已关闭自动同步，仍可立即同步")
+    }
+
+    nonisolated static func sourceSyncSummary(updated: Int, registered: Int, unchanged: Int, issues: Int) -> LocalizedStringResource {
+        issues == 0
+            ? L10n.resource("来源检查完成：订正 \(String(updated))，登记 \(String(registered))，未变 \(String(unchanged))")
+            : L10n.resource("来源检查完成：订正 \(String(updated))，登记 \(String(registered))，未变 \(String(unchanged))，需处理 \(String(issues))")
     }
 
     nonisolated static func sourceSyncDue(lastAttempt: Date?, now: Date,
@@ -268,11 +275,11 @@ final class DataEngine: ObservableObject {
         sourceSyncIssues = [:]
         let imported = allPlugins.filter { $0.manifest.sourceReference != nil }
         guard !imported.isEmpty else {
-            sourceSyncMessage = "没有可同步的来源引用账号"
+            sourceSyncResource = L10n.resource("没有可同步的来源引用账号")
             return
         }
         sourceSyncing = true
-        sourceSyncMessage = "正在检查只读来源…"
+        sourceSyncResource = L10n.resource("正在检查只读来源…")
         let task = Task { [weak self] in
             guard let self else { return }
             let templates = self.templates
@@ -310,8 +317,8 @@ final class DataEngine: ObservableObject {
                 }
             }
             if self.sourceSyncIssues.isEmpty { self.sourceSyncLastSuccess = now }
-            self.sourceSyncMessage = "来源检查完成：订正 \(updated)，登记 \(registered)，未变 \(unchanged)"
-                + (self.sourceSyncIssues.isEmpty ? "" : "，需处理 \(self.sourceSyncIssues.count)")
+            self.sourceSyncResource = Self.sourceSyncSummary(updated: updated, registered: registered,
+                                                             unchanged: unchanged, issues: self.sourceSyncIssues.count)
             self.sourceSyncing = false
         }
         sourceSyncTask = task
@@ -1177,10 +1184,10 @@ final class DataEngine: ObservableObject {
     /// 错误码 → 人话 (缓存契约里的 error 字段值不变)
     nonisolated static func reason(for code: String) -> String {
         switch code {
-        case "auth", "no-auth": return "缺凭证或凭证失效"
-        case "fetch": return "查询无结果"
-        case "ratelimit": return "触发限频（429），稍后自动恢复"
-        case "busy": return "查询排队超时（并发已满），请稍后重试"
+        case "auth", "no-auth": return L10n.tr("缺凭证或凭证失效")
+        case "fetch": return L10n.tr("查询无结果")
+        case "ratelimit": return L10n.tr("触发限频（429），稍后自动恢复")
+        case "busy": return L10n.tr("查询排队超时（并发已满），请稍后重试")
         default: return code
         }
     }

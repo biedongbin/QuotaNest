@@ -43,7 +43,7 @@ enum ProviderImporter {
     ]
 
     static func bundledTemplates() -> [PluginProvider] {
-        Bundle.module.resourceURL.map { ProviderRegistry.scan(dir: $0.appendingPathComponent("providers")) } ?? []
+        Bundle.appResources.resourceURL.map { ProviderRegistry.scan(dir: $0.appendingPathComponent("providers")) } ?? []
     }
 
     static func magpieRoot(home: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> String {

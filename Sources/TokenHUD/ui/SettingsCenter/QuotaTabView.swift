@@ -8,9 +8,9 @@ struct QuotaPresentation {
         return state.isStale || state.cache?.stale == true || state.cache?.error != nil
     }
     var status: String {
-        guard let cache = state?.cache else { return "尚未查询" }
-        if let error = cache.error { return "查询失败：" + QuotaErrorPresentation.message(for: error) }
-        return isOld ? "数据已过期" : "额度已更新"
+        guard let cache = state?.cache else { return L10n.tr("尚未查询") }
+        if let error = cache.error { return L10n.tr("查询失败：") + QuotaErrorPresentation.message(for: error) }
+        return isOld ? L10n.tr("数据已过期") : L10n.tr("额度已更新")
     }
     var updated: String { formatCacheTime(state?.cache?.generatedAt) }
     var metrics: [QuotaMetric] {
@@ -32,15 +32,15 @@ struct QuotaMetric: Identifiable {
     let resetsAt: Int?
     var resetDescription: String? {
         if let reset = formatResetAt(resetsAt) { return reset }
-        return period == "balance" ? nil : "重置时间未知"
+        return period == "balance" ? nil : L10n.tr("重置时间未知")
     }
     var value: String {
         if let percentage {
-            return percentage.formatted(.number.precision(.fractionLength(0...1))) + "%"
+            return L10n.percent(percentage)
         }
         if let amount, let limit { return QuotaTabView.unitLabel(amount, limit, unit: unit) }
-        if let amount { return "\(amount.formatted()) \(unit ?? "")" }
-        if let limit { return "上限 \(limit.formatted()) \(unit ?? "")" }
+        if let amount { return "\(L10n.number(amount)) \(unit ?? "")" }
+        if let limit { return L10n.tr("上限 %@ %@", String(describing: L10n.number(limit)), String(describing: unit ?? "")) }
         return "—"
     }
 }
@@ -88,8 +88,8 @@ struct QuotaMetricView: View {
                     }
                 }
                 .frame(height: 4)
-                .accessibilityLabel("\(metric.label)已用")
-                .accessibilityValue(metric.value + (old ? "，旧值" : ""))
+                .accessibilityLabel(L10n.tr("%@已用", String(describing: metric.label)))
+                .accessibilityValue(metric.value + (old ? L10n.tr("，旧值") : ""))
             }
             if !compact, metric.percentage != nil, let amount = metric.amount, let limit = metric.limit {
                 Text(QuotaTabView.unitLabel(amount, limit, unit: metric.unit))
@@ -97,7 +97,7 @@ struct QuotaMetricView: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 if old {
-                    Text("旧值").foregroundStyle(Palette.warn)
+                    Text(L10n.tr("旧值")).foregroundStyle(Palette.warn)
                 }
                 if let reset = metric.resetDescription {
                     Text(reset).foregroundStyle(Palette.muted).lineLimit(2)
@@ -121,15 +121,15 @@ struct QuotaTabView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("额度").font(Typo.section).foregroundStyle(Palette.ink)
-                    Text("供应商返回的实际用量、余额与周期信息")
+                    Text(L10n.tr("额度")).font(Typo.section).foregroundStyle(Palette.ink)
+                    Text(L10n.tr("供应商返回的实际用量、余额与周期信息"))
                         .font(Typo.small).foregroundStyle(Palette.muted)
                 }
                 Spacer(minLength: 12)
                 Button {
                     model.query(row.id)
                 } label: {
-                    Label(model.running.contains(row.id) ? "查询中" : "刷新额度", systemImage: "arrow.clockwise")
+                    Label(model.running.contains(row.id) ? L10n.tr("查询中") : L10n.tr("刷新额度"), systemImage: "arrow.clockwise")
                 }
                 .barButton()
                 .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
@@ -138,11 +138,11 @@ struct QuotaTabView: View {
             if !row.canQuery {
                 CardBox {
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("未启用额度查询", systemImage: "chart.bar.xaxis")
+                        Label(L10n.tr("未启用额度查询"), systemImage: "chart.bar.xaxis")
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
-                        Text(row.plugin.manifest.isSourceConfigurationReadOnly ? SettingsModel.sourceReadOnlyMessage : "需要时，在连接中配置额度接口；用量查询统一继承基础认证。模型测试与调用计划取决于供应商类型的接入能力。")
+                        Text(row.plugin.manifest.isSourceConfigurationReadOnly ? SettingsModel.sourceReadOnlyMessage : L10n.tr("需要时，在连接中配置额度接口；用量查询统一继承基础认证。模型测试与调用计划取决于供应商类型的接入能力。"))
                             .font(Typo.small).foregroundStyle(Palette.muted)
-                        Button("配置额度查询") {
+                        Button(L10n.tr("配置额度查询")) {
                             model.tab = .config
                             model.startEdit()
                         }.barButton().disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
@@ -154,7 +154,7 @@ struct QuotaTabView: View {
                         HStack(spacing: 7) {
                             if model.running.contains(row.id) {
                                 ProgressView().controlSize(.mini)
-                                Text("正在查询").foregroundStyle(Palette.muted)
+                                Text(L10n.tr("正在查询")).foregroundStyle(Palette.muted)
                             } else {
                                 Circle().fill(presentation.isOld ? Palette.warn : Palette.accent)
                                     .frame(width: 5, height: 5).accessibilityHidden(true)
@@ -165,14 +165,14 @@ struct QuotaTabView: View {
                         }
                         .font(.system(size: 11.5))
                         if presentation.metrics.isEmpty {
-                            Text(model.quotaConfigured(row) ? "查询后，这里会显示服务返回的额度窗口。" : "请先在连接中补全基础认证与用量查询配置。")
+                            Text(model.quotaConfigured(row) ? L10n.tr("查询后，这里会显示服务返回的额度窗口。") : L10n.tr("请先在连接中补全基础认证与用量查询配置。"))
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                                 .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
                         } else {
                             QuotaMetricGrid(metrics: presentation.metrics, old: presentation.isOld || !row.enabled)
                         }
                         if !row.enabled {
-                            Text("账号已停用。手动查询不会恢复调用计划。")
+                            Text(L10n.tr("账号已停用。手动查询不会恢复调用计划。"))
                                 .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
                         }
                     }
@@ -185,17 +185,17 @@ struct QuotaTabView: View {
         if let windows = cache.windows, !windows.isEmpty {
             return windows.compactMap { window in
                 guard window.usedPercentage != nil || window.amount != nil || window.limit != nil else { return nil }
-                return (window.label ?? "额度窗口", window.usedPercentage, window.amount, window.limit, window.unit, window.period, window.resetsAt)
+                return (window.displayLabel ?? L10n.tr("额度窗口"), window.usedPercentage, window.amount, window.limit, window.unit, window.period, window.resetsAt)
             }
         }
-        let legacy: [(String, Bucket?)] = [("5 小时", cache.fiveHour), ("本周", cache.sevenDay), ("本月", cache.monthly)]
+        let legacy: [(String, Bucket?)] = [(L10n.tr("5 小时"), cache.fiveHour), (L10n.tr("本周"), cache.sevenDay), (L10n.tr("本月"), cache.monthly)]
         return legacy.compactMap { label, bucket in
             guard let bucket, let percentage = bucket.usedPercentage else { return nil }
             return (label, percentage, nil, nil, nil, nil, bucket.resetsAt)
         }
     }
     static func unitLabel(_ amount: Double, _ limit: Double, unit: String?) -> String {
-        func value(_ number: Double) -> String { String(format: number.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", number) }
+        func value(_ number: Double) -> String { L10n.number(number, fractionLength: number.truncatingRemainder(dividingBy: 1) == 0 ? 0...0 : 2...2) }
         if unit?.uppercased() == "USD" { return "$\(value(amount)) / $\(value(limit))" }
         return "\(value(amount)) / \(value(limit))" + (unit.map { " \($0)" } ?? "")
     }
@@ -237,18 +237,18 @@ struct ProgressLine: View {
             }
         }
         .frame(height: 4)
-        .accessibilityLabel("已用额度").accessibilityValue(pct.map { "\(Int($0.rounded()))%" } ?? "未知")
+        .accessibilityLabel(L10n.tr("已用额度")).accessibilityValue(pct.map { L10n.percent($0.rounded(), fractionLength: 0...0) } ?? L10n.tr("未知"))
     }
 }
 enum QuotaErrorPresentation {
     static func message(for code: String) -> String {
         switch code {
-        case "network": return "无法连接服务"
-        case "parse": return "服务返回的数据无法识别"
-        case "no-auth", "auth": return "请检查凭证或重新登录"
-        case "ratelimit": return "查询频繁，请稍后重试"
-        case "timeout", "busy": return "查询超时，请稍后重试"
-        default: return "暂时无法取得额度"
+        case "network": return L10n.tr("无法连接服务")
+        case "parse": return L10n.tr("服务返回的数据无法识别")
+        case "no-auth", "auth": return L10n.tr("请检查凭证或重新登录")
+        case "ratelimit": return L10n.tr("查询频繁，请稍后重试")
+        case "timeout", "busy": return L10n.tr("查询超时，请稍后重试")
+        default: return code
         }
     }
 }

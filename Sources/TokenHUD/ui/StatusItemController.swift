@@ -9,6 +9,8 @@ final class StatusItemController: ObservableObject {
     private let statusItem: NSStatusItem
     private var popover: NSPopover?
     private var cancellable: Any?
+    private var languageObservation: AppLanguageObservation?
+    private weak var activeMenu: NSMenu?
 
     init(engine: DataEngine, panelCtrl: PanelController) {
         self.engine = engine
@@ -22,6 +24,12 @@ final class StatusItemController: ObservableObject {
         cancellable = engine.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in self?.updateTitle() }
         }
+        languageObservation = AppLanguageObservation { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.updateTitle()
+                self?.updateMenuTitles()
+            }
+        }
     }
 
     private func updateTitle() {
@@ -32,10 +40,10 @@ final class StatusItemController: ObservableObject {
             QuotaPresentation(state: state).metrics.compactMap(\.percentage).max()
         }.max()
         let old = states.contains { QuotaPresentation(state: $0).isOld }
-        let value = percentage.map { "\(Int($0.rounded()))%" } ?? "—"
+        let value = percentage.map { L10n.percent($0.rounded(), fractionLength: 0...0) } ?? "—"
         statusItem.button?.title = (engine.isRefreshingAll ? "↻ " : "") + value + (old && percentage != nil ? " ·" : "")
-        statusItem.button?.toolTip = "\(AppBrand.name) · 单击快览，双击悬浮，右键操作" + (old ? " · 包含旧数据" : "")
-        statusItem.button?.setAccessibilityLabel("\(AppBrand.name)，\(value)" + (old ? "，包含旧数据" : ""))
+        statusItem.button?.toolTip = L10n.tr("%@ · 单击快览，双击悬浮，右键操作", String(describing: AppBrand.name)) + (old ? L10n.tr(" · 包含旧数据") : "")
+        statusItem.button?.setAccessibilityLabel(L10n.tr("%@，%@", AppBrand.name, value) + (old ? L10n.tr("，包含旧数据") : ""))
     }
 
     @objc private func onClick(_ sender: NSStatusBarButton) {
@@ -55,17 +63,34 @@ final class StatusItemController: ObservableObject {
 
     private func showMenu() {
         let menu = NSMenu()
-        add("\(panelController.isVisible ? "关闭" : "打开")悬浮速览", action: #selector(togglePanel), to: menu)
-        add("刷新可查询账号", action: #selector(refreshAll), key: "r", to: menu)
+        add(panelController.isVisible ? L10n.tr("关闭悬浮速览") : L10n.tr("打开悬浮速览"), action: #selector(togglePanel), to: menu)
+        add(L10n.tr("刷新可查询账号"), action: #selector(refreshAll), key: "r", to: menu)
         menu.addItem(.separator())
-        add("账号管理…", action: #selector(openAccounts), key: "0", to: menu)
-        add("设置与外观…", action: #selector(openSettings), key: ",", to: menu)
+        add(L10n.tr("账号管理…"), action: #selector(openAccounts), key: "0", to: menu)
+        add(L10n.tr("设置与外观…"), action: #selector(openSettings), key: ",", to: menu)
         menu.addItem(.separator())
-        add("退出 \(AppBrand.name)", action: #selector(quit), key: "q", to: menu)
+        add(L10n.tr("退出 %@", String(describing: AppBrand.name)), action: #selector(quit), key: "q", to: menu)
+        activeMenu = menu
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+        activeMenu = nil
     }
+
+    private func updateMenuTitles() {
+        guard let menu = activeMenu else { return }
+        for item in menu.items {
+            switch item.action {
+            case #selector(togglePanel): item.title = panelController.isVisible ? L10n.tr("关闭悬浮速览") : L10n.tr("打开悬浮速览")
+            case #selector(refreshAll): item.title = L10n.tr("刷新可查询账号")
+            case #selector(openAccounts): item.title = L10n.tr("账号管理…")
+            case #selector(openSettings): item.title = L10n.tr("设置与外观…")
+            case #selector(quit): item.title = L10n.tr("退出 %@", AppBrand.name)
+            default: break
+            }
+        }
+    }
+
     private func add(_ title: String, action: Selector, key: String = "", to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self

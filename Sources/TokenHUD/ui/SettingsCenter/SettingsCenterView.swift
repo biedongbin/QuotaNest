@@ -24,11 +24,11 @@ struct SettingsCenterView: View {
                 .navigationSplitViewStyle(.balanced)
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
-                        Button { model.openTemplates() } label: { Label("添加账号", systemImage: "plus") }
+                        Button { model.openTemplates() } label: { Label(L10n.tr("添加账号"), systemImage: "plus") }
                             .keyboardShortcut("n", modifiers: .command)
-                        Button { model.openImport() } label: { Label("导入账号", systemImage: "square.and.arrow.down") }
+                        Button { model.openImport() } label: { Label(L10n.tr("导入账号"), systemImage: "square.and.arrow.down") }
                         if let row = model.current, model.navPage == .detail, model.draft == nil {
-                            Button { model.duplicateAccount(row.id) } label: { Label("复制账号", systemImage: "plus.square.on.square") }
+                            Button { model.duplicateAccount(row.id) } label: { Label(L10n.tr("复制账号"), systemImage: "plus.square.on.square") }
                                 .keyboardShortcut("d", modifiers: .command)
                                 .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
                         }
@@ -48,6 +48,7 @@ struct SettingsCenterView: View {
                 }
             }
         }
+        .appLanguageEnvironment()
         .font(.system(size: 13))
         .tint(Palette.ink)
         .accentColor(Palette.ink)
@@ -79,13 +80,13 @@ struct SettingsCenterView: View {
     }
     private var pageName: String {
         switch model.navPage {
-        case .overview: return "账号 / 概览"
-        case .plan: return "调用计划"
-        case .settings: return "设置与外观"
+        case .overview: return L10n.tr("账号 / 概览")
+        case .plan: return L10n.tr("调用计划")
+        case .settings: return L10n.tr("设置与外观")
         case .detail:
-            if model.showingTemplates { return "添加账号" }
-            if model.draft?.isNew == true { return "新建账号" }
-            return model.current?.name ?? "账号"
+            if model.showingTemplates { return L10n.tr("添加账号") }
+            if model.draft?.isNew == true { return L10n.tr("新建账号") }
+            return model.current?.name ?? L10n.tr("账号")
         }
     }
 
@@ -97,8 +98,8 @@ struct SettingsCenterView: View {
         case .detail:
             if model.showingTemplates {
                 ScrollView { TemplateCatalogView(model: model).padding(20) }
-                    .navigationTitle("添加账号")
-                    .toolbar { Button("取消") { model.closeTemplates() } }
+                    .navigationTitle(L10n.tr("添加账号"))
+                    .toolbar { Button(L10n.tr("取消")) { model.closeTemplates() } }
             } else {
                 AccountDetailView(model: model, engine: engine)
             }
@@ -133,7 +134,7 @@ private struct AccountStatusMenu: View {
 
     var body: some View {
         Menu {
-            Picker("账号状态", selection: $selection) {
+            Picker(L10n.tr("账号状态"), selection: $selection) {
                 ForEach(AccountStatusFilter.allCases) { filter in
                     Text(filter.label).tag(filter)
                 }
@@ -161,7 +162,7 @@ private struct AccountStatusMenu: View {
         .fixedSize()
         .onHover { hovered = $0 }
         .accessibilityValue(selection.label)
-        .help("按账号状态筛选")
+        .help(L10n.tr("按账号状态筛选"))
     }
 }
 
@@ -192,17 +193,16 @@ private struct AccountSidebar: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    navRow("全部账号", icon: "person.2", id: "page:accounts")
-                    navRow("调用计划", icon: "calendar.badge.clock", id: "page:plan")
-                    HStack {
-                        Text("账号列表").font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        Spacer(minLength: 2)
+                    navRow(L10n.tr("全部账号"), icon: "person.2", id: "page:accounts")
+                    navRow(L10n.tr("调用计划"), icon: "calendar.badge.clock", id: "page:plan")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(L10n.tr("账号列表")).font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1)
                         AccountStatusMenu(selection: $model.sidebarStatusFilter, compact: true)
-                            .accessibilityLabel("账号列表状态")
+                            .accessibilityLabel(L10n.tr("账号列表状态"))
                             .accessibilityIdentifier("sidebar.status-filter")
                     }.padding(.horizontal, 8).padding(.top, 12)
                     if model.sidebarGroups.isEmpty {
-                        Text("没有符合条件的账号")
+                        Text(L10n.tr("没有符合条件的账号"))
                             .font(.caption).foregroundStyle(Palette.muted).padding(.horizontal, 10).padding(.vertical, 8)
                     }
                     ForEach(model.sidebarGroups, id: \.label) { group in
@@ -215,11 +215,11 @@ private struct AccountSidebar: View {
                     }
                 }.padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 12)
             }
-            navRow("设置与外观", icon: "gearshape", id: "page:settings")
+            navRow(L10n.tr("设置与外观"), icon: "gearshape", id: "page:settings")
                 .padding(10)
         }
         .background(Palette.canvas)
-        .searchable(text: $model.search, prompt: "搜索账号或供应商")
+        .searchable(text: $model.search, prompt: L10n.tr("搜索账号或供应商"))
         .navigationTitle(AppBrand.name)
         .onMoveCommand { direction in
             let ids = ["page:accounts", "page:plan"] + model.sidebarGroups.flatMap { $0.rows.map(\.id) } + ["page:settings"]
@@ -248,7 +248,7 @@ private struct AccountSidebar: View {
         .buttonStyle(.plain)
         .focused($focusedRow, equals: id)
         .accessibilityLabel(text).accessibilityIdentifier("sidebar." + id)
-        .accessibilityValue(selected == id ? "已选择" : "")
+        .accessibilityValue(selected == id ? L10n.tr("已选择") : "")
         .onHover { hovered = $0 ? id : nil }
     }
 }
@@ -281,10 +281,10 @@ struct OverviewPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("额度与账号").foregroundStyle(Palette.muted)
-                    Text("拖动卡片调整顺序").font(Typo.small).foregroundStyle(Palette.muted)
+                    Text(L10n.tr("额度与账号")).foregroundStyle(Palette.muted)
+                    Text(L10n.tr("拖动卡片调整顺序")).font(Typo.small).foregroundStyle(Palette.muted)
                     Spacer()
-                    Button("查询全部额度", systemImage: "arrow.clockwise") {
+                    Button(L10n.tr("查询全部额度"), systemImage: "arrow.clockwise") {
                         for row in model.allAccounts where row.enabled && row.canQuery && model.quotaConfigured(row) {
                             model.query(row.id)
                         }
@@ -294,9 +294,9 @@ struct OverviewPage: View {
                 }
                 HStack(spacing: 12) {
                     AccountStatusMenu(selection: $model.overviewStatusFilter)
-                        .accessibilityLabel("概览账号状态")
+                        .accessibilityLabel(L10n.tr("概览账号状态"))
                         .accessibilityIdentifier("overview.status-filter")
-                    Text("\(model.overviewGroups.reduce(0) { $0 + $1.rows.count }) 个账号")
+                    Text(L10n.tr("%@ 个账号", String(describing: model.overviewGroups.reduce(0) { $0 + $1.rows.count })))
                         .font(Typo.small).foregroundStyle(Palette.muted)
                     Spacer(minLength: 0)
                 }
@@ -304,9 +304,9 @@ struct OverviewPage: View {
                     SourceSyncControls(engine: engine)
                 }
                 if model.overviewGroups.isEmpty {
-                    ContentUnavailableView(model.allAccounts.isEmpty ? "尚无账号" : "没有符合条件的账号",
+                    ContentUnavailableView(model.allAccounts.isEmpty ? L10n.tr("尚无账号") : L10n.tr("没有符合条件的账号"),
                                            systemImage: "person.crop.circle.badge.plus",
-                                           description: Text(model.allAccounts.isEmpty ? "添加一个账号开始使用。" : "调整状态过滤或搜索条件。"))
+                                           description: Text(model.allAccounts.isEmpty ? L10n.tr("添加一个账号开始使用。") : L10n.tr("调整状态过滤或搜索条件。")))
                 }
                 LazyVGrid(columns: model.overviewGroups.count == 1 ? [GridItem(.flexible(), alignment: .top)] : [GridItem(.adaptive(minimum: 290), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
                     ForEach(model.overviewGroups, id: \.label) { group in
@@ -319,13 +319,13 @@ struct OverviewPage: View {
                                         .foregroundStyle(Palette.accent).frame(width: 17)
                                     Text(group.fullName).font(.system(size: 13, weight: .semibold))
                                     Spacer(minLength: 0)
-                                    Text("\(group.rows.count) 个账号").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                    Text(L10n.tr("%@ 个账号", String(describing: group.rows.count))).font(.system(size: 11)).foregroundStyle(Palette.muted)
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture(count: 2) {
                                     if let row = group.rows.first { _ = model.selectAccount(row.id, tab: .config) }
                                 }
-                                .help("双击打开账号详情")
+                                .help(L10n.tr("双击打开账号详情"))
                                 ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                                     if index > 0 { Divider().overlay(Palette.border) }
                                     OverviewAccountCard(model: model, row: row)
@@ -366,12 +366,12 @@ private struct OverviewAccountCard: View {
                     Text(row.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 }.buttonStyle(.plain)
                 Spacer(minLength: 0)
-                Toggle("启用", isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
+                Toggle(L10n.tr("启用"), isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
                     .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                    .accessibilityLabel("启用 \(row.name)")
+                    .accessibilityLabel(L10n.tr("启用 %@", String(describing: row.name)))
                 Menu { AccountContextMenu(model: model, row: row) } label: {
                     Image(systemName: "ellipsis").frame(width: 20, height: 20)
-                }.menuStyle(.borderlessButton).fixedSize().help("账号操作")
+                }.menuStyle(.borderlessButton).fixedSize().help(L10n.tr("账号操作"))
             }
             if row.canQuery && !quota.metrics.isEmpty {
                 QuotaMetricGrid(metrics: quota.metrics, old: quota.isOld || !row.enabled, compact: true)
@@ -382,27 +382,27 @@ private struct OverviewAccountCard: View {
                 Spacer(minLength: 0)
                 if row.canQuery {
                     Button { model.query(row.id) } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain).help("查询额度")
+                        .buttonStyle(.plain).help(L10n.tr("查询额度"))
                         .disabled(!model.quotaConfigured(row) || model.running.contains(row.id))
                 }
             }.font(.system(size: 11))
             if row.canQuery && !quota.metrics.isEmpty {
-                Text("更新于 \(quota.updated)").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                Text(L10n.tr("更新于 %@", String(describing: quota.updated))).font(.system(size: 10)).foregroundStyle(Palette.muted)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { _ = model.selectAccount(row.id, tab: .config) }
-        .help("双击打开账号详情")
+        .help(L10n.tr("双击打开账号详情"))
         .contextMenu { AccountContextMenu(model: model, row: row) }
     }
     private var status: String {
         if !row.enabled {
-            return row.health.issueReason.map { "已停用 · 账号异常：" + $0 } ?? "已停用 · 配置和计划保留"
+            return row.health.issueReason.map { L10n.tr("已停用 · 账号异常：") + $0 } ?? L10n.tr("已停用 · 配置和计划保留")
         }
-        if let issue = row.health.issueReason { return "账号异常 · " + issue }
-        if model.running.contains(row.id) { return "正在查询额度…" }
-        if !row.canQuery { return model.callConfigured(row) ? "API 已配置 · 无额度查询" : "API 待配置 · 无额度查询" }
-        if !model.quotaConfigured(row) { return "额度查询待配置" }
+        if let issue = row.health.issueReason { return L10n.tr("账号异常 · ") + issue }
+        if model.running.contains(row.id) { return L10n.tr("正在查询额度…") }
+        if !row.canQuery { return model.callConfigured(row) ? L10n.tr("API 已配置 · 无额度查询") : L10n.tr("API 待配置 · 无额度查询") }
+        if !model.quotaConfigured(row) { return L10n.tr("额度查询待配置") }
         return quota.status
     }
 }
@@ -411,14 +411,14 @@ struct AccountContextMenu: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
     var body: some View {
-        Button("打开账号") { _ = model.selectAccount(row.id, tab: .config) }
-        Button("复制账号…") { model.duplicateAccount(row.id) }
+        Button(L10n.tr("打开账号")) { _ = model.selectAccount(row.id, tab: .config) }
+        Button(L10n.tr("复制账号…")) { model.duplicateAccount(row.id) }
             .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
-        Button("查询额度") { model.query(row.id) }
+        Button(L10n.tr("查询额度")) { model.query(row.id) }
             .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
         Divider()
-        Button(row.enabled ? "停用账号" : "启用账号") { model.toggleMonitoring(row.id, enabled: !row.enabled) }
-        Button("删除账号…", role: .destructive) { model.delete(row.id) }
+        Button(row.enabled ? L10n.tr("停用账号") : L10n.tr("启用账号")) { model.toggleMonitoring(row.id, enabled: !row.enabled) }
+        Button(L10n.tr("删除账号…"), role: .destructive) { model.delete(row.id) }
     }
 }
 

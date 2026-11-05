@@ -35,7 +35,7 @@ struct MenuBarView: View {
                         }
                     }
                     if engine.nodeMissing {
-                        Label("未找到 Node.js，暂时无法查询", systemImage: "exclamationmark.triangle")
+                        Label(L10n.tr("未找到 Node.js，暂时无法查询"), systemImage: "exclamationmark.triangle")
                             .font(.system(size: 11.5)).foregroundStyle(Palette.warn)
                     }
                 }
@@ -56,6 +56,7 @@ struct MenuBarView: View {
             Rectangle().fill(Palette.border).frame(height: 1)
             footer
         }
+        .appLanguageEnvironment()
         .frame(width: 420)
         .foregroundStyle(Palette.ink)
         .background(Palette.canvas)
@@ -66,19 +67,19 @@ struct MenuBarView: View {
                 .font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.accent)
                 .accessibilityHidden(true)
             Text(AppBrand.name).font(.system(size: 14, weight: .semibold))
-            Text("额度").font(.system(size: 11, weight: .medium))
+            Text(L10n.tr("额度")).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.accent)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Palette.accentSoft, in: Capsule())
             Spacer()
             if engine.isRefreshingAll {
                 ProgressView().controlSize(.mini).frame(width: 26, height: 26)
-                    .accessibilityLabel("正在刷新额度")
+                    .accessibilityLabel(L10n.tr("正在刷新额度"))
             } else {
                 Button(action: onRefresh) { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(QuickPanelIconStyle())
-                    .accessibilityLabel("刷新所有可查询账号")
-                    .help("仅查询额度，不发送模型调用")
+                    .accessibilityLabel(L10n.tr("刷新所有可查询账号"))
+                    .help(L10n.tr("仅查询额度，不发送模型调用"))
             }
         }
         .padding(.horizontal, 15).padding(.vertical, 12)
@@ -111,21 +112,21 @@ struct MenuBarView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("打开账号 \(row.name)")
-                .help("打开账号配置")
+                .accessibilityLabel(L10n.tr("打开账号 %@", String(describing: row.name)))
+                .help(L10n.tr("打开账号配置"))
                 if model.running.contains(row.id) {
                     ProgressView().controlSize(.mini).frame(width: 22, height: 22)
-                        .accessibilityLabel("正在查询 \(row.name)")
+                        .accessibilityLabel(L10n.tr("正在查询 %@", String(describing: row.name)))
                 } else if row.canQuery {
                     Button { model.query(row.id) } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(QuickPanelIconStyle(size: 22))
                         .disabled(!model.quotaConfigured(row))
-                        .accessibilityLabel("查询 \(row.name) 的额度")
+                        .accessibilityLabel(L10n.tr("查询 %@ 的额度", String(describing: row.name)))
                 }
             }
             if row.canQuery {
                 if snapshot.metrics.isEmpty {
-                    Text(model.quotaConfigured(row) ? snapshot.status : "查询凭证待配置")
+                    Text(model.quotaConfigured(row) ? snapshot.status : L10n.tr("查询凭证待配置"))
                         .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
                         .padding(.vertical, 3)
                 } else {
@@ -146,29 +147,29 @@ struct MenuBarView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted)
             } else {
-                Text("仅 API 调用").font(.system(size: 11.5)).foregroundStyle(Palette.muted)
+                Text(L10n.tr("仅 API 调用")).font(.system(size: 11.5)).foregroundStyle(Palette.muted)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 11))
         .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Palette.border.opacity(0.8), lineWidth: 0.7))
         .contextMenu {
-            Button("打开账号") { onOpenAccount(row.id) }
-            Button("查询额度") { model.query(row.id) }.disabled(!row.canQuery || !model.quotaConfigured(row))
+            Button(L10n.tr("打开账号")) { onOpenAccount(row.id) }
+            Button(L10n.tr("查询额度")) { model.query(row.id) }.disabled(!row.canQuery || !model.quotaConfigured(row))
             Divider()
-            Button(panelCtrl.isVisible ? "关闭悬浮速览" : "打开悬浮速览", action: onTogglePanel)
-            Button("管理账号…", action: onOpenSettings)
+            Button(panelCtrl.isVisible ? L10n.tr("关闭悬浮速览") : L10n.tr("打开悬浮速览"), action: onTogglePanel)
+            Button(L10n.tr("管理账号…"), action: onOpenSettings)
         }
     }
     private var footer: some View {
         HStack(spacing: 8) {
             Button(action: onOpenSettings) {
-                Label("管理账号", systemImage: "slider.horizontal.3")
+                Label(L10n.tr("管理账号"), systemImage: "slider.horizontal.3")
             }.buttonStyle(QuickPanelTextStyle())
             Spacer()
-            Text("\(accounts.count) 个账号").font(.system(size: 11)).foregroundStyle(Palette.muted)
+            Text(L10n.tr("%@ 个账号", String(describing: accounts.count))).font(.system(size: 11)).foregroundStyle(Palette.muted)
             Button(action: onTogglePanel) {
-                Label(panelCtrl.isVisible ? "关闭悬浮" : "悬浮速览", systemImage: "rectangle.on.rectangle")
+                Label(panelCtrl.isVisible ? L10n.tr("关闭悬浮") : L10n.tr("悬浮速览"), systemImage: "rectangle.on.rectangle")
             }.buttonStyle(QuickPanelTextStyle())
         }
         .padding(.horizontal, 11).padding(.vertical, 9)
@@ -176,10 +177,10 @@ struct MenuBarView: View {
     private var emptyState: some View {
         VStack(alignment: .center, spacing: 9) {
             Image(systemName: "square.stack.3d.up").font(.system(size: 23)).foregroundStyle(Palette.muted)
-            Text("暂无显示中的账号").font(.system(size: 12.5, weight: .medium))
-            Text("在账号管理中添加账号，或开启展示。")
+            Text(L10n.tr("暂无显示中的账号")).font(.system(size: 12.5, weight: .medium))
+            Text(L10n.tr("在账号管理中添加账号，或开启展示。"))
                 .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
-            Button("管理账号", action: onOpenSettings).barButton()
+            Button(L10n.tr("管理账号"), action: onOpenSettings).barButton()
         }
         .frame(maxWidth: .infinity).padding(.vertical, 24)
     }

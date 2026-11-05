@@ -5,6 +5,7 @@ import QuartzCore
 @main
 struct TokenHUDApp: App {
     @StateObject private var engine: DataEngine
+    @State private var language = AppLanguageSettings.shared
 
     init() {
         let environment = ProcessInfo.processInfo.environment
@@ -12,7 +13,7 @@ struct TokenHUDApp: App {
         let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         let paths = AppConfigPaths(environment: environment, userHome: home,
                                    workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-        let bundle = Bundle.module.resourceURL?.appendingPathComponent("providers")
+        let bundle = Bundle.appResources.resourceURL?.appendingPathComponent("providers")
         switch mode {
         case .render(let directory):
             do {
@@ -72,26 +73,27 @@ struct TokenHUDApp: App {
     }
 
     var body: some Scene {
-        Settings { EmptyView() }
+        let locale = language.locale
+        Settings { EmptyView().environment(\.locale, locale) }
             .commands {
                 CommandGroup(replacing: .appSettings) {
-                    Button("设置与外观…") { SettingsWindowManager.shared.showSettings() }
+                    Button(L10n.tr("设置与外观…")) { SettingsWindowManager.shared.showSettings() }
                         .keyboardShortcut(",", modifiers: .command)
                 }
-                CommandMenu("账号") {
-                    Button("账号管理…") { SettingsWindowManager.shared.show() }.keyboardShortcut("0", modifiers: .command)
-                    Button("添加账号…") {
+                CommandMenu(L10n.tr("账号")) {
+                    Button(L10n.tr("账号管理…")) { SettingsWindowManager.shared.show() }.keyboardShortcut("0", modifiers: .command)
+                    Button(L10n.tr("添加账号…")) {
                         SettingsWindowManager.shared.show()
                         SettingsWindowManager.shared.modelForQuery()?.openTemplates()
                     }.keyboardShortcut("n", modifiers: .command)
-                    Button("导入账号…") {
+                    Button(L10n.tr("导入账号…")) {
                         SettingsWindowManager.shared.show()
                         SettingsWindowManager.shared.modelForQuery()?.openImport()
                     }
                     Divider()
-                    Button("刷新所有可查询账号") { Task { await engine.refreshBalancesOnly() } }
+                    Button(L10n.tr("刷新所有可查询账号")) { Task { await engine.refreshBalancesOnly() } }
                         .keyboardShortcut("r", modifiers: [.command, .shift])
-                    Button("切换悬浮速览") { StatusItemController.shared?.panelController.toggle() }
+                    Button(L10n.tr("切换悬浮速览")) { StatusItemController.shared?.panelController.toggle() }
                         .keyboardShortcut("h", modifiers: [.command, .shift])
                 }
             }
@@ -113,6 +115,7 @@ struct TokenHUDApp: App {
             guard onlyScene == nil || onlyScene == name else { return }
             var observation = capture(view, to: output.appendingPathComponent(name + ".png"), size: size, dark: dark)
             observation["scene"] = name
+            observation["resource_bundle"] = Bundle.appResources.bundleURL.path
             observations.append(observation)
         }
         for width: CGFloat in [640, 900, 1200] {
@@ -138,6 +141,10 @@ struct TokenHUDApp: App {
                      size: NSSize(width: width, height: 780), dark: dark)
             }
         }
+        let preferences = model()
+        preferences.navPage = .settings
+        shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
+             size: NSSize(width: 1000, height: 1100), dark: false)
         let quick = model()
         let panel = PanelController(engine: fixture.engine, defaults: fixture.defaults)
         for dark in [false, true] {

@@ -35,7 +35,7 @@ enum SettingsValidation {
                              authStyle: String, builtin: Bool,
                              hasExistingKey: Bool = false) -> [String: String] {
         var e: [String: String] = [:]
-        if name.trimmingCharacters(in: .whitespaces).isEmpty { e["name"] = "账号名称不能为空" }
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { e["name"] = L10n.tr("账号名称不能为空") }
         return e
     }
 
@@ -70,14 +70,14 @@ enum SettingsValidation {
         var e: [String: String] = [:]
         let pending = timeInput.trimmingCharacters(in: .whitespaces)
         if !pending.isEmpty, !isValidTime(pending) {
-            e["time"] = "时间必须是严格 HH:MM，例如 09:00；9:00 不合法"
+            e["time"] = L10n.tr("时间必须是严格 HH:MM，例如 09:00；9:00 不合法")
         } else if !pending.isEmpty, times.contains(pending) {
-            e["time"] = "此时间点已存在，请勿重复添加"
+            e["time"] = L10n.tr("此时间点已存在，请勿重复添加")
         }
-        if times.contains(where: { !isValidTime($0) }) { e["times"] = "已有时间点格式错误，请移除后重填" }
-        if Set(times).count != times.count { e["times"] = "时间点不可重复" }
+        if times.contains(where: { !isValidTime($0) }) { e["times"] = L10n.tr("已有时间点格式错误，请移除后重填") }
+        if Set(times).count != times.count { e["times"] = L10n.tr("时间点不可重复") }
         if triggerEnabled && times.isEmpty && pending.isEmpty {
-            e["times"] = "开启模型定时调用时至少需要一个时间点"
+            e["times"] = L10n.tr("开启模型定时调用时至少需要一个时间点")
         }
         return e
     }
@@ -102,11 +102,11 @@ enum CapabilityStatus: Equatable {
 
     var label: String {
         switch self {
-        case .configured: return "已支持"
-        case .notConfigured: return "未配置"
-        case .notIntegrated: return "未接入"
-        case .notSupported: return "不支持"
-        case .unverified: return "待核实"
+        case .configured: return L10n.tr("已支持")
+        case .notConfigured: return L10n.tr("未配置")
+        case .notIntegrated: return L10n.tr("未接入")
+        case .notSupported: return L10n.tr("不支持")
+        case .unverified: return L10n.tr("待核实")
         }
     }
 
@@ -197,18 +197,18 @@ struct AccountRow: Identifiable {
     var authLabel: String {
         switch authStyle {
         case "apikey": return "API Key"
-        default: return "Auth · 本机授权"
+        default: return L10n.tr("Auth · 本机授权")
         }
     }
 
     /// 列表状态点: (色, 文案) — 停用优先于一切
     var status: (Color, String) {
-        if !enabled { return (Palette.muted, "已停用") }
-        if let reason = health.issueReason { return (Palette.danger, "账号异常：\(reason)") }
-        if !isConfigured { return (Palette.warn, "未配置") }
-        guard let c = state?.cache else { return (Palette.muted, "未查询") }
-        if c.error != nil { return (Palette.warn, "暂时查询失败 / 旧值") }
-        return (Palette.ok, "正常")
+        if !enabled { return (Palette.muted, L10n.tr("已停用")) }
+        if let reason = health.issueReason { return (Palette.danger, L10n.tr("账号异常：%@", String(describing: reason))) }
+        if !isConfigured { return (Palette.warn, L10n.tr("未配置")) }
+        guard let c = state?.cache else { return (Palette.muted, L10n.tr("未查询")) }
+        if c.error != nil { return (Palette.warn, L10n.tr("暂时查询失败 / 旧值")) }
+        return (Palette.ok, L10n.tr("正常"))
     }
 }
 
@@ -250,23 +250,23 @@ struct AddressRow: Equatable {
 }
 
 enum AddressPresentation {
-    static let builtinNote = "内置供应商，此项由模板提供，不可修改"
+    static var builtinNote: String { L10n.tr("内置供应商，此项由模板提供，不可修改") }
 
     /// 模板实例有 queryUrl → 额度查询地址 (模板提供); 通用自定义 → 服务地址 (用户填); 有调用端点再加一行
     static func rows(generic: Bool, queryUrl: String?, refreshUrl: String?,
                      configUrl: String) -> [AddressRow] {
         var out: [AddressRow] = []
         if generic {
-            out.append(AddressRow(label: "服务地址",
-                                  value: configUrl.isEmpty ? "未填写" : configUrl,
-                                  note: "兼容 OpenAI / Anthropic 的服务根地址，用于额度查询与测试调用。"))
+            out.append(AddressRow(label: L10n.tr("服务地址"),
+                                  value: configUrl.isEmpty ? L10n.tr("未填写") : configUrl,
+                                  note: L10n.tr("兼容 OpenAI / Anthropic 的服务根地址，用于额度查询与测试调用。")))
         } else if let q = queryUrl, !q.isEmpty {
             // 脚本型模板 manifest 无 queryUrl: 调用方读 auth 的 apiUrl 兜底
-            out.append(AddressRow(label: "额度查询地址", value: q, note: builtinNote))
+            out.append(AddressRow(label: L10n.tr("额度查询地址"), value: q, note: builtinNote))
         }
         if let r = refreshUrl, !r.isEmpty {
-            out.append(AddressRow(label: "调用地址", value: r,
-                                  note: "测试调用实际请求的端点，只读。"))
+            out.append(AddressRow(label: L10n.tr("调用地址"), value: r,
+                                  note: L10n.tr("测试调用实际请求的端点，只读。")))
         }
         return out
     }
@@ -312,9 +312,9 @@ final class SettingsModel: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .quota: return "额度"
-            case .config: return "配置"
-            case .trigger: return "自动任务"
+            case .quota: return L10n.tr("额度")
+            case .config: return L10n.tr("配置")
+            case .trigger: return L10n.tr("自动任务")
             }
         }
     }
@@ -345,11 +345,11 @@ final class SettingsModel: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .all: return "全部"
+            case .all: return L10n.tr("全部")
             case .apikey: return "API Key"
-            case .oauth: return "授权登录"
-            case .enabled: return "已启用"
-            case .disabled: return "已停用"
+            case .oauth: return L10n.tr("授权登录")
+            case .enabled: return L10n.tr("已启用")
+            case .disabled: return L10n.tr("已停用")
             }
         }
     }
@@ -490,7 +490,7 @@ final class SettingsModel: ObservableObject {
     var grouped: [(String, [AccountRow])] {
         let all = accounts
         return [("API Key", all.filter { $0.authStyle == "apikey" }),
-                ("授权登录", all.filter { $0.authStyle != "apikey" })]
+                (L10n.tr("授权登录"), all.filter { $0.authStyle != "apikey" })]
             .filter { !$0.1.isEmpty }
     }
 
@@ -531,21 +531,22 @@ final class SettingsModel: ObservableObject {
 
     func authenticationIssue(_ config: ProviderConfig) -> String? {
         do { _ = try ProviderAuthentication.resolveCall(config); return nil }
-        catch { return error.localizedDescription }
+        catch { return L10n.errorDescription(error) }
     }
 
     func quotaAuthenticationIssue(_ config: ProviderConfig) -> String? {
         guard config.quotaMode != "none" else { return nil }
         do { _ = try ProviderAuthentication.resolveQuota(config); return nil }
-        catch { return error.localizedDescription }
+        catch { return L10n.errorDescription(error) }
     }
 
     func authSourceDescription(_ config: ProviderConfig) -> String {
-        ProviderAuthentication.sourceDescription(config)
+        guard config.credentialSource != nil else { return L10n.tr("该供应商尚未声明本机 Auth 授权来源") }
+        return ProviderAuthentication.credentialFileURL(for: config)?.path ?? L10n.tr("请选择本机 Auth 授权文件")
     }
 
     func draftAuthSourceDescription() -> String {
-        guard let draft else { return "尚未选择账号" }
+        guard let draft else { return L10n.tr("尚未选择账号") }
         return authSourceDescription(callConfigForDraft(draft.values))
     }
 
@@ -555,24 +556,24 @@ final class SettingsModel: ObservableObject {
         url.percentEncodedPassword = nil
         url.query = nil
         url.fragment = nil
-        return url.string ?? "来源地址"
+        return url.string ?? L10n.tr("来源地址")
     }
 
     func baseAddressDescription(_ config: ProviderConfig) -> String {
         if config.sourceReference != nil {
             do { return Self.safeSourceLocation(try ProviderAuthentication.resolveCall(config).apiBaseURL) }
-            catch { return "来源调用尚不可用" }
+            catch { return L10n.tr("来源调用尚不可用") }
         }
-        guard config.authMode == "auth" else { return config.apiBaseURL.isEmpty ? "未配置" : config.apiBaseURL }
+        guard config.authMode == "auth" else { return config.apiBaseURL.isEmpty ? L10n.tr("未配置") : config.apiBaseURL }
         do { return try ProviderAuthentication.resolveCall(config).apiBaseURL }
-        catch { return "Auth 调用尚不可用" }
+        catch { return L10n.tr("Auth 调用尚不可用") }
     }
 
     func baseProtocolDescription(_ config: ProviderConfig) -> String {
         let name: String
         if config.authMode == "auth" || config.sourceReference != nil {
             do { name = try ProviderAuthentication.resolveCall(config).refreshProtocol }
-            catch { return "由 Auth 调用能力提供；当前不可用" }
+            catch { return L10n.tr("由 Auth 调用能力提供；当前不可用") }
         } else { name = config.refreshProtocol }
         switch name {
         case "anthropic": return "Anthropic Messages"
@@ -604,15 +605,15 @@ final class SettingsModel: ObservableObject {
         let builtin = engine.templates.map { t -> TemplateChoice in
             let queries = t.manifest.queryUrl != nil || t.manifest.cacheFile != nil
             return TemplateChoice(id: t.slug, label: t.manifest.fullName,
-                                  detail: queries ? "内置 · 地址由模板提供" : "内置 · 只提供额度查询",
-                                  tag: t.manifest.authStyle == "apikey" ? "API Key" : "本机 CLI",
+                                  detail: queries ? L10n.tr("内置 · 地址由模板提供") : L10n.tr("内置 · 只提供额度查询"),
+                                  tag: t.manifest.authStyle == "apikey" ? "API Key" : L10n.tr("本机 CLI"),
                                   authStyle: t.manifest.authStyle, manifest: t.manifest,
                                   proto: t.manifest.refreshProtocol)
         }
         return builtin + [
-            TemplateChoice(id: "generic-openai", label: "通用 OpenAI 兼容", detail: "自定义 · 可改地址",
+            TemplateChoice(id: "generic-openai", label: L10n.tr("通用 OpenAI 兼容"), detail: L10n.tr("自定义 · 可改地址"),
                            tag: "API Key", authStyle: "apikey", manifest: nil, proto: "openai"),
-            TemplateChoice(id: "generic-anthropic", label: "通用 Anthropic 兼容", detail: "自定义 · 可改地址",
+            TemplateChoice(id: "generic-anthropic", label: L10n.tr("通用 Anthropic 兼容"), detail: L10n.tr("自定义 · 可改地址"),
                            tag: "API Key", authStyle: "apikey", manifest: nil, proto: "anthropic"),
         ]
     }
@@ -707,7 +708,7 @@ final class SettingsModel: ObservableObject {
         importOpen = true
     }
 
-    static let sourceReadOnlyMessage = "导入账号的配置只读，请到来源工具修改；本地启停、显示和删除关联仍可使用。"
+    static var sourceReadOnlyMessage: String { L10n.tr("导入账号的配置只读，请到来源工具修改；本地启停、显示和删除关联仍可使用。") }
 
     func configurationReadOnly(_ slug: String?) -> Bool {
         guard let slug, let plugin = engine.allPlugins.first(where: { $0.slug == slug }) else { return false }
@@ -759,7 +760,7 @@ final class SettingsModel: ObservableObject {
         showingTemplates = false
         navPage = .detail
         tab = .config
-        flash("已复制配置，请填写新账号凭证；定时调用保持关闭", error: false)
+        flash(L10n.tr("已复制配置，请填写新账号凭证；定时调用保持关闭"), error: false)
     }
 
     func discardDraft() {
@@ -804,19 +805,19 @@ final class SettingsModel: ObservableObject {
         } else {
             tab = .config
         }
-        flash("草稿已取消", error: false)
+        flash(L10n.tr("草稿已取消"), error: false)
     }
 
     func addTime() {
         guard var d = draft, !rejectSourceConfigurationEdit(d.slug) else { return }
         let t = d.timeInput.trimmingCharacters(in: .whitespaces)
         guard SettingsValidation.isValidTime(t) else {
-            errors["time"] = "请使用严格的 HH:MM 格式，例如 09:00；9:00 不合法"
+            errors["time"] = L10n.tr("请使用严格的 HH:MM 格式，例如 09:00；9:00 不合法")
             topError = errors["time"] ?? ""
             return
         }
         guard !d.values.times.contains(t) else {
-            errors["time"] = "此时间点已存在，请勿重复添加"
+            errors["time"] = L10n.tr("此时间点已存在，请勿重复添加")
             topError = errors["time"] ?? ""
             return
         }
@@ -826,20 +827,20 @@ final class SettingsModel: ObservableObject {
         errors["time"] = nil; errors["times"] = nil
         topError = ""
         draft = d
-        flash("已加入草稿：\(t)", error: false)
+        flash(L10n.tr("已加入草稿：%@", String(describing: t)), error: false)
     }
 
     func removeTime(at index: Int) {
         guard var d = draft, !rejectSourceConfigurationEdit(d.slug), d.values.times.indices.contains(index) else { return }
         let removed = d.values.times.remove(at: index)
         draft = d
-        flash("已从草稿移除 \(removed)", error: false)
+        flash(L10n.tr("已从草稿移除 %@", String(describing: removed)), error: false)
     }
 
     func save() {
         guard let d = draft, !rejectSourceConfigurationEdit(d.slug) else { return }
         guard !isTestingCurrentConfig else {
-            topError = "测试调用进行中，请等待结果后再保存；当前输入已保留。"
+            topError = L10n.tr("测试调用进行中，请等待结果后再保存；当前输入已保留。")
             flash(topError, error: true)
             return
         }
@@ -850,11 +851,11 @@ final class SettingsModel: ObservableObject {
             hasExistingKey: d.isNew ? false : d.hasExistingKey)
         if d.values.authMode == "apikey", !draftBuiltin(),
            !d.values.url.isEmpty && !SettingsValidation.isValidURL(d.values.url) {
-            errs["url"] = "API Base URL 必须是有效的 http(s) 地址"
+            errs["url"] = L10n.tr("API Base URL 必须是有效的 http(s) 地址")
         }
         if d.values.quotaMode == "endpoint" && !d.values.queryURL.isEmpty
             && !SettingsValidation.isValidURL(d.values.queryURL) {
-            errs["queryURL"] = "额度查询 URL 必须是有效的 http(s) 地址"
+            errs["queryURL"] = L10n.tr("额度查询 URL 必须是有效的 http(s) 地址")
         }
         let triggerErrs = SettingsValidation.triggerErrors(
             times: d.values.times, timeInput: d.timeInput,
@@ -880,16 +881,16 @@ final class SettingsModel: ObservableObject {
             if let confirmResumePlan { confirmed = confirmResumePlan() }
             else {
                 let alert = NSAlert()
-                alert.messageText = "开启模型定时调用？"
+                alert.messageText = L10n.tr("开启模型定时调用？")
                 let name = values.name.trimmingCharacters(in: .whitespaces)
-                alert.informativeText = "开启后 \(name) 将在设定时间点自动发送一次模型调用，每次都会消耗该账号额度。确定开启？"
-                alert.addButton(withTitle: "开启")
-                alert.addButton(withTitle: "取消保存")
+                alert.informativeText = L10n.tr("开启后 %@ 将在设定时间点自动发送一次模型调用，每次都会消耗该账号额度。确定开启？", String(describing: name))
+                alert.addButton(withTitle: L10n.tr("开启"))
+                alert.addButton(withTitle: L10n.tr("取消保存"))
                 alert.alertStyle = .warning
                 confirmed = alert.runModal() == .alertFirstButtonReturn
             }
             guard confirmed else {
-                topError = "已取消保存，模型定时调用未启用；当前输入已保留。"
+                topError = L10n.tr("已取消保存，模型定时调用未启用；当前输入已保留。")
                 flash(topError, error: true)
                 return
             }
@@ -911,12 +912,12 @@ final class SettingsModel: ObservableObject {
             if d.isNew { tab = .config }
             navPage = .detail
             flash(incomplete
-                  ? "已保存；API 调用配置待补全，定时调用保持关闭"
-                  : "已保存：\(values.name.trimmingCharacters(in: .whitespaces))", error: false)
+                  ? L10n.tr("已保存；API 调用配置待补全，定时调用保持关闭")
+                  : L10n.tr("已保存：%@", String(describing: values.name.trimmingCharacters(in: .whitespaces))), error: false)
             // P1-1: 保存不发请求 (FR-05.2) — 不再触发 forceRefresh; 新快照等 interval 到期由 10s timer 按 isAttemptFresh 判定
         } catch {
-            topError = "保存失败：\(error.localizedDescription)"
-            flash("保存失败：\(error.localizedDescription)", error: true)
+            topError = L10n.tr("保存失败：%@", String(describing: error.localizedDescription))
+            flash(L10n.tr("保存失败：%@", String(describing: error.localizedDescription)), error: true)
         }
     }
 
@@ -1004,7 +1005,7 @@ final class SettingsModel: ObservableObject {
         guard let slug = d.slug, let p = engine.allPlugins.first(where: { $0.slug == slug }),
               let af = authURL(p) else {
             throw NSError(domain: "TokenHUD", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "账号已不存在，请重新选择"])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.tr("账号已不存在，请重新选择")])
         }
         guard !p.manifest.isSourceConfigurationReadOnly else {
             throw ProviderAuthenticationError(message: Self.sourceReadOnlyMessage)
@@ -1012,7 +1013,7 @@ final class SettingsModel: ObservableObject {
         if p.manifest.authStyle != "apikey",
            !AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
             throw NSError(domain: "TokenHUD", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "凭证来自外部只读文件，请新建独立账号"])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.tr("凭证来自外部只读文件，请新建独立账号")])
         }
         let previous = readConfig(p)
         let cfg = draftConfig(values, existing: previous)
@@ -1060,11 +1061,11 @@ final class SettingsModel: ObservableObject {
 
     func query(_ slug: String) {
         guard let row = row(slug), row.canQuery else {
-            flash("该账号没有额度查询地址，无法查询额度", error: true)
+            flash(L10n.tr("该账号没有额度查询地址，无法查询额度"), error: true)
             return
         }
         guard quotaConfigured(row) else {
-            flash("用量查询尚未配置完整，请检查基础认证与查询地址", error: true)
+            flash(L10n.tr("用量查询尚未配置完整，请检查基础认证与查询地址"), error: true)
             return
         }
         guard !running.contains(slug) else { return }
@@ -1076,14 +1077,14 @@ final class SettingsModel: ObservableObject {
             running.remove(slug)
             lastRun[slug] = (outcome.ok, ms, Date())
             if outcome.ok { lastSuccess[slug] = Date() }
-            flash(outcome.ok ? "额度已更新（\(ms) ms）" : "查询失败：\(outcome.reason)", error: !outcome.ok)
+            flash(outcome.ok ? L10n.tr("额度已更新（%@ ms）", String(describing: ms)) : L10n.tr("查询失败：%@", String(describing: outcome.reason)), error: !outcome.ok)
             if outcome.ok { engine.reloadRegistry() }
         }
     }
 
     func testCall(_ slug: String) {
         guard let row = row(slug), row.canCall else {
-            flash("该账号尚未接入模型调用", error: true)
+            flash(L10n.tr("该账号尚未接入模型调用"), error: true)
             return
         }
         var config = readConfig(row.plugin)
@@ -1101,18 +1102,18 @@ final class SettingsModel: ObservableObject {
 
     /// 使用点击时的当前输入，不保存凭证、配置或计划。
     func testCallDraft(values: DraftValues) {
-        guard let draft else { flash("请先打开账号配置", error: true); return }
+        guard let draft else { flash(L10n.tr("请先打开账号配置"), error: true); return }
         guard !rejectSourceConfigurationEdit(draft.slug) else { return }
         let config = callConfigForDraft(values)
         performTestCall(config: config, key: callTestResultKey, source: "当前输入",
-                        providerName: values.name.isEmpty ? "新账号" : values.name)
+                        providerName: values.name.isEmpty ? L10n.tr("新账号") : values.name)
     }
 
     private func performTestCall(config original: ProviderConfig, key: String, source: String, providerName: String) {
         let config: ProviderConfig
         do { config = try ProviderAuthentication.resolveCall(original) }
         catch {
-            let message = error.localizedDescription
+            let message = L10n.errorDescription(error)
             callTestResults[key] = CallTestResult(phase: .failure, model: original.testModel,
                 target: CallTestResult.targetDescription(original.refreshUrl), sourceLabel: source,
                 message: message, date: Date())
@@ -1124,22 +1125,22 @@ final class SettingsModel: ObservableObject {
             CallTestResult(phase: phase, model: config.testModel, target: target,
                            sourceLabel: source, message: message, date: Date())
         }
-        guard !callRunning.contains(key) else { flash("该账号已有测试进行中", error: true); return }
+        guard !callRunning.contains(key) else { flash(L10n.tr("该账号已有测试进行中"), error: true); return }
         let invalid: String?
-        if !SettingsValidation.isValidURL(config.refreshUrl) { invalid = "请先填写有效的调用地址" }
-        else if config.refreshKey.isEmpty { invalid = "请先填写调用凭证；已清除的凭证不会用于测试" }
-        else if config.testModel.isEmpty { invalid = "请先填写测试模型" }
+        if !SettingsValidation.isValidURL(config.refreshUrl) { invalid = L10n.tr("请先填写有效的调用地址") }
+        else if config.refreshKey.isEmpty { invalid = L10n.tr("请先填写调用凭证；已清除的凭证不会用于测试") }
+        else if config.testModel.isEmpty { invalid = L10n.tr("请先填写测试模型") }
         else { invalid = nil }
         if let invalid {
             callTestResults[key] = result(.failure, invalid)
             flash(invalid, error: true)
             return
         }
-        guard pendingTestCall == nil else { flash("请先发送或取消当前待确认的测试", error: false); return }
+        guard pendingTestCall == nil else { flash(L10n.tr("请先发送或取消当前待确认的测试"), error: false); return }
         let confirmation = CallTestConfirmation(sourceLabel: source, model: config.testModel,
                                                 target: target, providerName: providerName)
         if let confirmTestCall {
-            guard confirmTestCall(confirmation) else { flash("已取消测试，未发送请求", error: false); return }
+            guard confirmTestCall(confirmation) else { flash(L10n.tr("已取消测试，未发送请求"), error: false); return }
             executeConfirmedTestCall(config: config, key: key, source: source)
         } else {
             pendingTestCall = PendingTestCall(config: config, key: key, source: source)
@@ -1151,7 +1152,7 @@ final class SettingsModel: ObservableObject {
         guard pendingTestCall != nil else { return }
         pendingTestCall = nil
         pendingTestConfirmation = nil
-        flash("已取消测试，未发送请求", error: false)
+        flash(L10n.tr("已取消测试，未发送请求"), error: false)
     }
 
     func confirmPendingTestCall() {
@@ -1162,20 +1163,20 @@ final class SettingsModel: ObservableObject {
     }
 
     private func executeConfirmedTestCall(config: ProviderConfig, key: String, source: String) {
-        guard !callRunning.contains(key) else { flash("该账号已有测试进行中", error: true); return }
+        guard !callRunning.contains(key) else { flash(L10n.tr("该账号已有测试进行中"), error: true); return }
         let target = CallTestResult.targetDescription(config.refreshUrl)
         func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
             CallTestResult(phase: phase, model: config.testModel, target: target,
                            sourceLabel: source, message: message, date: Date())
         }
         callRunning.insert(key)
-        callTestResults[key] = result(.running, "正在发送一次测试调用…")
+        callTestResults[key] = result(.running, L10n.tr("正在发送一次测试调用…"))
         let execute = executeTestCall
         Task {
             guard await engine.callSlots.acquire(key) else {
                 callRunning.remove(key)
-                callTestResults[key] = result(.failure, "调用繁忙：已有调用进行中，本次未发送")
-                flash("调用繁忙，本次未发送", error: true)
+                callTestResults[key] = result(.failure, L10n.tr("调用繁忙：已有调用进行中，本次未发送"))
+                flash(L10n.tr("调用繁忙，本次未发送"), error: true)
                 return
             }
             let started = Date()
@@ -1186,9 +1187,9 @@ final class SettingsModel: ObservableObject {
             let phase: CallTestResult.Phase = response?.hasPrefix("✓") == true ? .success
                 : (response?.contains("结果不确定") == true ? .uncertain : .failure)
             let message: String
-            if phase == .success { message = "调用成功（\(milliseconds) ms）" }
+            if phase == .success { message = L10n.tr("调用成功（%@ ms）", String(describing: milliseconds)) }
             else {
-                message = ProviderRunner.redact(response ?? "调用未返回可验证的结果")
+                message = ProviderRunner.redact(response ?? L10n.tr("调用未返回可验证的结果"))
                     .replacingOccurrences(of: config.refreshKey, with: "[已隐藏]")
                     .replacingOccurrences(of: config.refreshUrl, with: target)
             }
@@ -1201,7 +1202,7 @@ final class SettingsModel: ObservableObject {
                 savedCallHealthResults[key] = completed
             }
             let summary = phase == .success ? message
-                : (phase == .uncertain ? "测试结果不确定，可能已消费；请查看下方完整详情" : "测试调用未成功，请查看下方完整详情")
+                : (phase == .uncertain ? L10n.tr("测试结果不确定，可能已消费；请查看下方完整详情") : L10n.tr("测试调用未成功，请查看下方完整详情"))
             flash(summary, error: phase != .success)
             if phase == .success, source == "已保存配置",
                let row = row(key), quotaConfigured(row),
@@ -1230,22 +1231,22 @@ final class SettingsModel: ObservableObject {
         if let confirmDeleteAccount { confirmed = confirmDeleteAccount() }
         else {
             let alert = NSAlert()
-            alert.messageText = "删除 \(p.manifest.fullName)?"
-            alert.informativeText = "将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。"
-            alert.addButton(withTitle: "删除")
-            alert.addButton(withTitle: "取消")
+            alert.messageText = L10n.tr("删除 %@?", String(describing: p.manifest.fullName))
+            alert.informativeText = L10n.tr("将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。")
+            alert.addButton(withTitle: L10n.tr("删除"))
+            alert.addButton(withTitle: L10n.tr("取消"))
             alert.alertStyle = .warning
             confirmed = alert.runModal() == .alertFirstButtonReturn
         }
         guard confirmed else { return }
         guard AccountFileOwnership.canRemovePluginDirectory(p.dir, slug: slug, userDir: userDir) else {
-            flash("无法删除：账号目录不属于本应用，已保留外部文件。", error: true)
+            flash(L10n.tr("无法删除：账号目录不属于本应用，已保留外部文件。"), error: true)
             return
         }
         do {
             try PluginGenerator.removePlugin(slug: slug, in: userDir)
         } catch {
-            flash("删除账号失败：\(error.localizedDescription)", error: true)
+            flash(L10n.tr("删除账号失败：%@", String(describing: error.localizedDescription)), error: true)
             return
         }
         if p.manifest.template != nil { engine.markTemplateDeleted(slug) }
@@ -1255,7 +1256,7 @@ final class SettingsModel: ObservableObject {
         if let af = authURL(p) {
             if AccountFileOwnership.canRemoveHUDFile(af, slug: slug, kind: .auth, hudDir: hudDir) {
                 do { try fm.removeItem(at: af) }
-                catch { cleanupFailures.append("凭证文件未移除") }
+                catch { cleanupFailures.append(L10n.tr("凭证文件未移除")) }
             } else if fm.fileExists(atPath: af.path) {
                 preservedSources = true
             }
@@ -1263,7 +1264,7 @@ final class SettingsModel: ObservableObject {
         let cache = DataEngine.cachePath(for: p, hudDir: hudDir)
         if AccountFileOwnership.canRemoveHUDFile(cache, slug: slug, kind: .cache, hudDir: hudDir) {
             do { try fm.removeItem(at: cache) }
-            catch { cleanupFailures.append("额度缓存未移除") }
+            catch { cleanupFailures.append(L10n.tr("额度缓存未移除")) }
         } else if fm.fileExists(atPath: cache.path) {
             preservedSources = true
         }
@@ -1275,12 +1276,12 @@ final class SettingsModel: ObservableObject {
         let hasSameName = engine.allPlugins.contains { $0.manifest.name == p.manifest.name }
         let removed = hasSameName ? Set([p.slug]) : Set([p.slug, p.manifest.name])
         if case .failure(let error) = engine.writeEnvsForHudSync(removingManagedNames: removed) {
-            cleanupFailures.append("HUD 未更新：\(error.localizedDescription)")
+            cleanupFailures.append(L10n.tr("HUD 未更新：%@", String(describing: error.localizedDescription)))
         }
         if cleanupFailures.isEmpty {
-            flash("已删除 \(p.manifest.fullName)" + (preservedSources ? "，外部来源文件已保留" : ""), error: false)
+            flash(L10n.tr("已删除 %@", String(describing: p.manifest.fullName)) + (preservedSources ? L10n.tr("，外部来源文件已保留") : ""), error: false)
         } else {
-            flash("已移除 \(p.manifest.fullName)，但\(cleanupFailures.joined(separator: "；"))", error: true)
+            flash(L10n.tr("已移除 %@，但%@", String(describing: p.manifest.fullName), String(describing: cleanupFailures.joined(separator: "；"))), error: true)
         }
     }
 
@@ -1288,9 +1289,9 @@ final class SettingsModel: ObservableObject {
         engine.installScripts()
         switch engine.writeEnvsForHudSync() {
         case .success:
-            flash("已写入 Claude Code HUD（下次渲染生效）", error: false)
+            flash(L10n.tr("已写入 Claude Code HUD（下次渲染生效）"), error: false)
         case .failure(let error):
-            flash("写入 HUD 失败：\(error.localizedDescription)", error: true)
+            flash(L10n.tr("写入 HUD 失败：%@", String(describing: error.localizedDescription)), error: true)
         }
     }
 
@@ -1299,7 +1300,7 @@ final class SettingsModel: ObservableObject {
     /// 停用暂停后台工作但保留计划; 重新启用已配置的调用计划前确认消费。
     func toggleMonitoring(_ slug: String, enabled: Bool) {
         guard let account = row(slug) else {
-            flash("账号不存在，无法修改启用状态", error: true)
+            flash(L10n.tr("账号不存在，无法修改启用状态"), error: true)
             return
         }
         if enabled && !account.enabled && account.canCall
@@ -1311,10 +1312,10 @@ final class SettingsModel: ObservableObject {
                     confirmed = confirmResumePlan()
                 } else {
                     let alert = NSAlert()
-                    alert.messageText = "启用账号并恢复定时调用？"
-                    alert.informativeText = "\(account.name) 已设置 \(times.joined(separator: "、")) 定时调用。启用后计划将恢复，每次调用会消耗额度。"
-                    alert.addButton(withTitle: "启用并恢复")
-                    alert.addButton(withTitle: "取消")
+                    alert.messageText = L10n.tr("启用账号并恢复定时调用？")
+                    alert.informativeText = L10n.tr("%@ 已设置 %@ 定时调用。启用后计划将恢复，每次调用会消耗额度。", String(describing: account.name), String(describing: times.joined(separator: "、")))
+                    alert.addButton(withTitle: L10n.tr("启用并恢复"))
+                    alert.addButton(withTitle: L10n.tr("取消"))
                     alert.alertStyle = .warning
                     confirmed = alert.runModal() == .alertFirstButtonReturn
                 }
@@ -1331,10 +1332,10 @@ final class SettingsModel: ObservableObject {
         let name = account.name
         switch sync {
         case .success:
-            flash(enabled ? "已启用 \(name)" : "已停用 \(name)，后台查询和定时调用已暂停",
+            flash(enabled ? L10n.tr("已启用 %@", String(describing: name)) : L10n.tr("已停用 %@，后台查询和定时调用已暂停", String(describing: name)),
                   error: false)
         case .failure(let error):
-            flash("\(name) 已\(enabled ? "启用" : "停用")，但 HUD 未更新：\(error.localizedDescription)",
+            flash(L10n.tr("%@ 已%@，但 HUD 未更新：%@", String(describing: name), String(describing: enabled ? L10n.tr("启用") : L10n.tr("停用")), String(describing: error.localizedDescription)),
                   error: true)
         }
     }
@@ -1342,7 +1343,7 @@ final class SettingsModel: ObservableObject {
     /// 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示
     func toggleFloating(_ slug: String, shown: Bool) {
         engine.setFloatingHidden(slug, hidden: !shown)
-        flash(shown ? "已在悬浮窗与菜单栏显示该账号" : "已从悬浮窗与菜单栏隐藏该账号（查询不受影响）",
+        flash(shown ? L10n.tr("已在悬浮窗与菜单栏显示该账号") : L10n.tr("已从悬浮窗与菜单栏隐藏该账号（查询不受影响）"),
               error: false)
     }
 
@@ -1350,10 +1351,10 @@ final class SettingsModel: ObservableObject {
     func toggleHudSync(_ slug: String, synced: Bool) {
         switch engine.setHudHidden(slug, hidden: !synced) {
         case .success:
-            flash(synced ? "已同步该账号到 Claude Code HUD" : "已从 Claude Code HUD 摘除该账号",
+            flash(synced ? L10n.tr("已同步该账号到 Claude Code HUD") : L10n.tr("已从 Claude Code HUD 摘除该账号"),
                   error: false)
         case .failure(let error):
-            flash("HUD 同步失败：\(error.localizedDescription)", error: true)
+            flash(L10n.tr("HUD 同步失败：%@", String(describing: error.localizedDescription)), error: true)
         }
     }
 
@@ -1400,13 +1401,13 @@ final class SettingsModel: ObservableObject {
             if let dict = outcomes["\(dayKey())|\(r.id)"],
                let last = dict.max(by: { $0.key < $1.key }) {
                 switch last.value {
-                case "fired": outcome = "\(last.key) 已登记，调用结果未知"
-                case "succeeded": outcome = "\(last.key) 调用成功"
-                case "failed": outcome = "\(last.key) 调用失败"
-                case "uncertain": outcome = "\(last.key) 结果不确定，可能已消费"
-                case "skipped:busy": outcome = "\(last.key) 跳过：调用繁忙"
-                case "skipped:disabled": outcome = "\(last.key) 跳过：账号或计划已停用"
-                default: outcome = "\(last.key) 调用结果未知"
+                case "fired": outcome = L10n.tr("%@ 已登记，调用结果未知", String(describing: last.key))
+                case "succeeded": outcome = L10n.tr("%@ 调用成功", String(describing: last.key))
+                case "failed": outcome = L10n.tr("%@ 调用失败", String(describing: last.key))
+                case "uncertain": outcome = L10n.tr("%@ 结果不确定，可能已消费", String(describing: last.key))
+                case "skipped:busy": outcome = L10n.tr("%@ 跳过：调用繁忙", String(describing: last.key))
+                case "skipped:disabled": outcome = L10n.tr("%@ 跳过：账号或计划已停用", String(describing: last.key))
+                default: outcome = L10n.tr("%@ 调用结果未知", String(describing: last.key))
                 }
             }
             let pausedByAccount = !r.enabled && canCall && !cfg.scheduleTimes.isEmpty
@@ -1435,10 +1436,10 @@ final class SettingsModel: ObservableObject {
         guard let d = draft, d.dirty || d.isNew else { return true }
         if let confirmDiscardChanges { return confirmDiscardChanges() }
         let alert = NSAlert()
-        alert.messageText = "放弃未保存的修改？"
-        alert.informativeText = "当前草稿尚未保存，离开后变更将丢失。"
-        alert.addButton(withTitle: "放弃修改")
-        alert.addButton(withTitle: "继续编辑")
+        alert.messageText = L10n.tr("放弃未保存的修改？")
+        alert.informativeText = L10n.tr("当前草稿尚未保存，离开后变更将丢失。")
+        alert.addButton(withTitle: L10n.tr("放弃修改"))
+        alert.addButton(withTitle: L10n.tr("继续编辑"))
         alert.alertStyle = .warning
         return alert.runModal() == .alertFirstButtonReturn
     }

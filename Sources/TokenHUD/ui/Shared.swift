@@ -11,7 +11,7 @@ func hudColor(_ c: HUDFmt.Color) -> Color {
 
 func formatPct(_ p: Double?) -> String {
     guard let p else { return "--%" }
-    return "\(Int(p.rounded()))%"
+    return L10n.percent(p.rounded(), fractionLength: 0...0)
 }
 
 /// manifest.accent 字符串 → Color (缺省系统强调色)

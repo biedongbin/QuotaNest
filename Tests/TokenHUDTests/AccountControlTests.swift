@@ -60,6 +60,26 @@ struct AccountControlTests {
         #expect(model.draft?.values.name == "未保存名称")
     }
 
+    @Test func hudSelectionUsesOnePreferenceAndProjectionFromEitherPage() throws {
+        let (model, root, defaults, suite) = try makeModel(confirmResume: { true })
+        defer { clean(root, defaults, suite) }
+        model.engine.setTracking("fixture", enabled: true)
+        // Both global settings and the supplier display page call this same operation.
+        model.toggleHudSync("fixture", synced: true)
+        #expect(!model.engine.hudHiddenSlugs.contains("fixture"))
+        #expect(!(defaults.stringArray(forKey: DataEngine.defaultsHudHiddenKey) ?? []).contains("fixture"))
+        #expect(model.engine.hudSyncNames.contains("fixture"))
+        let settingsURL = root.appendingPathComponent("settings.json")
+        let selected = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any])
+        #expect((selected["env"] as? [String: String])?["ACCOUNT_ENVS"] == "fixture")
+        model.toggleHudSync("fixture", synced: false)
+        #expect(model.engine.hudHiddenSlugs.contains("fixture"))
+        #expect((defaults.stringArray(forKey: DataEngine.defaultsHudHiddenKey) ?? []).contains("fixture"))
+        #expect(!model.engine.hudSyncNames.contains("fixture"))
+        let hidden = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any])
+        #expect((hidden["env"] as? [String: String])?["ACCOUNT_ENVS"] == "")
+    }
+
     @Test func cancellingPlanResumeLeavesAccountAndDraftUnchanged() throws {
         let (model, root, defaults, suite) = try makeModel(confirmResume: { false })
         defer { clean(root, defaults, suite) }

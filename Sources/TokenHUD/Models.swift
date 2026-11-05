@@ -236,6 +236,19 @@ struct WindowBucket: Codable, Equatable {
     var period: String?            // 周期描述
     var resetsAt: Int?
 
+    /// Standard labels emitted by the bundled adapters; custom provider labels
+    /// remain data and are displayed exactly as returned.
+    var displayLabel: String? { localizedLabel(language: AppLanguageSettings.shared.selection) }
+
+    func localizedLabel(language: AppLanguage) -> String? {
+        guard let label else { return nil }
+        switch label {
+        case "5小时", "本周", "本月", "余额", "剩余 Credits", "月剩余余额", "额度窗口":
+            return L10n.tr(label, language: language)
+        default: return label
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case label
         case usedPercentage = "used_percentage"

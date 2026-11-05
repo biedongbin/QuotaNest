@@ -87,7 +87,7 @@ struct QuietTabs: View {
                         .padding(.horizontal, 13).frame(height: 26)
                         .background(selection == items[index].0 ? Palette.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(selection == items[index].0 ? Palette.border : .clear, lineWidth: 0.5))
-                }.buttonStyle(.plain).accessibilityValue(selection == items[index].0 ? "已选择" : "")
+                }.buttonStyle(.plain).accessibilityValue(selection == items[index].0 ? L10n.tr("已选择") : "")
             }
         }.padding(3).background(Palette.badgeBg, in: RoundedRectangle(cornerRadius: 8)).fixedSize()
     }
@@ -149,13 +149,13 @@ extension View {
     }
 }
 func maskKey(_ key: String) -> String {
-    key.isEmpty ? "未配置" : "已配置 · ••••" + (key.count > 4 ? String(key.suffix(4)) : "")
+    key.isEmpty ? L10n.tr("未配置") : L10n.tr("已配置 · ••••") + (key.count > 4 ? String(key.suffix(4)) : "")
 }
 func formatCacheTime(_ epoch: Double?) -> String {
-    guard let epoch, epoch > 0 else { return "尚未查询" }
-    return Date(timeIntervalSince1970: epoch > 1e12 ? epoch / 1000 : epoch).formatted(.dateTime.month().day().hour().minute())
+    guard let epoch, epoch > 0 else { return L10n.tr("尚未查询") }
+    return Date(timeIntervalSince1970: epoch > 1e12 ? epoch / 1000 : epoch).formatted(.dateTime.month().day().hour().minute().locale(L10n.locale))
 }
 func formatResetAt(_ epoch: Int?) -> String? {
     guard let epoch else { return nil }
-    return Date(timeIntervalSince1970: TimeInterval(epoch)).formatted(.dateTime.month().day().hour().minute()) + " 重置"
+    return Date(timeIntervalSince1970: TimeInterval(epoch)).formatted(.dateTime.month().day().hour().minute().locale(L10n.locale)) + L10n.tr(" 重置")
 }

@@ -91,6 +91,35 @@ struct FloatingPanelTests {
         #expect(resolved.width == 260 && resolved.height == 40)
     }
 
+    @Test @MainActor func titleAppearsOnInteractionAndHidesFiveSecondsAfterLeaving() {
+        let defaults = FloatingPanelTestDefaults()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("floating-title-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let engine = DataEngine(hudDir: root.appendingPathComponent("hud"), bundleProvidersDir: nil,
+                                userProvidersDir: root.appendingPathComponent("providers"),
+                                runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")),
+                                defaults: defaults, settingsURL: root.appendingPathComponent("settings.json"))
+        let controller = PanelController(engine: engine, defaults: defaults)
+        defer { controller.hide() }
+        let start = Date(timeIntervalSince1970: 1_000)
+        #expect(!controller.titleVisible)
+        controller.pointerPresenceChanged(true, now: start)
+        #expect(!controller.titleVisible)
+        controller.revealTitle()
+        #expect(controller.titleVisible)
+        controller.pointerPresenceChanged(false, now: start)
+        controller.hideTitleIfDue(now: start.addingTimeInterval(4.99))
+        #expect(controller.titleVisible)
+        controller.pointerPresenceChanged(true, now: start.addingTimeInterval(4))
+        controller.hideTitleIfDue(now: start.addingTimeInterval(6))
+        #expect(controller.titleVisible)
+        controller.pointerPresenceChanged(false, now: start.addingTimeInterval(10))
+        controller.hideTitleIfDue(now: start.addingTimeInterval(14.99))
+        #expect(controller.titleVisible)
+        controller.hideTitleIfDue(now: start.addingTimeInterval(15))
+        #expect(!controller.titleVisible)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOKENHUD_FLOATING_PANEL_TESTS"] == "1"))
     @MainActor func panelShowHideToggleAndCloseStayConsistent() throws {
         let app = NSApplication.shared
@@ -116,6 +145,10 @@ struct FloatingPanelTests {
             .first { !before.contains(ObjectIdentifier($0)) })
         defer { panel.close() }
         #expect(controller.isVisible && panel.isVisible)
+        #expect(!controller.titleVisible)
+        #expect(panel.contentView?.gestureRecognizers.contains(where: { $0 is NSPanGestureRecognizer }) == true)
+        controller.toggleExpanded()
+        #expect(panel.contentView?.gestureRecognizers.filter { $0 is NSPanGestureRecognizer }.count == 1)
         let screens = NSScreen.screens.map(\.visibleFrame)
         try #require(!screens.isEmpty)
         #expect(screens.contains { $0.contains(panel.frame) })

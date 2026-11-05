@@ -52,6 +52,41 @@ final class FloatingPanel: NSPanel {
     private let defaults: UserDefaults
     var onHide: (() -> Void)?
     var onScreenChange: (() -> Void)?
+    var onInteraction: (() -> Void)?
+    private var windowDrag: NSPanGestureRecognizer?
+    private var dragMouseOrigin = NSPoint.zero
+    private var dragWindowOrigin = NSPoint.zero
+
+    /// A native pan recognizer delays clicks only until it knows whether this is a drag.
+    func enableContentDragging() {
+        if let windowDrag, let view = windowDrag.view { view.removeGestureRecognizer(windowDrag) }
+        let recognizer = NSPanGestureRecognizer(target: self, action: #selector(dragContent(_:)))
+        recognizer.buttonMask = 1
+        recognizer.delaysPrimaryMouseButtonEvents = true
+        contentView?.addGestureRecognizer(recognizer)
+        windowDrag = recognizer
+    }
+
+    @objc private func dragContent(_ recognizer: NSPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            onInteraction?()
+            dragMouseOrigin = NSEvent.mouseLocation
+            dragWindowOrigin = frame.origin
+        case .changed:
+            let point = NSEvent.mouseLocation
+            setFrameOrigin(NSPoint(x: dragWindowOrigin.x + point.x - dragMouseOrigin.x,
+                                   y: dragWindowOrigin.y + point.y - dragMouseOrigin.y))
+        case .ended, .cancelled:
+            persistFrame()
+        default: break
+        }
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown || event.type == .rightMouseDown { onInteraction?() }
+        super.sendEvent(event)
+    }
 
     init(contentView: NSView, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -117,6 +152,10 @@ extension FloatingPanel: NSWindowDelegate {
     }
 }
 
+private final class FloatingHostingView: NSHostingView<FloatingView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 // MARK: - Panel 生命周期 (App struct 是值语义, NSPanel 引用放这里)
 
 /// 悬浮窗风格
@@ -129,10 +168,10 @@ enum PanelStyle: String, CaseIterable, Identifiable {
     var preferredWidth: CGFloat { self == .compact ? 300 : 340 }
     var label: String {
         switch self {
-        case .card: return "卡片"
-        case .glass: return "玻璃"
-        case .compact: return "紧凑"
-        case .list: return "列表"
+        case .card: return L10n.tr("卡片")
+        case .glass: return L10n.tr("玻璃")
+        case .compact: return L10n.tr("紧凑")
+        case .list: return L10n.tr("列表")
         }
     }
 }
@@ -140,6 +179,44 @@ enum PanelStyle: String, CaseIterable, Identifiable {
 @MainActor
 final class PanelController: ObservableObject {
     @Published private(set) var isVisible = false
+    @Published private(set) var titleVisible = false
+    private var pointerInside = false
+    private var titleHideDeadline: Date?
+    private var titleHideTask: Task<Void, Never>?
+    private var renderedTitleVisible = false
+
+    func revealTitle() {
+        pointerInside = true
+        titleHideDeadline = nil
+        titleHideTask?.cancel()
+        titleVisible = true
+    }
+
+    func pointerPresenceChanged(_ inside: Bool, now: Date = Date()) {
+        pointerInside = inside
+        titleHideTask?.cancel()
+        titleHideDeadline = nil
+        guard !inside, titleVisible else { return }
+        titleHideDeadline = now.addingTimeInterval(5)
+        titleHideTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            self?.hideTitleIfDue()
+        }
+    }
+
+    func hideTitleIfDue(now: Date = Date()) {
+        guard !pointerInside, let deadline = titleHideDeadline, now >= deadline else { return }
+        titleVisible = false
+        titleHideDeadline = nil
+    }
+
+    private func resetTitle() {
+        titleHideTask?.cancel()
+        titleHideDeadline = nil
+        pointerInside = false
+        titleVisible = false
+    }
+
     private(set) var expanded = false // 默认紧凑 (单行迷你条)
     @Published var style: PanelStyle
     @Published var bgOpacity: Double
@@ -175,6 +252,7 @@ final class PanelController: ObservableObject {
     }
 
     deinit {
+        titleHideTask?.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }
 
@@ -202,11 +280,17 @@ final class PanelController: ObservableObject {
     }
 
     func show() {
+        resetTitle()
         if panel == nil {
             let hosting = makeHosting()
             hosting.layoutSubtreeIfNeeded()
             let p = FloatingPanel(contentView: hosting, defaults: defaults)
-            p.onHide = { [weak self] in self?.isVisible = false }
+            p.onHide = { [weak self] in
+                self?.isVisible = false
+                self?.resetTitle()
+            }
+            p.onInteraction = { [weak self] in self?.revealTitle() }
+            p.enableContentDragging()
             p.onScreenChange = { [weak self] in
                 Task { @MainActor [weak self] in self?.refreshScreenLimit() }
             }
@@ -222,6 +306,7 @@ final class PanelController: ObservableObject {
 
     func hide() {
         panel?.orderOut(nil)
+        resetTitle()
         isVisible = false
     }
 
@@ -234,6 +319,8 @@ final class PanelController: ObservableObject {
         let hosting = makeHosting()
         hosting.layoutSubtreeIfNeeded()
         panel.contentView = hosting
+        panel.enableContentDragging()
+        renderedTitleVisible = titleVisible
         panel.setContentSize(hosting.fittingSize)
         if panel.isVisible { panel.recoverPosition() }
     }
@@ -249,14 +336,17 @@ final class PanelController: ObservableObject {
         rebuild()
     }
 
-    private func resizeToContent(_ height: CGFloat) {
+    private func resizeToContent(_ height: CGFloat, withTitle: Bool) {
         guard let panel, height.isFinite, height > 0 else { return }
+        let titleChanged = renderedTitleVisible != withTitle
+        renderedTitleVisible = withTitle
         let targetHeight = min(height, maximumPanelHeight)
         guard abs(panel.frame.height - targetHeight) > 0.5 else { return }
         var frame = panel.frame
         let top = frame.maxY
         frame.size = NSSize(width: style.preferredWidth, height: targetHeight)
-        frame.origin.y = top - targetHeight
+        // Grow the title above the content so the click target stays under the pointer.
+        if !titleChanged { frame.origin.y = top - targetHeight }
         panel.setFrame(frame, display: panel.isVisible)
         if panel.isVisible { panel.recoverPosition() }
     }
@@ -264,7 +354,7 @@ final class PanelController: ObservableObject {
     private func makeHosting() -> NSHostingView<FloatingView> {
         layoutRevision += 1
         let revision = layoutRevision
-        return NSHostingView(rootView: FloatingView(
+        return FloatingHostingView(rootView: FloatingView(
             engine: engine, controller: self, expanded: expanded,
             onToggle: { [weak self] in self?.toggleExpanded() },
             onQuit: { NSApplication.shared.terminate(nil) },
@@ -277,9 +367,10 @@ final class PanelController: ObservableObject {
             operationModel: SettingsWindowManager.shared.modelForQuery(),
             maximumHeight: maximumPanelHeight,
             onHeightChange: { [weak self] height in
+                let withTitle = self?.titleVisible ?? false
                 Task { @MainActor [weak self] in
                     guard let self, self.layoutRevision == revision else { return }
-                    self.resizeToContent(height)
+                    self.resizeToContent(height, withTitle: withTitle)
                 }
             }
         ))
