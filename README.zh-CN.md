@@ -202,6 +202,7 @@ open ~/Applications/QuotaNest.app
 
 ## 致谢
 
+- [Linux.do](https://linux.do) — 社区交流与项目分享。
 - [Magpie](https://github.com/yetone/magpie) — 供应商生态与界面参考。
 - [CCS](https://github.com/biedongbin/claude-code-session-manager) — README 结构和演示视频制作方式参考。
 - [Claude Code](https://claude.com/claude-code) — Claude Code HUD 集成。

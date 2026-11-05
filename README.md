@@ -202,6 +202,7 @@ See the [provider catalog](docs/provider-catalog.md), [account/authentication co
 
 ## Acknowledgments
 
+- [Linux.do](https://linux.do) — community discussions and project sharing.
 - [Magpie](https://github.com/yetone/magpie) — provider ecosystem and interface references.
 - [CCS](https://github.com/biedongbin/claude-code-session-manager) — README structure and demo-video approach.
 - [Claude Code](https://claude.com/claude-code) — Claude Code HUD integration.
