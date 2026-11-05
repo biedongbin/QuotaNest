@@ -58,6 +58,13 @@ The demos use the current native app with isolated sample accounts and illustrat
 brew install --cask biedongbin/tap/quotanest
 ```
 
+Homebrew 7+ requires approval for a new third-party cask. If it reports an untrusted tap, trust only this cask and retry:
+
+```zsh
+brew trust --cask biedongbin/tap/quotanest
+brew install --cask biedongbin/tap/quotanest
+```
+
 The cask supports **Apple Silicon and Intel on macOS 14+** and installs Node.js for the quota adapters. It removes the quarantine attribute only from the installed QuotaNest app, matching the [CpampBar](https://github.com/biedongbin/cpamp-start-bar) installation approach. The app is ad-hoc signed, without Apple Developer ID signing or notarization.
 
 For later releases, use `brew upgrade --cask quotanest`. You can pass `--appdir="$HOME/Applications"` to keep applications in your home directory; quit and remove an older manually installed app bundle before taking it over with Homebrew. Account data is stored separately.

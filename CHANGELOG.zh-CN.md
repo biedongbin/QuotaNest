@@ -24,7 +24,7 @@
 
 - 版本化 macOS 应用打包及附注标签 `v1.0.0`。
 - 同时包含 Apple Silicon 与 Intel 架构的 universal ZIP，要求 macOS 14 及以上，并提供 SHA-256 校验文件。
-- 通过 `biedongbin/tap/quotanest` 提供 Homebrew cask 安装，包含额度适配脚本所需的 Node.js 运行时依赖。
+- 通过 `biedongbin/tap/quotanest` 提供 Homebrew cask 安装，包含额度适配脚本所需的 Node.js 运行时依赖。Homebrew 7 用户首次安装前，可用 `brew trust --cask biedongbin/tap/quotanest` 仅授权这个 cask。
 - 应用采用 ad-hoc 签名，未声称 Apple Developer ID 签名或公证；cask 仅移除已安装 QuotaNest 应用的隔离属性。
 
 [1.0.0]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0

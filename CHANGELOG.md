@@ -24,7 +24,7 @@ All notable changes are grouped by release version. Versions follow [Semantic Ve
 
 - Versioned macOS app packaging and an annotated `v1.0.0` tag.
 - A universal ZIP for Apple Silicon and Intel, requiring macOS 14 or later, with published SHA-256 checksums.
-- Homebrew cask installation through `biedongbin/tap/quotanest`, including the Node.js runtime used by quota adapters.
+- Homebrew cask installation through `biedongbin/tap/quotanest`, including the Node.js runtime used by quota adapters. Homebrew 7 users can approve only this cask with `brew trust --cask biedongbin/tap/quotanest` before the first install.
 - Ad-hoc application signing; no Apple Developer ID signing or notarization is claimed. The cask removes quarantine only from the installed QuotaNest app.
 
 [1.0.0]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0

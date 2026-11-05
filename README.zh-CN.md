@@ -58,6 +58,13 @@ https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e
 brew install --cask biedongbin/tap/quotanest
 ```
 
+Homebrew 7+ 首次加载第三方 cask 需要授权；如果提示来源尚未信任，只信任这个 cask 后重试：
+
+```zsh
+brew trust --cask biedongbin/tap/quotanest
+brew install --cask biedongbin/tap/quotanest
+```
+
 cask 支持 **macOS 14+ 的 Apple Silicon 和 Intel**，并安装额度适配脚本所需的 Node.js。参考 [CpampBar](https://github.com/biedongbin/cpamp-start-bar) 的方式，仅移除已安装 QuotaNest 应用的隔离属性。应用使用 ad-hoc 签名，未进行 Apple Developer ID 签名或公证。
 
 后续版本使用 `brew upgrade --cask quotanest`。如需安装到用户目录，可附加 `--appdir="$HOME/Applications"`；交给 Homebrew 管理前，请先退出并移走旧的手工安装 App 包。账号数据独立存储，不在 App 包内。
