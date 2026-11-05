@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>QuotaNest — quota ring and nested accounts</title>
+  <defs>
+    <radialGradient id="tile" cx="25%" cy="10%" r="110%"><stop stop-color="#252e52"/><stop offset="1" stop-color="#0e1227"/></radialGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b9ffe7"/><stop offset="1" stop-color="#3fcfcd"/></linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%"><feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#000" flood-opacity=".25"/></filter>
+  </defs>
+  <rect x="86" y="76" width="852" height="852" rx="188" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect x="87" y="77" width="850" height="850" rx="187" fill="none" stroke="#9abeff" stroke-opacity=".1" stroke-width="2"/>
+  <g fill="none" stroke="url(#mint)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M697.383 645.558 A242 242 0 1 1 710.235 351.194" stroke-width="66"/>
+    <path d="M693 648 L759 714" stroke-width="66"/>
+    <path d="M640.027 548.073 A145 145 0 0 1 383.973 548.073" stroke-width="32"/>
+    <path d="M587.934 517.375 A86 86 0 0 1 436.066 517.375" stroke-width="27"/>
+  </g>
+  <circle cx="512" cy="427" r="43" fill="url(#mint)"/>
+</svg>

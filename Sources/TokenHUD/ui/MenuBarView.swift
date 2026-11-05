@@ -65,7 +65,7 @@ struct MenuBarView: View {
             Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.accent)
                 .accessibilityHidden(true)
-            Text("TokenHUD").font(.system(size: 14, weight: .semibold))
+            Text(AppBrand.name).font(.system(size: 14, weight: .semibold))
             Text("额度").font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.accent)
                 .padding(.horizontal, 8).padding(.vertical, 4)

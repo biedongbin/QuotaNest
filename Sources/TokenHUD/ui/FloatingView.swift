@@ -98,7 +98,7 @@ struct FloatingView: View {
             Button("刷新额度", action: onRefreshAll)
             Button("管理账号…", action: onOpenSettings)
             Divider()
-            Button("退出 TokenHUD", action: onQuit)
+            Button("退出 \(AppBrand.name)", action: onQuit)
         }
     }
     private var header: some View {

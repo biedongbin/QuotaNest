@@ -30,7 +30,7 @@ struct AccountDetailView: View {
             }
             if model.draft != nil { draftActions }
         }
-        .navigationTitle("TokenHUD")
+        .navigationTitle(AppBrand.name)
         .onChange(of: model.selected) { _, _ in showDisplay = false }
         .onChange(of: model.tab) { _, _ in showDisplay = false }
         .onChange(of: model.draft?.isNew) { _, _ in showDisplay = false }

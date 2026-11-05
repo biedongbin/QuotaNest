@@ -1,6 +1,8 @@
-# TokenHUD
+# QuotaNest · 额度巢
 
-macOS 菜单栏供应商账号管理 App。每个账号以 **Auth 认证调用／API Key 调用**为基础接入，用量查询统一继承同一认证，定时 API 调用用于尝试主动开启动态 5h 窗口，提高工作时间内的额度利用机会。
+<img src="assets/branding/QuotaNest.png" width="128" alt="QuotaNest 图标：薄荷青色额度环与聚合账号的巢" />
+
+macOS 菜单栏 AI 额度与账号管理 App，原名 TokenHUD。每个账号以 **Auth 认证调用／API Key 调用**为基础接入，用量查询统一继承同一认证，定时 API 调用用于尝试主动开启动态 5h 窗口，提高工作时间内的额度利用机会。
 
 当前需求与技术契约以 [2026-11-04 三层需求](docs/account-management-rebuild.md) 为准。该文档区分目标与待验项；Auth 与认证继承改造的最终结果须由本轮验证证明，不能从本 README 推断所有供应商已经真实联通。
 
@@ -37,10 +39,10 @@ TOKENHUD_RENDER="$PWD/.build/account-preview" .build/debug/TokenHUD
 
 ```zsh
 zsh scripts/package.sh
-open ~/Applications/TokenHUD.app
+open ~/Applications/QuotaNest.app
 ```
 
-打包会替换本机安装的 App，需先退出运行中的 TokenHUD。
+打包会安装带完整 macOS 图标的 QuotaNest，并在新包验证成功后移除旧 TokenHUD 应用包；需先退出运行中的 App。内部可执行目标、Bundle ID、偏好与账号目录保留兼容标识，已有账号和来源引用无需迁移。
 
 ## 供应商类型与账号
 

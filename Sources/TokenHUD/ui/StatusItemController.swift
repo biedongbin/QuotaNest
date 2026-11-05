@@ -34,8 +34,8 @@ final class StatusItemController: ObservableObject {
         let old = states.contains { QuotaPresentation(state: $0).isOld }
         let value = percentage.map { "\(Int($0.rounded()))%" } ?? "—"
         statusItem.button?.title = (engine.isRefreshingAll ? "↻ " : "") + value + (old && percentage != nil ? " ·" : "")
-        statusItem.button?.toolTip = "TokenHUD · 单击快览，双击悬浮，右键操作" + (old ? " · 包含旧数据" : "")
-        statusItem.button?.setAccessibilityLabel("TokenHUD，\(value)" + (old ? "，包含旧数据" : ""))
+        statusItem.button?.toolTip = "\(AppBrand.name) · 单击快览，双击悬浮，右键操作" + (old ? " · 包含旧数据" : "")
+        statusItem.button?.setAccessibilityLabel("\(AppBrand.name)，\(value)" + (old ? "，包含旧数据" : ""))
     }
 
     @objc private func onClick(_ sender: NSStatusBarButton) {
@@ -61,7 +61,7 @@ final class StatusItemController: ObservableObject {
         add("账号管理…", action: #selector(openAccounts), key: "0", to: menu)
         add("设置与外观…", action: #selector(openSettings), key: ",", to: menu)
         menu.addItem(.separator())
-        add("退出 TokenHUD", action: #selector(quit), key: "q", to: menu)
+        add("退出 \(AppBrand.name)", action: #selector(quit), key: "q", to: menu)
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
@@ -157,7 +157,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         guard let model = modelForQuery() else { return }
         let host = NSHostingController(rootView: SettingsCenterView(model: model, engine: model.engine))
         let w = SettingsMainWindow(contentViewController: host)
-        w.title = "TokenHUD"
+        w.title = AppBrand.name
         w.styleMask.insert([.closable, .miniaturizable, .resizable])
         w.setContentSize(NSSize(width: 1120, height: 760))
         w.minSize = NSSize(width: 760, height: 560)

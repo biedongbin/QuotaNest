@@ -69,7 +69,7 @@ struct SettingsCenterView: View {
 
     private var pageHeader: some View {
         HStack(spacing: 8) {
-            Text("TokenHUD").foregroundStyle(Palette.muted)
+            Text(AppBrand.name).foregroundStyle(Palette.muted)
             Text("/").foregroundStyle(Palette.muted.opacity(0.6))
             Text(pageName).fontWeight(.medium).lineLimit(1)
             Spacer(minLength: 0)
@@ -220,7 +220,7 @@ private struct AccountSidebar: View {
         }
         .background(Palette.canvas)
         .searchable(text: $model.search, prompt: "搜索账号或供应商")
-        .navigationTitle("TokenHUD")
+        .navigationTitle(AppBrand.name)
         .onMoveCommand { direction in
             let ids = ["page:accounts", "page:plan"] + model.sidebarGroups.flatMap { $0.rows.map(\.id) } + ["page:settings"]
             guard let current = (focusedRow ?? selected).flatMap({ ids.firstIndex(of: $0) }) else { return }

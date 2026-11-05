@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "TokenHUD",
+    name: "QuotaNest",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
