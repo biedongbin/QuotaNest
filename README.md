@@ -2,7 +2,7 @@
   <img src="assets/branding/QuotaNest.png" width="112" alt="QuotaNest app icon" />
 </p>
 <h1 align="center">QuotaNest</h1>
-<p align="center">AI quotas, accounts, and Claude Code HUD — together on your Mac.</p>
+<p align="center">Floating quotas, Claude Code HUD, and dynamic 5h-window schedules — alongside your existing AI tools.</p>
 <p align="center">
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-阅读中文版-red?style=for-the-badge" alt="简体中文" /></a>
 </p>
@@ -13,13 +13,16 @@
   <img src="https://img.shields.io/badge/languages-English_/_简体中文-green?style=flat-square" alt="English and Simplified Chinese" />
 </p>
 
-> A native macOS menu-bar app for keeping track of AI account quotas, viewing usage in a floating panel, reusing existing credentials, and choosing what appears in Claude Code HUD.
+> A native macOS companion focused on two jobs: displaying quotas in floating panels and Claude Code HUD, and scheduling small requests to attempt to start eligible providers' dynamic 5h windows.
 
 ## The 10-second pitch
 
-Stop switching between provider dashboards just to find out which account still has room. QuotaNest puts your quota windows, balances, account controls, and schedules in one place — with four floating layouts when you want the numbers to stay visible.
+1. **Keep quotas visible.** See existing accounts' allowances, usage, and reset times in a floating panel or Claude Code HUD without reopening provider dashboards.
+2. **Schedule the start of dynamic 5h windows.** For providers whose windows start with the first qualifying request, schedule small calls at chosen times to try to start the next window and align its timing with your working day. Results depend on provider rules: calls do not force a reset, do not guarantee opening a window, and may consume quota.
 
-**Existing credentials stay at their source.** Imports from 9router, cc-switch, CPAMP, and Magpie use read-only references instead of creating another persistent credential copy.
+**QuotaNest is not an API gateway. It does not proxy, route, or load-balance your application requests.** It works alongside existing AI gateways and account-management tools such as Magpie, CPAMP, 9router, and cc-switch, adding quota visibility and scheduled calls.
+
+**Reuse credentials and API Keys you have already configured.** For supported source tools and credential formats, imports store read-only source references, so you do not have to re-enter credentials or keep another persistent copy in QuotaNest. Subsequent requests resolve the current authentication from the source configuration. Your existing tools continue to own the connection and credentials; QuotaNest adds floating panels, Claude Code HUD output, and scheduled requests.
 
 ![QuotaNest account overview](docs/screenshots/en/overview.png)
 
@@ -35,14 +38,14 @@ The demos use the current native app with isolated sample accounts and illustrat
 
 | Capability | What it does |
 | --- | --- |
-| Multi-account overview | View quota windows, balances, reset times, old data, and configuration health without opening each provider site. |
-| 55 built-in types | 22 types declare quota queries and model calls; 33 currently support quota queries only. See the [provider catalog](docs/provider-catalog.md). |
-| Auth or API Key | Use the authentication modes declared by each provider. Quota queries inherit the same base authentication. |
-| Read-only imports | Reference existing records from 9router, cc-switch, CPAMP, or Magpie, preserving original record and provider IDs. |
-| Source synchronization | Check imported references hourly while the app runs, or sync now. Correct changed record IDs only when the identity is uniquely established. |
 | Four floating layouts | Card, glass, compact, and list; drag from anywhere. The title appears on click and hides five seconds after the pointer leaves. |
 | Claude Code HUD | Choose displayed accounts in settings or the account display page; both controls share the same preference. |
 | Small scheduled calls | Configure local-time requests for eligible plans with dynamic usage windows. Calls consume quota and cannot guarantee opening or resetting a window. |
+| Read-only imports | Reference existing records from 9router, cc-switch, CPAMP, or Magpie, preserving original record and provider IDs. |
+| Multi-account overview | View quota windows, balances, reset times, old data, and configuration health without opening each provider site. |
+| 55 built-in types | 22 types declare quota queries and model calls; 33 currently support quota queries only. See the [provider catalog](docs/provider-catalog.md). |
+| Auth or API Key | Use the authentication modes declared by each provider. Quota queries inherit the same base authentication. |
+| Source synchronization | Check imported references hourly while the app runs, or sync now. Correct changed record IDs only when the identity is uniquely established. |
 | English / 中文 | Change the interface language immediately in Settings & Appearance. The app follows the macOS light/dark appearance. |
 | History migration | Automatically migrate the former TokenHUD account directory and preferences to QuotaNest with verification, backup, and rollback. |
 

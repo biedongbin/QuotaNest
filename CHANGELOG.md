@@ -25,5 +25,7 @@ Project changes are recorded here. No versioned GitHub Release has been publishe
 
 ### Documentation / 文档
 
+- Clarified the two core uses: floating-panel/Claude Code HUD quota display and scheduled attempts to start eligible dynamic 5h windows. QuotaNest complements existing gateways and reuses their configured credentials; it is not an API gateway.
+  明确两项核心用途：悬浮窗／Claude Code HUD 额度展示，以及定时尝试启动适用供应商的动态 5h 窗口。QuotaNest 配合既有网关使用并复用其凭证，不承担 API 网关职责。
 - Replaced development/media-reproduction and brand-reference README sections with Release notes, Acknowledgments, and License.
   README 删除开发／素材复现及品牌参考章节，改为更新日志、致谢和许可。

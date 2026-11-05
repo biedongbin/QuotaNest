@@ -2,7 +2,7 @@
   <img src="assets/branding/QuotaNest.png" width="112" alt="QuotaNest 额度巢图标" />
 </p>
 <h1 align="center">QuotaNest · 额度巢</h1>
-<p align="center">把 AI 额度、账号和 Claude Code HUD，收进一个原生 Mac 工具。</p>
+<p align="center">额度悬浮窗 + Claude Code HUD + 动态 5h 窗口调度，配合已有 AI 工具使用。</p>
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/English-Read_in_English-blue?style=for-the-badge" alt="English" /></a>
 </p>
@@ -13,13 +13,16 @@
   <img src="https://img.shields.io/badge/语言-简体中文_/_English-green?style=flat-square" alt="简体中文和英文" />
 </p>
 
-> 原生 macOS 菜单栏应用：集中查看 AI 账号额度，在悬浮窗里常驻用量，引用已有认证，并决定哪些账号显示到 Claude Code HUD。
+> 原生 macOS 辅助应用，核心解决两件事：让额度显示在悬浮窗和 Claude Code HUD 中，以及用定时小调用尝试启动部分供应商的动态 5h 窗口。
 
 ## 10 秒了解
 
-不用为了确认“哪个账号还有额度”反复打开供应商后台。QuotaNest 把额度窗口、余额、账号开关和调用计划放在一起；需要常驻查看时，可以切换四种悬浮窗样式。
+1. **额度随时可见。** 把已有账号的额度、用量和重置时间显示在悬浮窗与 Claude Code HUD 中，不必反复打开供应商后台。
+2. **安排动态 5h 窗口的启动时机。** 对于按首次有效请求开始计时的供应商，在选定时间调度小请求，尝试启动下一窗口，让额度刷新节奏更贴近工作时间。效果取决于供应商规则；这不是强制重置，不保证开窗，调用也可能消耗额度。
 
-**已有凭证继续由源工具管理。** 从 9router、cc-switch、CPAMP、Magpie 导入时使用只读引用，不再创建另一份长期保存的凭证副本。
+**QuotaNest 不是 API 网关，不代理、路由或负载均衡你的业务请求。** 它是 Magpie、CPAMP、9router、cc-switch 等现有 AI 网关和账号管理工具的配套辅助应用，承担额度展示与定时调度的角色。
+
+**已经配好的凭证和 API Key 可以直接复用。** 对于已适配的来源与认证格式，导入时只保存来源引用，无需为 QuotaNest 再录入或长期复制一份凭证；后续请求从源工具的配置解析当前认证。来源工具继续负责连接和凭证配置，QuotaNest 补上悬浮窗、Claude Code HUD 和计划调用能力。
 
 ![QuotaNest 账号概览](docs/screenshots/zh-CN/overview.png)
 
@@ -35,14 +38,14 @@ https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e
 
 | 能力 | 具体用途 |
 | --- | --- |
-| 多账号概览 | 集中查看额度窗口、余额、重置时间、旧数据和配置状态。 |
-| 55 个内置类型 | 当前 22 个类型声明“额度查询＋模型调用”，33 个类型仅支持额度查询；详见[供应商目录](docs/provider-catalog.md)。 |
-| Auth／API Key | 认证方式由供应商类型声明，用量查询继承同一基础认证。 |
-| 只读导入 | 引用 9router、cc-switch、CPAMP、Magpie 的既有记录，保留原始记录 ID 和 provider ID。 |
-| 来源同步 | App 运行期间每小时检查，也可立即同步；只有唯一确认身份后才订正变化的源记录 ID。 |
 | 四种悬浮样式 | 卡片、玻璃、紧凑、列表；任意位置拖动，点击显示标题，离开 5 秒后隐藏。 |
 | Claude Code HUD | 在全局设置或账号展示页勾选输出账号，两处共用同一配置。 |
 | 定时小调用 | 按本机时间执行请求，尝试启动适用套餐的动态用量窗口；请求消耗额度，不保证开启或重置窗口。 |
+| 只读导入 | 引用 9router、cc-switch、CPAMP、Magpie 的既有记录，保留原始记录 ID 和 provider ID。 |
+| 多账号概览 | 集中查看额度窗口、余额、重置时间、旧数据和配置状态。 |
+| 55 个内置类型 | 当前 22 个类型声明“额度查询＋模型调用”，33 个类型仅支持额度查询；详见[供应商目录](docs/provider-catalog.md)。 |
+| Auth／API Key | 认证方式由供应商类型声明，用量查询继承同一基础认证。 |
+| 来源同步 | App 运行期间每小时检查，也可立即同步；只有唯一确认身份后才订正变化的源记录 ID。 |
 | 中英双语 | 在“设置与外观”即时切换简体中文／English，外观跟随 macOS 浅色／深色。 |
 | 历史配置迁移 | 将旧 TokenHUD 账号与偏好迁入 QuotaNest，包含校验、备份及失败回滚。 |
 
