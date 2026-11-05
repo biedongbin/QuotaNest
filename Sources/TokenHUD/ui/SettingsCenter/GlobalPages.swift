@@ -46,24 +46,37 @@ struct GlobalSettingsPage: View {
             VStack(alignment: .leading, spacing: 12) {
                 GroupBox(L10n.tr("语言")) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Picker(L10n.tr("界面语言"), selection: Binding(
-                            get: { AppLanguageSettings.shared.selection },
-                            set: { AppLanguageSettings.shared.selection = $0 })) {
-                            ForEach(AppLanguage.allCases) { language in
-                                Text(language.label).tag(language)
+                        HStack(spacing: 12) {
+                            Text(L10n.tr("界面语言")).font(Typo.small)
+                            Picker(L10n.tr("界面语言"), selection: Binding(
+                                get: { AppLanguageSettings.shared.selection },
+                                set: { AppLanguageSettings.shared.selection = $0 })) {
+                                ForEach(AppLanguage.allCases) { language in
+                                    Text(language.label).tag(language)
+                                }
                             }
-                        }.pickerStyle(.menu).accessibilityIdentifier("settings.language")
+                            .labelsHidden().pickerStyle(.menu).frame(width: 150)
+                            .help(AppLanguageSettings.shared.selection.label)
+                            .accessibilityIdentifier("settings.language")
+                            Spacer(minLength: 0)
+                        }
                         Text(L10n.tr("切换立即生效并保存；账号名称和供应商返回的原始内容保持原样。"))
                             .font(Typo.small).foregroundStyle(Palette.muted)
                     }
                 }
                 GroupBox(L10n.tr("菜单栏")) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Picker(L10n.tr("显示额度"), selection: Binding(get: { engine.iconProviderSlug ?? "" }, set: {
-                            engine.setIconProvider($0.isEmpty ? nil : $0)
-                        })) {
-                            Text(L10n.tr("所有账号最高用量")).tag("")
-                            ForEach(model.allAccounts.filter { $0.enabled && $0.canQuery }) { row in Text(row.name).tag(row.id) }
+                        HStack(spacing: 12) {
+                            Text(L10n.tr("显示额度")).font(Typo.small)
+                            Picker(L10n.tr("显示额度"), selection: Binding(get: { engine.iconProviderSlug ?? "" }, set: {
+                                engine.setIconProvider($0.isEmpty ? nil : $0)
+                            })) {
+                                Text(L10n.tr("所有账号最高用量")).tag("")
+                                ForEach(model.allAccounts.filter { $0.enabled && $0.canQuery }) { row in Text(row.name).tag(row.id) }
+                            }
+                            .labelsHidden().pickerStyle(.menu).frame(width: 220)
+                            .help(model.allAccounts.first { $0.id == engine.iconProviderSlug }?.name ?? L10n.tr("所有账号最高用量"))
+                            Spacer(minLength: 0)
                         }
                         Text(L10n.tr("单击开关菜单快览；双击开关悬浮速览；右键打开操作菜单。"))
                             .font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -210,9 +223,15 @@ private struct PanelAppearanceSettings: View {
                 Toggle(L10n.tr("显示悬浮速览"), isOn: Binding(get: { controller.isVisible }, set: {
                     if $0 { controller.show() } else { controller.hide() }
                 })).toggleStyle(.switch).controlSize(.small)
-                Picker(L10n.tr("显示样式"), selection: Binding(get: { controller.style }, set: { controller.setStyle($0) })) {
-                    ForEach(PanelStyle.allCases) { style in Text(style.label).tag(style) }
-                }.pickerStyle(.menu)
+                HStack(spacing: 12) {
+                    Text(L10n.tr("显示样式")).font(Typo.small)
+                    Picker(L10n.tr("显示样式"), selection: Binding(get: { controller.style }, set: { controller.setStyle($0) })) {
+                        ForEach(PanelStyle.allCases) { style in Text(style.label).tag(style) }
+                    }
+                    .labelsHidden().pickerStyle(.menu).frame(width: 150)
+                    .help(controller.style.label)
+                    Spacer(minLength: 0)
+                }
                 Text(controller.style == .compact ? L10n.tr("紧凑：每个账号一行，同时显示多个额度窗口。") : L10n.tr("样式切换立即生效并保存。"))
                     .font(Typo.small).foregroundStyle(Palette.muted)
                 HStack(spacing: 16) {
