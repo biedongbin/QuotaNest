@@ -84,22 +84,24 @@ struct GlobalSettingsPage: View {
                             Text(L10n.tr("暂无供应商账号，请先添加或导入。"))
                                 .font(Typo.small).foregroundStyle(Palette.muted)
                         }
-                        ForEach(model.allAccounts) { row in
-                            Toggle(isOn: Binding(
-                                get: { !engine.hudHiddenSlugs.contains(row.id) },
-                                set: { model.toggleHudSync(row.id, synced: $0) })) {
-                                HStack {
-                                    ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 16)
-                                    Text(row.name).lineLimit(1)
-                                    Spacer(minLength: 8)
-                                    if !row.enabled {
-                                        Text(L10n.tr("已停用，启用后显示"))
-                                            .font(Typo.small).foregroundStyle(Palette.muted)
+                        HUDAccountFlowLayout {
+                            ForEach(model.allAccounts) { row in
+                                Toggle(isOn: Binding(
+                                    get: { !engine.hudHiddenSlugs.contains(row.id) },
+                                    set: { model.toggleHudSync(row.id, synced: $0) })) {
+                                    HStack(spacing: 6) {
+                                        ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 16)
+                                        Text(row.name).lineLimit(1)
+                                        if !row.enabled {
+                                            Text(L10n.tr("已停用"))
+                                                .font(Typo.small).foregroundStyle(Palette.muted)
+                                        }
                                     }
                                 }
+                                .toggleStyle(.checkbox)
+                                .help(row.enabled ? row.name : row.name + " · " + L10n.tr("已停用，启用后显示"))
+                                .accessibilityIdentifier("settings.hud-account.\(row.id)")
                             }
-                            .toggleStyle(.checkbox)
-                            .accessibilityIdentifier("settings.hud-account.\(row.id)")
                         }
                         Text(L10n.tr("与「供应商 → 显示」共用同一设置，修改立即同步到 HUD；停用账号保留选择，启用后恢复显示。"))
                             .font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -122,6 +124,47 @@ struct GlobalSettingsPage: View {
         }
     }
     static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
+}
+
+/// Keep each checkbox at its natural width, wrapping when the available row is full.
+private struct HUDAccountFlowLayout: Layout {
+    var horizontalSpacing: CGFloat = 18
+    var verticalSpacing: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrangement(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangement(width: bounds.width, subviews: subviews)
+        for (index, item) in result.items.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + item.origin.x, y: bounds.minY + item.origin.y),
+                                  anchor: .topLeading, proposal: ProposedViewSize(item.size))
+        }
+    }
+
+    private func arrangement(width: CGFloat?, subviews: Subviews) -> (size: CGSize, items: [CGRect]) {
+        let available = width.flatMap { $0.isFinite ? max(0, $0) : nil }
+        var items: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+        for subview in subviews {
+            let ideal = subview.sizeThatFits(.unspecified)
+            let size = subview.sizeThatFits(ProposedViewSize(width: min(ideal.width, available ?? ideal.width), height: nil))
+            if let available, x > 0, x + size.width > available {
+                x = 0
+                y += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+            items.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            usedWidth = max(usedWidth, x + size.width)
+            x += size.width + horizontalSpacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (CGSize(width: available ?? usedWidth, height: items.isEmpty ? 0 : y + rowHeight), items)
+    }
 }
 
 private struct AccountDisplayOrderSettings: View {
