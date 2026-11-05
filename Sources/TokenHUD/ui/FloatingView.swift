@@ -58,7 +58,8 @@ struct FloatingView: View {
                             if expanded || controller.style == .card {
                                 Color.clear.frame(height: 9)
                             } else {
-                                Rectangle().fill(Palette.border.opacity(0.85)).frame(height: 0.5)
+                                Rectangle().fill(Palette.inkSecondary.opacity(0.22))
+                                    .frame(maxWidth: .infinity).frame(height: 1)
                                     .padding(.vertical, controller.style == .glass ? 11 : 8)
                             }
                         }
