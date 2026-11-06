@@ -30,6 +30,16 @@ actor FeedbackSubmissionService {
         return url
     }
 
+    /// Called only after the user clicks Star. The GitHub PUT is idempotent.
+    func starProject(ghPath: String) async throws {
+        try checkExecutable(ghPath)
+        let authentication = try await command(ghPath, ["auth", "status", "--hostname", "github.com", "--active"])
+        guard authentication.exitCode == 0 else { throw FeedbackSubmissionError.authRequired }
+        let result = try await command(ghPath, ["api", "--hostname", "github.com", "--method", "PUT",
+                                               "user/starred/biedongbin/QuotaNest"])
+        guard result.exitCode == 0 else { throw FeedbackSubmissionError.submissionFailed }
+    }
+
     /// Read-only: even an empty search never clears the prohibition on retrying an unknown request.
     func reconcile(requestID: UUID, ghPath: String) async throws -> URL? {
         if let known = knownURLs[requestID] { return known }

@@ -215,8 +215,10 @@ private struct AccountSidebar: View {
                     }
                 }.padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 12)
             }
-            navRow(L10n.tr("设置与外观"), icon: "gearshape", id: "page:settings")
-                .padding(10)
+            VStack(spacing: 2) {
+                ProjectStarButton()
+                navRow(L10n.tr("设置与外观"), icon: "gearshape", id: "page:settings")
+            }.padding(10)
         }
         .background(Palette.canvas)
         .searchable(text: $model.search, prompt: L10n.tr("搜索账号或供应商"))

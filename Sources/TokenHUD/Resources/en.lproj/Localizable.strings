@@ -703,3 +703,10 @@
 "在 GitHub 核对反馈" = "Verify Issues on GitHub";
 "敏感检测不能识别所有秘密，请人工核对。" = "Sensitive-content detection cannot recognize every secret. Review the draft yourself.";
 "反馈草稿在本机生成，不需要 Claude，也不会自动安装任何工具。" = "Feedback drafts are generated locally. Claude is not required and no tools are installed automatically.";
+"一键 Star" = "Star on GitHub";
+"已 Star" = "Starred";
+"使用本机 gh 为 QuotaNest 添加 GitHub Star" = "Use the local gh CLI to star QuotaNest on GitHub";
+"打开 GitHub 项目页" = "Open GitHub Project";
+"未找到 gh，可在项目页手动 Star。" = "gh was not found. You can star the project in your browser.";
+"gh 尚未登录，可在项目页手动 Star。" = "gh is not logged in. You can star the project in your browser.";
+"未能确认 Star，请重试或打开项目页。" = "The star could not be confirmed. Retry or open the project page.";
