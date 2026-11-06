@@ -102,6 +102,27 @@ final class StatusItemController: ObservableObject {
     @objc private func openSettings() { SettingsWindowManager.shared.showSettings() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
+    /// Explicit local diagnostic: exercises the real popover and source reads, without starting queries or model schedules.
+    func runPopoverSmoke(cycles: Int = 20) async -> (opened: Int, closed: Int, maximumMilliseconds: Int) {
+        var opened = 0, closed = 0, maximum = 0
+        for _ in 0..<cycles {
+            let start = Date()
+            togglePopover()
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            guard popover?.isShown == true else { break }
+            opened += 1
+            engine.reloadRegistry()
+            for plugin in engine.allPlugins { _ = DataEngine.configRevision(slug: plugin.slug, manifest: plugin.manifest) }
+            popover?.contentViewController?.view.layoutSubtreeIfNeeded()
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            togglePopover()
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            if popover?.isShown == false { closed += 1 }
+            maximum = max(maximum, Int(Date().timeIntervalSince(start) * 1_000))
+        }
+        return (opened, closed, maximum)
+    }
+
     private func togglePopover() {
         if let popover, popover.isShown { popover.performClose(nil); return }
         guard let model = SettingsWindowManager.shared.modelForQuery(), let button = statusItem.button else { return }

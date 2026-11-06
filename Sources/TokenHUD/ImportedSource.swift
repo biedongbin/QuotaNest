@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import CryptoKit
 import Darwin
 
@@ -282,42 +283,94 @@ enum ImportedSource {
     }
 }
 
-/// System SQLite only: read-only connection, escaped exact primary-key lookup, bounded lifetime.
+/// Native SQLite avoids Process.waitUntilExit(), which pumps a nested AppKit run loop on the main thread.
+/// Connections and statements are read-only; lock waits, VM execution, rows and result size are bounded.
 enum ReadonlySQLite {
     static func literal(_ value: String) -> String {
-        // SQLite text literals cannot contain NUL; reject it before constructing a query.
         "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
-    static func query(path: String, sql: String, timeout: TimeInterval = 3,
-                      executable: URL = URL(fileURLWithPath: "/usr/bin/sqlite3")) throws -> [[String: Any]] {
-        guard !path.contains("\0"), !sql.contains("\0"), timeout > 0 else {
+    private final class Deadline {
+        let end: UInt64
+        init(timeout: TimeInterval) {
+            end = DispatchTime.now().uptimeNanoseconds + UInt64(min(timeout, 30) * 1_000_000_000)
+        }
+        var expired: Bool { DispatchTime.now().uptimeNanoseconds >= end }
+    }
+
+    static func query(path: String, sql: String, timeout: TimeInterval = 3) throws -> [[String: Any]] {
+        guard !path.isEmpty, !path.contains("\0"), !sql.contains("\0"), timeout.isFinite, timeout > 0 else {
             throw ImportedSource.failure("导入来源查询参数无效")
         }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["-readonly", "-batch", "-bail", "-json", "-cmd", ".timeout 1000", path, sql]
-        let output = Pipe()
-        process.standardOutput = output
-        // Do not surface SQLite diagnostics: source SQL/errors may contain private fields.
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        let timer = DispatchSource.makeTimerSource(queue: .global())
-        timer.schedule(deadline: .now() + timeout)
-        timer.setEventHandler {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        }
-        timer.resume()
-        defer { timer.cancel() }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+        var database: OpaquePointer?
+        let opened = sqlite3_open_v2(path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil)
+        defer { if let database { sqlite3_close(database) } }
+        guard opened == SQLITE_OK, let database else {
             throw ImportedSource.failure("导入来源数据库读取失败或超时")
         }
-        if data.isEmpty { return [] }
-        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw ImportedSource.failure("导入来源数据库返回格式无效")
+        let maximumBytes = 16 * 1_024 * 1_024
+        sqlite3_limit(database, SQLITE_LIMIT_LENGTH, Int32(maximumBytes))
+        sqlite3_busy_timeout(database, Int32(min(timeout * 1_000, 1_000)))
+        sqlite3_set_authorizer(database, { _, action, _, function, _, _ in
+            switch action {
+            case SQLITE_SELECT, SQLITE_READ, SQLITE_RECURSIVE: return SQLITE_OK
+            case SQLITE_FUNCTION:
+                if let function, String(cString: function).lowercased() == "load_extension" { return SQLITE_DENY }
+                return SQLITE_OK
+            default: return SQLITE_DENY
+            }
+        }, nil)
+        let context = Unmanaged.passRetained(Deadline(timeout: timeout)).toOpaque()
+        sqlite3_progress_handler(database, 1_000, { pointer in
+            guard let pointer else { return 1 }
+            return Unmanaged<Deadline>.fromOpaque(pointer).takeUnretainedValue().expired ? 1 : 0
+        }, context)
+        defer {
+            sqlite3_progress_handler(database, 0, nil, nil)
+            Unmanaged<Deadline>.fromOpaque(context).release()
         }
-        return rows
+        var statement: OpaquePointer?
+        defer { if let statement { sqlite3_finalize(statement) } }
+        let prepared = sql.withCString { text -> Bool in
+            var tail: UnsafePointer<CChar>?
+            guard sqlite3_prepare_v2(database, text, -1, &statement, &tail) == SQLITE_OK else { return false }
+            return tail.map { String(cString: $0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? true
+        }
+        guard prepared else { throw ImportedSource.failure("导入来源数据库读取失败或超时") }
+        guard let statement else { return [] }
+        guard sqlite3_stmt_readonly(statement) != 0 else { throw ImportedSource.failure("导入来源数据库只允许读取") }
+        var rows: [[String: Any]] = []
+        var bytes = 0
+        while true {
+            guard !Unmanaged<Deadline>.fromOpaque(context).takeUnretainedValue().expired else {
+                throw ImportedSource.failure("导入来源数据库读取失败或超时")
+            }
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { return rows }
+            guard result == SQLITE_ROW else { throw ImportedSource.failure("导入来源数据库读取失败或超时") }
+            var row: [String: Any] = [:]
+            for column in 0..<sqlite3_column_count(statement) {
+                let name = String(cString: sqlite3_column_name(statement, column))
+                switch sqlite3_column_type(statement, column) {
+                case SQLITE_INTEGER: row[name] = NSNumber(value: sqlite3_column_int64(statement, column))
+                case SQLITE_FLOAT: row[name] = NSNumber(value: sqlite3_column_double(statement, column))
+                case SQLITE_NULL: row[name] = NSNull()
+                case SQLITE_TEXT:
+                    guard let pointer = sqlite3_column_text(statement, column) else { throw ImportedSource.failure("导入来源数据库返回格式无效") }
+                    let count = Int(sqlite3_column_bytes(statement, column))
+                    guard count <= maximumBytes - bytes else { throw ImportedSource.failure("导入来源数据库结果过大") }
+                    bytes += count
+                    guard let value = String(data: Data(bytes: pointer, count: count), encoding: .utf8) else {
+                        throw ImportedSource.failure("导入来源数据库返回格式无效")
+                    }
+                    row[name] = value
+                default: throw ImportedSource.failure("导入来源数据库返回格式无效")
+                }
+            }
+            guard rows.count < 100_000, bytes <= maximumBytes else {
+                throw ImportedSource.failure("导入来源数据库结果过大")
+            }
+            rows.append(row)
+        }
     }
 }

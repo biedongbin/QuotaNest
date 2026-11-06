@@ -33,6 +33,7 @@ enum AppLaunchMode: Equatable {
     case normal
     case render(String)
     case debugSettings
+    case statusSmoke
     case importScan
     case repairHud
     case migrateConfiguration
@@ -42,6 +43,8 @@ enum AppLaunchMode: Equatable {
             self = .render(destination)
         } else if environment["QUOTANEST_MIGRATE_ONLY"] == "1" {
             self = .migrateConfiguration
+        } else if environment["QUOTANEST_DEBUG_STATUS_POPOVER"] == "1" {
+            self = .statusSmoke
         } else if environment["QUOTANEST_DEBUG_SETTINGS"] == "1" || environment["TOKENHUD_DEBUG_SETTINGS"] == "1" {
             self = .debugSettings
         } else if environment["TOKENHUD_IMPORT_SCAN"] == "1" {

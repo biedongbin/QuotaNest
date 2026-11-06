@@ -40,6 +40,7 @@ struct AppConfigTests {
             ["TOKENHUD_RENDER": ""],
             ["TOKENHUD_DEBUG_SETTINGS": "1"],
             ["TOKENHUD_IMPORT_SCAN": "1"],
+            ["QUOTANEST_DEBUG_STATUS_POPOVER": "1"],
             ["TOKENHUD_ENVS_FIX": "1"],
             ["QUOTANEST_MIGRATE_ONLY": "1"],
             ["QUOTANEST_RENDER": "/tmp/quotanest-images"]

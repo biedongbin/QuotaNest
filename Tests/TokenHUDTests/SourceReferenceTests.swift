@@ -213,6 +213,37 @@ struct SourceReferenceTests {
         #expect(snapshot.apiBaseURL == ollamaURL)
     }
 
+    @Test @MainActor func nativeSQLiteReadDoesNotReenterTheMainRunLoop() async throws {
+        let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("main-read.sqlite")
+        try sql(db, "CREATE TABLE fixture(text_value TEXT, integer_value INTEGER, real_value REAL, empty_value TEXT); INSERT INTO fixture VALUES('引号 '' 与 emoji 🪺',42,1.5,NULL)")
+        var mainCallbackDelivered = false
+        DispatchQueue.main.async { mainCallbackDelivered = true }
+        for _ in 0..<30 {
+            let rows = try ReadonlySQLite.query(path: db.path, sql: "SELECT * FROM fixture")
+            #expect(rows.first?["text_value"] as? String == "引号 ' 与 emoji 🪺")
+            #expect(rows.first?["integer_value"] as? Int == 42)
+            #expect(rows.first?["real_value"] as? Double == 1.5)
+            #expect(rows.first?["empty_value"] is NSNull)
+            #expect(!mainCallbackDelivered)
+        }
+        await Task.yield()
+    }
+
+    @Test func nativeSQLiteRejectsMultipleStatementsAndAttachedDatabases() throws {
+        let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("native-read.sqlite")
+        try sql(db, "CREATE TABLE fixture(id TEXT)")
+        #expect(throws: ProviderAuthenticationError.self) {
+            try ReadonlySQLite.query(path: db.path, sql: "SELECT 1; SELECT 2")
+        }
+        let other = directory.appendingPathComponent("must-not-create.sqlite")
+        #expect(throws: ProviderAuthenticationError.self) {
+            try ReadonlySQLite.query(path: db.path, sql: "ATTACH DATABASE \(ReadonlySQLite.literal(other.path)) AS other")
+        }
+        #expect(!FileManager.default.fileExists(atPath: other.path))
+    }
+
     @Test func readonlySQLiteRejectsWritesAndTimesOutWithoutReturningRows() throws {
         let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }
         let db = directory.appendingPathComponent("fake.sqlite")

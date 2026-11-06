@@ -52,6 +52,26 @@ struct QuotaNestApp: App {
                 }
             } catch { print("render failed: \(error.localizedDescription)"); exit(1) }
             return
+        case .statusSmoke:
+            let diagnostics = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: bundle,
+                userProvidersDir: paths.userProvidersDir, runner: ProviderRunner(nodePath: nil, logDir: paths.hudDir),
+                settingsURL: paths.settingsURL)
+            diagnostics.reloadRegistry()
+            _engine = StateObject(wrappedValue: diagnostics)
+            NSApplication.shared.setActivationPolicy(.accessory)
+            SettingsWindowManager.shared.makeModel = {
+                SettingsModel(engine: diagnostics, hudDir: paths.hudDir, userDir: paths.userProvidersDir,
+                    settingsURL: paths.settingsURL, bundleDir: bundle)
+            }
+            let panel = PanelController(engine: diagnostics)
+            let status = StatusItemController(engine: diagnostics, panelCtrl: panel)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                let result = await status.runPopoverSmoke()
+                print("popover smoke: opened=\(result.opened), closed=\(result.closed), max-cycle-ms=\(result.maximumMilliseconds), source-reads=native-sqlite, network-queries=0")
+                exit(result.opened == 20 && result.closed == 20 ? 0 : 1)
+            }
+            return
         case .debugSettings:
             do {
                 let fixture = try DiagnosticFixture()

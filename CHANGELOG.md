@@ -8,6 +8,7 @@ All notable changes are grouped by release version. Versions follow [Semantic Ve
 
 ### Fixed
 
+- Read imported source databases with bounded native SQLite queries instead of waiting for a subprocess on the main thread, preventing SwiftUI transaction reentrancy when opening the menu-bar popover.
 - Detect the same GPT/Codex account and workspace across imported sources using declared identity evidence; skip duplicates without merging or deleting existing account settings.
 - Select the correct ZCode Coding quota pool from its source login, and distinguish a missing Start subscription from an authentication or parser failure.
 - Match native Antigravity query headers and source formats; read Cline prepaid credit separately when no ClinePass subscription exists.
