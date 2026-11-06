@@ -112,6 +112,15 @@ final class ImportCenterModel: ObservableObject {
         self.userDir = userDir
     }
 
+    /// This model survives sheet dismissal; previous imported/existing flags must not survive reopening.
+    func prepareForPresentation() {
+        guard !importing else { return }
+        engine.reloadRegistry()
+        scanState = .idle
+        lastMessage = ""
+        scan() // Starts a new generation, discarding any previous scan's late result.
+    }
+
     /// P1-7: 取消进行中的导入 (已成功项保留, 未开始项标 skipped)
     func cancelImport() {
         guard importing, let task = importTask, !task.isCancelled else { return }
@@ -404,7 +413,7 @@ struct ImportCenterSheet: View {
         }
         .frame(minWidth: 560, idealWidth: 720, minHeight: 380, idealHeight: 520)
         .background(Palette.surface)
-        .onAppear { if im.scanState == .idle { im.scan() } }
+        .onAppear { im.prepareForPresentation() }
         .onDisappear { im.cancelImport() }
     }
 
