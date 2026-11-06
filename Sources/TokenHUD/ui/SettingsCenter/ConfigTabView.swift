@@ -65,27 +65,14 @@ struct ConfigTabView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(L10n.tr("连接配置")).font(.headline)
-                Spacer()
-                Button(L10n.tr("修改显示名"), systemImage: "pencil") {
-                    localName = row.name
-                    renameOpen = true
-                }.barButton().accessibilityIdentifier("account.rename")
-                AccountActionButton(title: L10n.tr("编辑连接"), identifier: "account.edit-connection", enabled: !readOnly) {
-                    model.startEdit()
-                }.fixedSize().frame(height: 28)
+            ViewThatFits(in: .horizontal) {
+                actionHeader(compact: false)
+                actionHeader(compact: true)
             }
             if readOnly { sourceDetails }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
                 apiConnection
                 quotaConnection
-            }
-            HStack {
-                Button(L10n.tr("复制账号…"), systemImage: "plus.square.on.square") { model.duplicateAccount(row.id) }
-                    .disabled(readOnly)
-                Spacer()
-                Button(SettingsModel.deleteActionTitle(row.plugin.manifest), role: .destructive) { model.delete(row.id) }
             }
         }
         .onAppear { temporaryModel = resolvedCall?.testModel ?? "" }
@@ -96,6 +83,34 @@ struct ConfigTabView: View {
             Button(L10n.tr("保存")) { model.renameDisplayName(row.id, name: localName) }
         } message: { Text(L10n.tr("仅修改 QuotaNest 中的显示名，不修改来源账号。")) }
     }
+    private func actionHeader(compact: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(L10n.tr("连接配置")).font(.headline).fixedSize()
+            Spacer(minLength: 8)
+            Button {
+                localName = row.name
+                renameOpen = true
+            } label: {
+                if compact { Image(systemName: "pencil") }
+                else { Label(L10n.tr("修改显示名"), systemImage: "pencil") }
+            }.barButton().fixedSize().help(L10n.tr("修改显示名"))
+                .accessibilityLabel(L10n.tr("修改显示名")).accessibilityIdentifier("account.rename")
+            AccountActionButton(title: L10n.tr("编辑连接"), identifier: "account.edit-connection", enabled: !readOnly) {
+                model.startEdit()
+            }.fixedSize().frame(height: 28)
+            Button { model.duplicateAccount(row.id) } label: {
+                if compact { Image(systemName: "plus.square.on.square") }
+                else { Label(L10n.tr("复制账号…"), systemImage: "plus.square.on.square") }
+            }.barButton().disabled(readOnly).fixedSize().help(L10n.tr("复制账号…"))
+                .accessibilityLabel(L10n.tr("复制账号…")).accessibilityIdentifier("account.duplicate")
+            Button(role: .destructive) { model.delete(row.id) } label: {
+                if compact { Image(systemName: "trash") }
+                else { Text(SettingsModel.deleteActionTitle(row.plugin.manifest)) }
+            }.barButton().fixedSize().help(SettingsModel.deleteActionTitle(row.plugin.manifest))
+                .accessibilityLabel(SettingsModel.deleteActionTitle(row.plugin.manifest)).accessibilityIdentifier("account.delete")
+        }
+    }
+
     private var sourceDetails: some View {
         GroupBox(L10n.tr("来源配置 · 只读")) {
             VStack(alignment: .leading, spacing: 8) {

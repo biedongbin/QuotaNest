@@ -181,7 +181,7 @@ private struct HUDAccountFlowLayout: Layout {
     }
 }
 
-private struct AccountDisplayOrderSettings: View {
+struct AccountDisplayOrderSettings: View {
     @ObservedObject var engine: DataEngine
     private var ordered: [PluginProvider] {
         let byID = Dictionary(uniqueKeysWithValues: engine.allPlugins.map { ($0.slug, $0) })
@@ -190,12 +190,26 @@ private struct AccountDisplayOrderSettings: View {
         return saved + engine.allPlugins.filter { !known.contains($0.slug) }
     }
     var body: some View {
-        GroupBox(L10n.tr("悬浮窗显示顺序")) {
+        GroupBox(L10n.tr("悬浮窗显示与顺序")) {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(ordered.enumerated()), id: \.element.slug) { index, provider in
                     HStack(spacing: 10) {
                         Text("\(index + 1)").monospacedDigit().foregroundStyle(Palette.muted).frame(width: 20)
-                        Text(provider.manifest.fullName).lineLimit(1)
+                        Toggle(isOn: Binding(
+                            get: { !engine.floatingHiddenSlugs.contains(provider.slug) },
+                            set: { engine.setFloatingHidden(provider.slug, hidden: !$0) })) {
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text(provider.manifest.fullName).lineLimit(1)
+                                Text("· " + AccountSourceFilter.origin(of: provider.manifest).label)
+                                    .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                                if engine.disabledSlugs.contains(provider.slug) {
+                                    Text(L10n.tr("已停用")).font(Typo.small).foregroundStyle(Palette.muted)
+                                }
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("settings.floating-account." + provider.slug)
+                        .help(L10n.tr("显示于悬浮窗与菜单快览"))
                         Spacer()
                         Button { move(provider.slug, by: -1) } label: { Image(systemName: "chevron.up") }
                             .barButton().disabled(index == 0).accessibilityLabel(L10n.tr("上移 %@", provider.manifest.fullName))
@@ -203,7 +217,7 @@ private struct AccountDisplayOrderSettings: View {
                             .barButton().disabled(index == ordered.count - 1).accessibilityLabel(L10n.tr("下移 %@", provider.manifest.fullName))
                     }.font(Typo.body)
                 }
-                Text(L10n.tr("用上下箭头调整，立即生效并保存；未显示的账号保留位置。菜单快览仍按供应商分组。"))
+                Text(L10n.tr("勾选控制悬浮窗与菜单快览显示；用上下箭头排序，立即保存。隐藏账号保留位置。"))
                     .font(Typo.small).foregroundStyle(Palette.muted)
             }
         }

@@ -277,6 +277,11 @@ struct QuotaNestApp: App {
         preferences.navPage = .settings
         shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
              size: NSSize(width: 1000, height: 1100), dark: false)
+        if onlyScene?.contains("floating-display") == true {
+            if let last = fixture.engine.allPlugins.last { fixture.engine.setFloatingHidden(last.slug, hidden: true) }
+            shot("floating-display-light", AccountDisplayOrderSettings(engine: fixture.engine).padding(20),
+                 size: NSSize(width: 900, height: 420), dark: false)
+        }
         if onlyScene == nil || onlyScene?.contains("imported-connection") == true {
             let source = fixture.userDir.deletingLastPathComponent().appendingPathComponent("demo-imported-codex.json")
             let object: [String: Any] = ["type": "codex", "access_token": "fixture-preview-token",
@@ -295,6 +300,8 @@ struct QuotaNestApp: App {
                 _ = imported.selectAccount(slug, tab: .config)
                 shot("imported-connection-light", SettingsCenterView(model: imported, engine: fixture.engine),
                      size: NSSize(width: 1200, height: 880), dark: false)
+                shot("imported-connection-narrow-light", SettingsCenterView(model: imported, engine: fixture.engine),
+                     size: NSSize(width: 760, height: 780), dark: false)
             } catch { print("imported preview fixture failed: \(error.localizedDescription)") }
         }
         let feedback = FeedbackCoordinator(context: .init(area: .accountImport, source: .magpie, stage: .scan),

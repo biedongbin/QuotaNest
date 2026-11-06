@@ -103,6 +103,9 @@ struct MenuBarView: View {
                 Button { onOpenAccount(row.id) } label: {
                     HStack(spacing: 7) {
                         Text(row.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                        Text("· " + AccountSourceFilter.origin(of: row.plugin.manifest).label)
+                            .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                            .lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                         Spacer(minLength: 0)

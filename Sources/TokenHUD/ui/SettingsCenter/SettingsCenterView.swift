@@ -258,7 +258,8 @@ private struct AccountSidebar: View {
         }
     }
     private func navRow(_ text: String, icon: String, id: String, disabled: Bool = false, provider: PluginProvider? = nil) -> some View {
-        Button { choose(id) } label: {
+        let source = provider.map { AccountSourceFilter.origin(of: $0.manifest).label }
+        return Button { choose(id) } label: {
             HStack(spacing: 10) {
                 if let provider {
                     ProviderLogo(manifest: provider.manifest, slug: provider.slug, size: 17)
@@ -266,7 +267,13 @@ private struct AccountSidebar: View {
                     Image(systemName: icon).font(.system(size: 14)).frame(width: 17)
                         .foregroundStyle(selected == id ? Palette.ink : Palette.controlText)
                 }
-                Text(text).font(.system(size: 13, weight: selected == id ? .medium : .regular)).lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(text).font(.system(size: 13, weight: selected == id ? .medium : .regular)).lineLimit(1)
+                    if let source {
+                        Text("· " + source).font(.system(size: 10)).foregroundStyle(Palette.muted)
+                            .lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
+                    }
+                }
                 Spacer(minLength: 0)
                 if disabled { StatusDot(color: Palette.muted) }
             }
@@ -278,7 +285,8 @@ private struct AccountSidebar: View {
         }
         .buttonStyle(.plain)
         .focused($focusedRow, equals: id)
-        .accessibilityLabel(text).accessibilityIdentifier("sidebar." + id)
+        .accessibilityLabel(text + (source.map { "，" + L10n.tr("账号来源") + "：" + $0 } ?? ""))
+        .accessibilityIdentifier("sidebar." + id)
         .accessibilityValue(selected == id ? L10n.tr("已选择") : "")
         .onHover { hovered = $0 ? id : nil }
     }
@@ -406,6 +414,9 @@ private struct OverviewAccountCard: View {
                     Image(systemName: "ellipsis").frame(width: 20, height: 20)
                 }.menuStyle(.borderlessButton).fixedSize().help(L10n.tr("账号操作"))
             }
+            Text(L10n.tr("账号来源") + " · " + AccountSourceFilter.origin(of: row.plugin.manifest).label)
+                .font(.system(size: 10.5)).foregroundStyle(Palette.muted)
+                .accessibilityIdentifier("account-source." + row.id)
             if row.canQuery && !quota.metrics.isEmpty {
                 QuotaMetricGrid(metrics: quota.metrics, old: quota.isOld || !row.enabled, compact: true)
             }
