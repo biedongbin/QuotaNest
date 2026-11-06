@@ -409,6 +409,9 @@ struct ImportCenterSheet: View {
                     .font(Typo.small).foregroundStyle(Palette.muted)
             }
             Spacer()
+            Button { openFeedback() } label: {
+                Label(L10n.tr("反馈导入问题"), systemImage: "bubble.left")
+            }.barButton().accessibilityIdentifier("feedback.import-entry")
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
             }
@@ -418,6 +421,22 @@ struct ImportCenterSheet: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private func openFeedback() {
+        let source = FeedbackSource(rawValue: im.source.rawValue)
+        let failures = im.rows.filter { $0.failure != nil }.count
+        let stage: FeedbackStage = im.importing || im.rows.contains(where: { $0.imported || $0.failure != nil }) ? .importApply : .scan
+        let error: SafeDiagnosticEvent.ErrorCode
+        switch im.scanState {
+        case .timedOut: error = .network
+        case .failed: error = .other
+        default: error = failures > 0 ? .other : .none
+        }
+        let counts = FeedbackCounts(candidates: im.rows.count, imported: im.rows.filter(\.imported).count,
+                                    skipped: im.rows.filter { !$0.state.pickable && !$0.imported }.count, failed: failures)
+        FeedbackWindowManager.shared.show(context: .init(area: .accountImport, source: source, stage: stage),
+            counts: counts, events: [.init(stage: stage, source: source, errorCode: error, count: failures)])
     }
 
     private var sourcePicker: some View {

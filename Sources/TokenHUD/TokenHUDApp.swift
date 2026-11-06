@@ -204,6 +204,16 @@ struct QuotaNestApp: App {
         preferences.navPage = .settings
         shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
              size: NSSize(width: 1000, height: 1100), dark: false)
+        let feedback = FeedbackCoordinator(context: .init(area: .accountImport, source: .magpie, stage: .scan),
+                                           counts: .init(candidates: 3), tools: .init())
+        feedback.title = english ? "Import preview is empty" : "导入预览未显示账号"
+        feedback.problem = english ? "The scan finishes but no importable entries are shown." : "扫描结束后没有显示可导入的记录。"
+        feedback.steps = english ? "Open Import Accounts, choose a source, then scan." : "打开导入账号，选择来源后扫描。"
+        shot("feedback-form-light", FeedbackWindowView(model: feedback, onClose: {}).frame(width: 760, height: 800),
+             size: NSSize(width: 760, height: 800), dark: false)
+        feedback.prepare()
+        shot("feedback-review-light", FeedbackWindowView(model: feedback, onClose: {}).frame(width: 760, height: 800),
+             size: NSSize(width: 760, height: 800), dark: false)
         let logoProviders = Bundle.appResources.resourceURL.map {
             ProviderRegistry.scan(dir: $0.appendingPathComponent("providers"))
         } ?? []
@@ -241,6 +251,21 @@ struct QuotaNestApp: App {
         }
         if let data = try? JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: output.appendingPathComponent("render-observations.json"))
+        }
+        if onlyScene == nil || onlyScene?.contains("feedback-") == true {
+            let manager = FeedbackWindowManager.shared
+            manager.show(context: .init(area: .providerCatalog, stage: .catalog))
+            manager.show(context: .init(area: .accountImport, source: .magpie, stage: .scan))
+            let windows = NSApp.windows.filter { $0.identifier?.rawValue == "QuotaNestFeedback" && $0.isVisible }
+            let evidence: [String: Any] = ["singleton": windows.count == 1,
+                "movable": windows.first?.isMovable == true,
+                "closable": windows.first?.styleMask.contains(.closable) == true]
+            windows.forEach { $0.close() }
+            var result = evidence
+            result["closed"] = !NSApp.windows.contains { $0.identifier?.rawValue == "QuotaNestFeedback" && $0.isVisible }
+            if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: output.appendingPathComponent("feedback-window-checks.json"))
+            }
         }
         await diagnoseNativeActions(model: model(), output: output)
         let validImages = observations.filter { $0["image_written"] as? Bool == true }.count

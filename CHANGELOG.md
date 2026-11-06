@@ -9,7 +9,7 @@ All notable changes are grouped by release version. Versions follow [Semantic Ve
 ### Added
 
 - Native launch-at-login setting, backed by macOS Login Items, with pending-approval and error states.
-- A feasibility proposal for privacy-first provider/import feedback using reviewed diagnostics, optional local Claude CLI summarization, and user-confirmed GitHub issue submission. The feedback UI is not implemented yet.
+- Self-service feedback in provider selection and import windows: local allowlisted diagnostics, mandatory draft review, fixed-repository gh submission, and copy/browser fallbacks when gh or login is missing. Claude is not required or invoked; its isolated prototype remains test-only until private-data protection and network operation can both be verified.
 
 ## [1.0.0] — 2026-11-05
 

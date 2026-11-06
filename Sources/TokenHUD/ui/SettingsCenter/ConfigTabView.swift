@@ -254,7 +254,14 @@ struct TemplateCatalogView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.tr("选择供应商类型")).font(.title2.weight(.semibold))
+            HStack {
+                Text(L10n.tr("选择供应商类型")).font(.title2.weight(.semibold))
+                Spacer()
+                Button {
+                    FeedbackWindowManager.shared.show(context: .init(area: .providerCatalog, stage: .catalog))
+                } label: { Label(L10n.tr("反馈问题／申请支持"), systemImage: "bubble.left") }
+                .barButton().accessibilityIdentifier("feedback.provider-entry")
+            }
             Text(L10n.tr("类型可以重复使用，每个账号单独保存凭证、计划与显示选择。"))
                 .foregroundStyle(.secondary)
             HStack {
