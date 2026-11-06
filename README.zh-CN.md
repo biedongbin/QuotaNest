@@ -186,13 +186,15 @@ open ~/Applications/QuotaNest.app
 
 ![Claude Code HUD 输出示例](docs/screenshots/claude-code-hud.png)
 
-## 问题反馈（开发版）
+## 问题反馈
 
 在供应商类型选择页点击“反馈问题／申请支持”，或在导入窗口点击“反馈导入问题”。填写描述、预览完整安全诊断草稿后，再明确确认是否公开提交。
 
 **不需要安装 Claude。** 没有 Claude 也会在本地生成草稿；已有登录的 `gh` 可直接提交，缺少 `gh` 或认证不可用时可复制草稿、在浏览器中完成反馈。App 不自动安装任何工具。
 
-本版由 App 完全在本机生成诊断，即使安装了 Claude 也不调用它。受限 CLI 原型仅保留在测试代码中：隐私隔离检查已通过，但严格运行时的 DNS／TLS 尚未验证可用，因此不作为 App 操作开放。完整边界见[反馈与隐私说明](docs/issue-feedback-proposal.md)。反馈功能当前归入 **Unreleased**，不在已有 v1.0.0 下载包内。
+本版由 App 完全在本机生成诊断，即使安装了 Claude 也不调用它。受限 CLI 原型仅保留在测试代码中：隐私隔离检查已通过，但严格运行时的 DNS／TLS 尚未验证可用，因此不作为 App 操作开放。完整边界见[反馈与隐私说明](docs/issue-feedback-proposal.md)。反馈功能已包含在补齐后的 **v1.0.0** 下载包中；已安装原 1.0.0 的用户请更新 tap 后执行 `brew reinstall --cask quotanest`，获取替换后的安装包。
+
+侧边栏“设置与外观”上方提供**一键 Star**。仅在点击后使用本机已登录的 `gh` 为 QuotaNest 加星；缺少工具或登录时提供项目页入口，不会自动替用户 Star。
 
 ## 数据、认证与历史迁移
 

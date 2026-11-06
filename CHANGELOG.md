@@ -4,14 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
-## Unreleased
+## [1.0.0] — 2026-11-06
 
-### Added
-
-- Native launch-at-login setting, backed by macOS Login Items, with pending-approval and error states.
-- Self-service feedback in provider selection and import windows: local allowlisted diagnostics, mandatory draft review, fixed-repository gh submission, and copy/browser fallbacks when gh or login is missing. Claude is not required or invoked; its isolated prototype remains test-only until private-data protection and network operation can both be verified.
-
-## [1.0.0] — 2026-11-05
+Refreshed 1.0.0 release; replaces the original 2026-11-05 assets and tag.
 
 ### Core features
 
@@ -21,6 +16,9 @@ All notable changes are grouped by release version. Versions follow [Semantic Ve
 
 ### Added
 
+- Native launch-at-login control backed by the actual macOS Login Items state.
+- Safe self-service feedback in provider selection and import windows: local allowlisted diagnostics, reviewed gh submission, and copy/browser fallbacks. Claude is not required or invoked.
+- A user-triggered GitHub Star button above Settings & Appearance, using local gh with a project-page fallback.
 - 55 provider types, with separate quota-query and model-call capabilities, Auth/API Key modes, and declared credential inheritance.
 - Per-account schedules, quota visibility, independent cached states, and hourly source-reference synchronization while the app runs.
 - English and Simplified Chinese UI, official provider brand mapping, compact settings controls, and linked HUD visibility preferences.

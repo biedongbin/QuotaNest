@@ -186,13 +186,15 @@ The following is a user-supplied Claude Code HUD example. Its project-directory 
 
 ![Claude Code HUD output example](docs/screenshots/claude-code-hud.png)
 
-## Feedback (development build)
+## Feedback
 
 Use **Report a Problem / Request Support** in the provider catalog, or **Report Import Problem** in the import window. Enter a description, preview the complete safe diagnostic draft, and explicitly confirm public submission.
 
 **Claude is optional.** Without it, the app still generates the draft locally. With an authenticated `gh`, submit directly; without `gh` or a usable login, copy the draft or complete submission in your browser. Nothing is installed automatically.
 
-This version generates diagnostics entirely in the app and does not invoke Claude, even if it is installed. An isolated CLI prototype is kept in test-only code: its privacy checks pass, but the restricted runtime's DNS/TLS path is not verified, so it is not exposed as an app action. See the [feedback and privacy guide](docs/issue-feedback-proposal.md) for exact limits. The feedback feature is currently in **Unreleased**, not the existing v1.0.0 download.
+This version generates diagnostics entirely in the app and does not invoke Claude, even if it is installed. An isolated CLI prototype is kept in test-only code: its privacy checks pass, but the restricted runtime's DNS/TLS path is not verified, so it is not exposed as an app action. See the [feedback and privacy guide](docs/issue-feedback-proposal.md) for exact limits. The feedback feature is included in the refreshed **v1.0.0** download. If you installed the original 1.0.0, update the tap and run `brew reinstall --cask quotanest` to receive the replacement package.
+
+The **Star on GitHub** button sits above Settings & Appearance in the sidebar. Clicking it uses the local authenticated `gh` to star QuotaNest; if the tool or login is unavailable, a project-page link is offered. No star is added automatically.
 
 ## Data, credentials, and migration
 
