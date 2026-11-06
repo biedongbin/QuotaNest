@@ -35,6 +35,13 @@ enum NodeLocator {
     }
 }
 
+struct QuotaQueryResult {
+    let cache: UsageCache?
+    let attemptCount: Int
+    let failureReason: String?
+    var retryCount: Int { max(0, attemptCount - 1) }
+}
+
 final class ProviderRunner {
     let nodePath: String?
     private let logDir: URL
@@ -44,17 +51,66 @@ final class ProviderRunner {
         self.logDir = logDir ?? URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud", isDirectory: true)
     }
 
+    /// Quota reads only. The caller holds its account gate across this entire sequence.
+    /// Cancellation and ownership changes stop retries; every attempt resolves credentials again.
+    func runWithRetries(_ plugin: PluginProvider, timeout: TimeInterval = 20,
+                        delay: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+                        isCurrent: () async -> Bool = { true },
+                        attempt: ((PluginProvider) async -> UsageCache?)? = nil) async -> QuotaQueryResult {
+        var attempts = 0
+        for index in 1...3 {
+            guard !Task.isCancelled else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "cancelled")
+            }
+            guard await isCurrent() else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "superseded")
+            }
+            // isCurrent may suspend; cancellation must be checked again before launching a read.
+            guard !Task.isCancelled else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "cancelled")
+            }
+            attempts += 1
+            let fetched: UsageCache?
+            if let attempt { fetched = await attempt(plugin) }
+            else { fetched = await run(plugin, timeout: timeout, reportFailure: true) }
+            guard !Task.isCancelled else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "cancelled")
+            }
+            guard await isCurrent() else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "superseded")
+            }
+            guard !Task.isCancelled else {
+                return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "cancelled")
+            }
+            var cache = fetched ?? UsageCache(error: "fetch", stale: true)
+            cache.lastAttemptAt = Date().timeIntervalSince1970 * 1000
+            if cache.error == nil || index == 3 {
+                if cache.error != nil { cache.stale = true }
+                return QuotaQueryResult(cache: cache, attemptCount: attempts, failureReason: cache.error)
+            }
+            do { try await delay(UInt64(index) * 1_000_000_000) }
+            catch { return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "cancelled") }
+        }
+        return QuotaQueryResult(cache: nil, attemptCount: attempts, failureReason: "fetch")
+    }
+
     /// spawn: zsh <script> (cwd=插件目录, env 注入 TOKENHUD_NODE)
     /// 以 zsh 直呼脚本路径而非 exec, 免依赖执行位 (测试/打包资源均无 x 位)
     /// 成功: stdout -> UsageCache.make; 任何失败(非0退出/解析失败/超时) -> nil
     /// 失败时 stderr 尾部写 hudDir 下 .{slug}-usage-stderr.log 供诊断 (不进 cache, 免覆盖旧桶数据)
-    func run(_ plugin: PluginProvider, timeout: TimeInterval = 20) async -> UsageCache? {
+    func run(_ plugin: PluginProvider, timeout: TimeInterval = 20, reportFailure: Bool = false) async -> UsageCache? {
+        guard !Task.isCancelled else { return nil }
+        var snapshot: ProviderQuerySnapshot?
+        func failure(_ code: String) -> UsageCache? {
+            guard reportFailure else { return nil }
+            return UsageCache(error: code, stale: true, lastAttemptAt: Date().timeIntervalSince1970 * 1000,
+                              sourceRevision: snapshot?.sourceRevision)
+        }
         let script = plugin.dir.appendingPathComponent(plugin.manifest.fetch).standardizedFileURL.path
-        guard FileManager.default.fileExists(atPath: script) else { return nil }
+        guard FileManager.default.fileExists(atPath: script) else { return failure("script-missing") }
 
         let originalAuth = plugin.manifest.authFile.map(PluginGenerator.expandPath)
             ?? logDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json")
-        var snapshot: ProviderQuerySnapshot?
         if FileManager.default.fileExists(atPath: originalAuth.path) || plugin.manifest.credentialSource != nil || plugin.manifest.sourceReference != nil {
             do {
                 let config = ProviderConfigStore.read(authFile: originalAuth, manifest: plugin.manifest)
@@ -85,7 +141,8 @@ final class ProviderRunner {
         p.standardOutput = out
         p.standardError = err
 
-        do { try p.run() } catch { return nil }
+        guard !Task.isCancelled else { return nil }
+        do { try p.run() } catch { return failure("process-launch") }
         let stdout = PipeCapture(out.fileHandleForReading, limit: 2_000_000)
         let stderr = PipeCapture(err.fileHandleForReading, limit: 4096)
 
@@ -106,11 +163,12 @@ final class ProviderRunner {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
             dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? [])
-            return nil
+            return Task.isCancelled ? nil : failure("timeout")
         }
+        guard !Task.isCancelled else { return nil }
         guard p.terminationStatus == 0 else {
             dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? [])
-            return nil
+            return failure("process-exit-\(p.terminationStatus)")
         }
 
         let data = stdout.finish(within: 2)
@@ -118,7 +176,7 @@ final class ProviderRunner {
         // Bind both success and parsed failures to the credentials actually used by this request.
         cache?.sourceRevision = snapshot?.sourceRevision
         if cache == nil { dumpStderr(stderr.finish(within: 1), plugin: plugin, secrets: snapshot?.secrets ?? []) } // stdout 解析失败也留诊断线索
-        return cache
+        return cache ?? failure("invalid-response")
     }
 
     /// stderr 尾部 4KB 写到注入的日志目录，落盘前过滤凭证。

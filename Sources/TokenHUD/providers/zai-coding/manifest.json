@@ -13,8 +13,24 @@
   "autoCreateDefault": false,
   "authMode": "apikey",
   "quotaAuthModes": [
-    "apikey"
+    "apikey",
+    "auth"
   ],
+  "authCallUrl": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  "authCallProtocol": "openai",
+  "authCallHeader": "Authorization: Bearer <key>",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "refresh.key",
+    "requiredValues": {
+      "type": "oauth",
+      "refresh.site": "zai"
+    },
+    "importProviders": [
+      "zcode"
+    ],
+    "importPriority": 100
+  },
   "queryAuth": "bearer",
   "quotaMode": "script",
   "inheritQueryUrl": "https://api.z.ai/api/monitor/usage/quota/limit",

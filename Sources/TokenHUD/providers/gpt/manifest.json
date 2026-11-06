@@ -32,6 +32,13 @@
       "auth_mode": "chatgpt"
     },
     "fileConfigKey": "codexAuthFile",
+    "accountIdentity": {
+      "namespace": "openai-chatgpt",
+      "subjectClaim": "sub",
+      "workspaceHeader": "chatgpt-account-id",
+      "workspaceClaim": "/https:~1~1api.openai.com~1auth/chatgpt_account_id",
+      "allowedIssuers": ["https://auth.openai.com", "https://auth0.openai.com"]
+    },
     "alternatives": [
       {
         "tokenPath": "access_token",

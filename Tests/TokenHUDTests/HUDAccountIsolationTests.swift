@@ -130,7 +130,7 @@ struct HUDAccountIsolationTests {
             if incoming == "exit1" || incoming == "non-json" {
                 #expect(snapshot?.accountId == nil)
                 #expect(snapshot?.generatedAt == nil)
-                #expect(snapshot?.error == "fetch")
+                #expect(snapshot?.error == (incoming == "exit1" ? "process-exit-1" : "invalid-response"))
                 let disk = try JSONDecoder().decode(UsageCache.self, from: Data(contentsOf: hud.appendingPathComponent(".local-usage-cache.json")))
                 #expect(disk.accountId == nil && disk.sevenDay == nil)
             }

@@ -357,6 +357,7 @@ final class SettingsModel: ObservableObject {
     @Published var scope: ScopeFilter = .all
     @Published var overviewStatusFilter: AccountStatusFilter = .all
     @Published var sidebarStatusFilter: AccountStatusFilter = .healthyEnabled
+    @Published var sourceFilter: AccountSourceFilter = .all
     /// v0.2 左栏当前页: 总览 / 调用计划 / 全局设置 / 账号详情 (selected != nil 或模板/草稿)
     enum NavPage: Equatable { case overview, plan, settings, detail }
     @Published var navPage: NavPage = .overview
@@ -441,10 +442,17 @@ final class SettingsModel: ObservableObject {
 
     }
 
+    var availableSourceFilters: [AccountSourceFilter] {
+        let sources = Set(allAccounts.map { AccountSourceFilter.origin(of: $0.plugin.manifest) })
+            .filter { $0 != .manual }.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+        return [.all, .manual] + sources
+    }
+
     var accounts: [AccountRow] {
+        let visible = allAccounts.filter { sourceFilter.includes($0.plugin.manifest) }
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return allAccounts }
-        return allAccounts.filter {
+        guard !q.isEmpty else { return visible }
+        return visible.filter {
             $0.name.lowercased().contains(q) || $0.plugin.manifest.label.lowercased().contains(q)
         }
     }
@@ -595,7 +603,7 @@ final class SettingsModel: ObservableObject {
     private func cachedState(for p: PluginProvider) -> ProviderState? {
         guard let cache = engine.readCache(slug: p.slug, manifest: p.manifest) else { return nil }
         return ProviderState(slug: p.slug, manifest: p.manifest, cache: cache,
-                             isStale: !HUDFmt.isFresh(cache, interval: p.manifest.interval,
+                             isStale: !HUDFmt.isFresh(cache, interval: engine.effectiveIntervalSeconds(p.slug, manifest: p.manifest),
                                                       now: Date().timeIntervalSince1970 * 1000))
     }
 
@@ -1259,15 +1267,25 @@ final class SettingsModel: ObservableObject {
         } catch { return false }
     }
 
+    static func deleteActionTitle(_ manifest: ProviderManifest) -> String {
+        manifest.isSourceConfigurationReadOnly ? L10n.tr("移除本地关联…") : L10n.tr("删除本地账号…")
+    }
+
     func delete(_ slug: String) {
         guard let p = engine.allPlugins.first(where: { $0.slug == slug }) else { return }
         let confirmed: Bool
         if let confirmDeleteAccount { confirmed = confirmDeleteAccount() }
         else {
             let alert = NSAlert()
-            alert.messageText = L10n.tr("删除 %@?", String(describing: p.manifest.fullName))
-            alert.informativeText = L10n.tr("将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。")
-            alert.addButton(withTitle: L10n.tr("删除"))
+            if p.manifest.isSourceConfigurationReadOnly {
+                alert.messageText = L10n.tr("仅从 QuotaNest 移除 %@ 的关联？", String(describing: p.manifest.fullName))
+                alert.informativeText = L10n.tr("仅删除 QuotaNest 内的导入关联、本地设置和缓存。不会删除或修改外部来源的账号、凭证、配置文件，也不会注销外部登录；Magpie、cc-switch 等来源工具不受影响。")
+                alert.addButton(withTitle: L10n.tr("仅移除本地关联"))
+            } else {
+                alert.messageText = L10n.tr("删除 QuotaNest 本地账号 %@？", String(describing: p.manifest.fullName))
+                alert.informativeText = L10n.tr("仅删除 QuotaNest 内的账号配置、自有凭证和缓存，不会注销供应商账号，也不会修改外部授权文件。")
+                alert.addButton(withTitle: L10n.tr("删除本地账号"))
+            }
             alert.addButton(withTitle: L10n.tr("取消"))
             alert.alertStyle = .warning
             confirmed = alert.runModal() == .alertFirstButtonReturn
@@ -1313,7 +1331,9 @@ final class SettingsModel: ObservableObject {
             cleanupFailures.append(L10n.tr("HUD 未更新：%@", String(describing: error.localizedDescription)))
         }
         if cleanupFailures.isEmpty {
-            flash(L10n.tr("已删除 %@", String(describing: p.manifest.fullName)) + (preservedSources ? L10n.tr("，外部来源文件已保留") : ""), error: false)
+            flash(p.manifest.isSourceConfigurationReadOnly
+                ? L10n.tr("已移除 %@ 的本地关联，外部账号和凭证未修改。", String(describing: p.manifest.fullName))
+                : L10n.tr("已删除 %@", String(describing: p.manifest.fullName)) + (preservedSources ? L10n.tr("，外部来源文件已保留") : ""), error: false)
         } else {
             flash(L10n.tr("已移除 %@，但%@", String(describing: p.manifest.fullName), String(describing: cleanupFailures.joined(separator: "；"))), error: true)
         }

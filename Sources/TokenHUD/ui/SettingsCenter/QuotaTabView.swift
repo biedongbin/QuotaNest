@@ -164,6 +164,16 @@ struct QuotaTabView: View {
                             Text(presentation.updated).foregroundStyle(Palette.muted).monospacedDigit()
                         }
                         .font(.system(size: 11.5))
+                        if let diagnostic = model.engine.queryDiagnostics[row.id] {
+                            Text(L10n.tr("本次尝试 %@ 次，重试 %@ 次", String(describing: diagnostic.attemptCount), String(describing: diagnostic.retryCount)))
+                                .font(Typo.small).foregroundStyle(Palette.muted)
+                            if diagnostic.finalError != nil && !presentation.metrics.isEmpty {
+                                Text(L10n.tr("本次查询未成功，下方保留上次成功的旧值，不代表当前额度。"))
+                                    .font(Typo.small).foregroundStyle(Palette.warn)
+                            }
+                        }
+                        Text(L10n.tr("已启用账号最长每 5 分钟查询一次；失败自动重试 2 次。"))
+                            .font(Typo.small).foregroundStyle(Palette.muted)
                         if presentation.metrics.isEmpty {
                             Text(model.quotaConfigured(row) ? L10n.tr("查询后，这里会显示服务返回的额度窗口。") : L10n.tr("请先在连接中补全基础认证与用量查询配置。"))
                                 .font(Typo.small).foregroundStyle(Palette.muted)
@@ -245,6 +255,7 @@ enum QuotaErrorPresentation {
         switch code {
         case "network": return L10n.tr("无法连接服务")
         case "parse": return L10n.tr("服务返回的数据无法识别")
+        case "no-subscription": return L10n.tr("当前额度池没有可用套餐，请检查导入的套餐类型")
         case "no-auth", "auth": return L10n.tr("请检查凭证或重新登录")
         case "ratelimit": return L10n.tr("查询频繁，请稍后重试")
         case "timeout", "busy": return L10n.tr("查询超时，请稍后重试")

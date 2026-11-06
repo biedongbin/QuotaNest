@@ -127,6 +127,29 @@ struct SettingsCenterView: View {
     }
 }
 
+private struct AccountSourceMenu: View {
+    @ObservedObject var model: SettingsModel
+    var compact = false
+    var body: some View {
+        Menu {
+            Picker(L10n.tr("账号来源"), selection: $model.sourceFilter) {
+                ForEach(model.availableSourceFilters) { source in Text(source.label).tag(source) }
+            }.pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "tray.2").foregroundStyle(Palette.muted)
+                Text(model.sourceFilter.label).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: compact ? 11 : 12, weight: .medium))
+            .foregroundStyle(Palette.ink).padding(.horizontal, compact ? 7 : 10)
+            .frame(height: compact ? 26 : 30).background(Palette.surface, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border))
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .accessibilityLabel(L10n.tr("账号来源"))
+    }
+}
+
 private struct AccountStatusMenu: View {
     @Binding var selection: AccountStatusFilter
     var compact = false
@@ -197,6 +220,8 @@ private struct AccountSidebar: View {
                     navRow(L10n.tr("调用计划"), icon: "calendar.badge.clock", id: "page:plan")
                     VStack(alignment: .leading, spacing: 5) {
                         Text(L10n.tr("账号列表")).font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1)
+                        AccountSourceMenu(model: model, compact: true)
+                            .accessibilityIdentifier("sidebar.source-filter")
                         AccountStatusMenu(selection: $model.sidebarStatusFilter, compact: true)
                             .accessibilityLabel(L10n.tr("账号列表状态"))
                             .accessibilityIdentifier("sidebar.status-filter")
@@ -299,6 +324,8 @@ struct OverviewPage: View {
                     .disabled(!model.allAccounts.contains { $0.enabled && $0.canQuery && model.quotaConfigured($0) })
                 }
                 HStack(spacing: 12) {
+                    AccountSourceMenu(model: model)
+                        .accessibilityIdentifier("overview.source-filter")
                     AccountStatusMenu(selection: $model.overviewStatusFilter)
                         .accessibilityLabel(L10n.tr("概览账号状态"))
                         .accessibilityIdentifier("overview.status-filter")
@@ -424,7 +451,7 @@ struct AccountContextMenu: View {
             .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
         Divider()
         Button(row.enabled ? L10n.tr("停用账号") : L10n.tr("启用账号")) { model.toggleMonitoring(row.id, enabled: !row.enabled) }
-        Button(L10n.tr("删除账号…"), role: .destructive) { model.delete(row.id) }
+        Button(SettingsModel.deleteActionTitle(row.plugin.manifest), role: .destructive) { model.delete(row.id) }
     }
 }
 

@@ -9,6 +9,15 @@ struct ProviderCredentialFormat: Codable, Equatable, Sendable {
     var tokenEncoding: String? = nil
 }
 
+/// Declares stable account evidence for cross-source deduplication, separate from access-token bytes.
+struct ProviderAccountIdentityRule: Codable, Equatable, Sendable {
+    let namespace: String
+    let subjectClaim: String
+    let workspaceHeader: String
+    var workspaceClaim: String? = nil
+    var allowedIssuers: [String]? = nil
+}
+
 /// Declares an existing CLI authorization file; no token is copied into account settings.
 struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var file: String
@@ -20,6 +29,9 @@ struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var contextPaths: [String: String]?
     var alternatives: [ProviderCredentialFormat]?
     var tokenEncoding: String? = nil
+    var accountIdentity: ProviderAccountIdentityRule? = nil
+    var importProviders: [String]? = nil
+    var importPriority: Int? = nil
 }
 
 /// A live, read-only reference. Never contains credentials.

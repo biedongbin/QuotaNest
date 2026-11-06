@@ -93,6 +93,23 @@ test('Gemini supports providerSpecificData project context and no invented proje
  assert.deepEqual(JSON.parse(calls(state)[0][calls(state)[0].indexOf('--data-binary')+1]),{project:'PSD_A'});
  writeFileSync(state.snapshot,JSON.stringify({queryKey:'A'}));assert.equal(run(state,{}, {DISCOVERY:'{}'}).error,'no-auth');
 });
+test('Antigravity uses native hub headers and preserves the selected project/token binding',()=>{
+ const state=setup('antigravity');assert.equal(run(state).error,null);
+ const [args]=calls(state);assert.equal(calls(state).length,1);
+ assert.equal(args[args.indexOf('--url')+1],'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary');
+ assert.equal(args[args.indexOf('-X')+1],'POST');
+ assert.ok(args.includes('User-Agent: antigravity/hub/2.23.0 darwin/arm64'));
+ assert.ok(args.includes('Content-Type: application/json'));
+ assert.ok(args.includes('Authorization: Bearer SNAPSHOT_A'));
+ assert.deepEqual(JSON.parse(args[args.indexOf('--data-binary')+1]),{project:'PROJECT_A'});
+});
+test('Antigravity declares distinct CPA and 9router source formats with their own project paths',()=>{
+ const source=JSON.parse(readFileSync(join(root,'Sources/TokenHUD/providers/antigravity/manifest.json'))).credentialSource;
+ assert.equal(source.tokenPath,'access_token');assert.deepEqual(source.requiredValues,{type:'antigravity'});
+ assert.deepEqual(source.contextPaths,{projectId:'project_id'});
+ const router=source.alternatives.find(format=>format.requiredValues?.provider==='antigravity');
+ assert.ok(router);assert.equal(router.tokenPath,'accessToken');assert.deepEqual(router.contextPaths,{projectId:'projectId'});
+});
 test('Antigravity missing project stops before requesting quota',()=>{
  const state=setup('antigravity');writeFileSync(state.snapshot,JSON.stringify({queryKey:'A'}));assert.equal(run(state).error,'no-auth');assert.equal(calls(state).length,0);
 });

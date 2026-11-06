@@ -85,7 +85,7 @@ struct ConfigTabView: View {
                 Button(L10n.tr("复制账号…"), systemImage: "plus.square.on.square") { model.duplicateAccount(row.id) }
                     .disabled(readOnly)
                 Spacer()
-                Button(L10n.tr("删除账号…"), role: .destructive) { model.delete(row.id) }
+                Button(SettingsModel.deleteActionTitle(row.plugin.manifest), role: .destructive) { model.delete(row.id) }
             }
         }
         .onAppear { temporaryModel = resolvedCall?.testModel ?? "" }
@@ -243,7 +243,7 @@ struct TriggerTabView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Stepper(L10n.tr("查询间隔：%@ 分钟", String(describing: interval)), value: Binding(get: { interval }, set: {
                             model.engine.setIntervalMinutes(row.id, minutes: $0)
-                        }), in: 1...1440)
+                        }), in: 1...5)
                             .disabled(!row.enabled || !model.quotaConfigured(row))
                         if model.engine.hasIntervalOverride(row.id) {
                             Button(L10n.tr("恢复供应商默认间隔")) { model.engine.clearIntervalOverride(row.id) }

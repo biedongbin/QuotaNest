@@ -30,6 +30,7 @@ final class ImportCenterModel: ObservableObject {
         case addable        // 可新增
         case convertible    // 旧导入账号可转换为只读来源引用
         case exists         // 已存在
+        case duplicate      // 同一授权主体和 workspace 已存在
         case unsupported    // 不支持
         case unadapted      // 额度未适配
 
@@ -38,6 +39,7 @@ final class ImportCenterModel: ObservableObject {
             case .addable: return L10n.tr("可新增")
             case .convertible: return L10n.tr("可转换")
             case .exists: return L10n.tr("已存在")
+            case .duplicate: return L10n.tr("同账号已存在")
             case .unsupported: return L10n.tr("不支持")
             case .unadapted: return L10n.tr("额度未适配")
             }
@@ -66,6 +68,7 @@ final class ImportCenterModel: ObservableObject {
     }
 
     @Published var source: Source = .nineRouter
+    private var existingAccountIdentities: [String: String] = [:]
     @Published var magpieDirectory = ""
     var sourcePath: String { source == .magpie && !magpieDirectory.isEmpty ? magpieDirectory : source.path }
 
@@ -204,9 +207,12 @@ final class ImportCenterModel: ObservableObject {
 
     private func apply(_ list: [ImportCandidate]) {
         let existing = engine.allPlugins
+        existingAccountIdentities = ProviderAccountIdentity.index(providers: existing, templates: engine.templates)
+        var seen = Set<String>()
         rows = list
             .map { c in
-                let state = stateOf(c, existing: existing)
+                var state = stateOf(c, existing: existing)
+                if state.pickable, let identity = c.accountIdentity, !seen.insert(identity).inserted { state = .duplicate }
                 return Row(candidate: c, state: state, note: noteOf(c, state: state))
             }
             // 能导的排前面, 免得滑一屏找不到; 同档内保持源顺序
@@ -226,22 +232,22 @@ final class ImportCenterModel: ObservableObject {
     private func rank(_ row: Row) -> Int {
         switch row.state {
         case .unsupported: return 3
-        case .exists: return 2
+        case .exists, .duplicate: return 2
         case .addable, .unadapted, .convertible: return row.candidate.enabled ? 0 : 1
         }
     }
 
     private func stateOf(_ c: ImportCandidate, existing: [PluginProvider]) -> RowState {
-        Self.stateOf(c, existing: existing, templateLookup: { [engine] s in engine.template(bySlug: s)?.manifest })
+        Self.stateOf(c, existing: existing, accountIdentities: existingAccountIdentities, templateLookup: { [engine] s in engine.template(bySlug: s)?.manifest })
     }
 
-    /// 去重判定 (纯函数, 可测): origin 匹配才算已存在, 显示名匹配不算 (FR-07.5)
+    /// Pure preview decision: exact source records or verified cross-source account identity; never display names.
     nonisolated static func stateOf(_ c: ImportCandidate, existing: [PluginProvider],
-                        templateLookup: (String) -> ProviderManifest?) -> RowState {
+                        accountIdentities: [String: String] = [:], templateLookup: (String) -> ProviderManifest?) -> RowState {
         if c.unsupportedReason != nil { return .unsupported }
-        // 去重按 origin (source+sourceRecordId): 同源同记录才算已存在; 显示名相同不算 (FR-07.5)
         guard let reference = c.sourceReference else { return .unsupported }
-        if existing.contains(where: { $0.manifest.sourceReference?.sameSourceRecord(as: reference) == true }) { return .exists }
+        if existing.contains(where: { ProviderImporter.sameSourceAccount(c, manifest: $0.manifest, templateLookup: templateLookup) }) { return .exists }
+        if let identity = c.accountIdentity, accountIdentities.values.contains(identity) { return .duplicate }
         let legacy = existing.filter { $0.manifest.sourceReference == nil && ProviderImporter.matchesExisting(c, manifest: $0.manifest) }
         if legacy.count > 1 { return .unsupported }
         guard quotaAdapted(c, templateLookup: templateLookup) else { return .unadapted }
@@ -266,6 +272,7 @@ final class ImportCenterModel: ObservableObject {
         var note: String
         switch state {
         case .exists: note = L10n.tr("已存在（同源同账号），默认跳过，不覆盖现有配置")
+        case .duplicate: note = L10n.tr("同一账号和 workspace 已存在，默认跳过，不覆盖名称、计划或来源绑定")
         case .convertible: note = L10n.tr("转换为源引用：保留原账号，清除本地旧凭据与缓存，今后随源更新")
         case .unsupported:
             if let reason = a.unsupportedReason { note = L10n.tr(reason) }
@@ -552,7 +559,7 @@ struct ImportCenterSheet: View {
         if !row.state.pickable { return Palette.muted }
         switch row.state {
         case .addable, .convertible: return Palette.ok
-        case .exists: return Palette.muted
+        case .exists, .duplicate: return Palette.muted
         case .unsupported: return Palette.danger
         case .unadapted: return Palette.warn
         }

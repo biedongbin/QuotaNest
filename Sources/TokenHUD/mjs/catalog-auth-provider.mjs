@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { parseAuthUsage } from './auth-usage-parsers.mjs';
 export const authProviders = Object.freeze({
   'claude-code': { url: 'https://api.anthropic.com/api/oauth/usage', headers: { 'anthropic-beta': 'oauth-2025-04-20' } },
-  antigravity: { url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary', method: 'POST', headers: { 'User-Agent': 'TokenHUD/1.0' } },
+  antigravity: { url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary', method: 'POST', headers: { 'User-Agent': 'antigravity/hub/2.23.0 darwin/arm64' } },
   'gemini-cli': { url: 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', method: 'POST' },
   'github-copilot': { url: 'https://api.github.com/copilot_internal/user', scheme: 'token', headers: { 'X-GitHub-Api-Version': '2022-11-28' } },
   devin: { url: 'https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus', method: 'POST', bodyToken: true, headers: { 'Connect-Protocol-Version': '1' } },

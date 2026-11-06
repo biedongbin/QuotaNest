@@ -61,6 +61,36 @@ struct QuotaNestApp: App {
                 exit(0)
             } catch { print("settings diagnostic failed: \(error.localizedDescription)"); exit(1) }
         case .importScan:
+            if let reportPath = environment["QUOTANEST_REBUILD_FROM_REPORT"],
+               let backupPath = environment["QUOTANEST_VERIFICATION_BACKUP"],
+               let outputPath = environment["QUOTANEST_REBUILD_OUTPUT"] {
+                do {
+                    let fixture = try DiagnosticFixture()
+                    _engine = StateObject(wrappedValue: fixture.engine)
+                    Task { @MainActor in
+                        let summary = await AccountRebuildVerification.run(backup: URL(fileURLWithPath: backupPath),
+                            report: URL(fileURLWithPath: reportPath), output: URL(fileURLWithPath: outputPath))
+                        if let bytes = try? JSONEncoder().encode(summary), let text = String(data: bytes, encoding: .utf8) { print(text) }
+                        fixture.cleanup()
+                        exit(summary.reportWritten ? 0 : 1)
+                    }
+                    return
+                } catch { print("rebuild verification setup failed"); exit(1) }
+            }
+            if let reportPath = environment["QUOTANEST_VERIFY_IMPORTS_OUT"] {
+                do {
+                    let fixture = try DiagnosticFixture()
+                    _engine = StateObject(wrappedValue: fixture.engine)
+                    Task { @MainActor in
+                        let summary = await ImportVerification.run(home: home, output: URL(fileURLWithPath: reportPath),
+                            backup: environment["QUOTANEST_VERIFICATION_BACKUP"].map { URL(fileURLWithPath: $0) })
+                        if let bytes = try? JSONEncoder().encode(summary), let text = String(data: bytes, encoding: .utf8) { print(text) }
+                        fixture.cleanup()
+                        exit(summary.reportWritten ? 0 : 1)
+                    }
+                    return
+                } catch { print("verification setup failed"); exit(1) }
+            }
             let requested = ProcessInfo.processInfo.environment["QUOTANEST_IMPORT_SOURCE"]
             let scanners: [(String, () -> [ImportCandidate])] = [
                 ("9router", { ProviderImporter.from9Router(home: home.path) }),
@@ -68,6 +98,17 @@ struct QuotaNestApp: App {
                 ("cpamp", { ProviderImporter.fromCPAMP(home: home.path) }),
                 ("magpie", { ProviderImporter.fromMagpie(home: home.path) })]
             let templates = ProviderImporter.bundledTemplates()
+            if environment["QUOTANEST_DUPLICATE_SCAN"] == "1" {
+                let accounts = ProviderRegistry.scan(dir: paths.userProvidersDir)
+                let index = ProviderAccountIdentity.index(providers: accounts, templates: templates)
+                let groups = ProviderAccountIdentity.duplicateGroups(providers: accounts, templates: templates)
+                print("account identity scan: accounts=\(accounts.count), recognized=\(index.count), duplicate-groups=\(groups.count)")
+                for (number, group) in groups.enumerated() {
+                    let sources = Set(group.map { $0.manifest.sourceReference?.source ?? "manual" }).sorted().joined(separator: ",")
+                    print("group \(number + 1): members=\(group.count), sources=\(sources)")
+                }
+                exit(0)
+            }
             for (name, scan) in scanners where requested == nil || requested == name {
                 let rows = scan()
                 let eligible = rows.filter { row in row.unsupportedReason == nil && ImportCenterModel.quotaAdapted(row,

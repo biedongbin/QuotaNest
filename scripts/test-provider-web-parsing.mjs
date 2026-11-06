@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -90,7 +90,7 @@ test('OpenCode handles login HTML, empty Console shell, and absent subscription 
 });
 
 let seq = 0;
-function runProvider(name, auth, routes) {
+function runProvider(name, auth, routes, { script = `${name}-usage-provider.mjs`, environment = {} } = {}) {
   const directory = join(root, String(seq++)); mkdirSync(directory);
   const hud = join(directory, 'hud'); mkdirSync(hud);
   const authFile = join(directory, 'auth.json'), cache = join(directory, 'cache.json');
@@ -99,14 +99,14 @@ function runProvider(name, auth, routes) {
   writeFileSync(cache, '{"generatedAt":123,"seven_day":{"used_percentage":9}}');
   const prior = readFileSync(cache, 'utf8');
   writeFileSync(fixture, JSON.stringify(routes));
-  writeFileSync(curl, `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(args)+'\\n');const routes=JSON.parse(fs.readFileSync(process.env.FIXTURE_ROUTES,'utf8'));const entry=routes[args.at(-1)];if(!entry)process.exit(88);process.stdout.write((typeof entry.body==='string'?entry.body:JSON.stringify(entry.body))+'\\n'+(entry.status??200));\n`, { mode: 0o700 });
-  const result = spawnSync(process.execPath, [join(source, `${name}-usage-provider.mjs`)], { encoding: 'utf8', timeout: 5000,
+  writeFileSync(curl, `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(args)+'\\n');const routes=JSON.parse(fs.readFileSync(process.env.FIXTURE_ROUTES,'utf8'));const url=args.includes('--url')?args[args.indexOf('--url')+1]:args.find(a=>a.startsWith('https://'));const entry=routes[url];if(!entry)process.exit(88);process.stdout.write((typeof entry.body==='string'?entry.body:JSON.stringify(entry.body))+(args.includes('-w')?'\\n'+(entry.status??200):''));\n`, { mode: 0o700 });
+  const result = spawnSync(process.execPath, [join(source, script)], { encoding: 'utf8', timeout: 5000,
     env: { PATH: process.env.PATH, HOME: directory, CLAUDE_CONFIG_DIR: directory, TOKENHUD_HUD_DIR: hud,
       TOKENHUD_AUTH_FILE: authFile, TOKENHUD_CACHE_FILE: cache, TOKENHUD_STDOUT_ONLY: '1', TOKENHUD_CURL: curl,
-      FIXTURE_LOG: log, FIXTURE_ROUTES: fixture } });
+      FIXTURE_LOG: log, FIXTURE_ROUTES: fixture, ...environment } });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(cache, 'utf8'), prior, 'App-mode adapters must not write snapshots');
-  const requests = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const requests = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
   assert(!JSON.stringify(requests).includes('do-not-use-model-key'));
   return { usage: JSON.parse(result.stdout), requests };
 }
@@ -173,3 +173,94 @@ test('OpenCode legacy signed-out page is auth, never fabricated zero windows', (
   assert.equal(usage.error, 'auth');
   assert.equal(usage.five_hour, undefined);
 });
+
+const zcodeURL = 'https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.17.2';
+const zcodeJWT = 'eyJhbGciOiJIUzI1NiJ9.' + Buffer.from(JSON.stringify({ user_id: 'fixture-user', sub: 'fixture-sub', iat: 1700000000 })).toString('base64url') + '.offline-signature';
+const zcodeSnapshot = { authMode: 'auth', queryKey: zcodeJWT, tokenhudAuthContext: { device: 'fixture-device', expiresAt: '0' }, refreshApiKey: 'do-not-use-model-key' };
+function runZcode(body, auth = zcodeSnapshot) {
+  return runProvider('zcode', auth, { [zcodeURL]: { body } }, {
+    script: 'catalog-workspace-provider.mjs', environment: { USAGE_PROVIDER_NAME: 'zcode-start' },
+  });
+}
+test('ZCode CLI-follow JWT without exp and expires zero reaches Start GET with its device header', () => {
+  const { usage, requests } = runZcode({ code: 0, data: {
+    server_time: 1800000000,
+    plans: [{ status: 'active', user_plan_id: 'fixture-plan', starts_at: 1700000000, ends_at: 1900000000, name: 'Start' }],
+    balances: [{ user_plan_id: 'fixture-plan', remaining_units: 0, total_units: 100, used_units: 100, expires_at: 1900000000, show_name: 'GLM' }],
+  } });
+  assert.equal(usage.error, null);
+  assert.equal(usage.windows[0].amount, 0);
+  assert.equal(usage.windows[0].period, 'balance');
+  assert.equal(requests.length, 1);
+  assert(requests[0].includes(`Authorization: Bearer ${zcodeJWT}`));
+  assert(requests[0].includes('X-Device-Mid: fixture-device'));
+  assert(requests[0].includes('User-Agent: ZCode/3.17.2'));
+  assert.equal(requests[0][requests[0].indexOf('-X') + 1], 'GET');
+  assert.equal(requests[0].at(-1), zcodeURL);
+  assert(!requests[0].includes('--data-binary'));
+});
+test('ZCode successful empty Start pool reports no subscription without borrowing Coding credentials', () => {
+  const { usage, requests } = runZcode({ code: 0, data: { server_time: 1800000000, plans: [], balances: [] } });
+  assert.equal(usage.error, 'no-subscription');
+  assert.equal(usage.stale, true);
+  assert.equal(usage.windows, undefined);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].at(-1), zcodeURL);
+});
+test('ZCode absent balance arrays remain parse errors and expired sessions do not send requests', () => {
+  assert.equal(runZcode({ code: 0, data: {} }).usage.error, 'parse');
+  const { usage, requests } = runZcode({ code: 0, data: { plans: [], balances: [] } }, {
+    ...zcodeSnapshot, tokenhudAuthContext: { device: 'fixture-device', expiresAt: '1' },
+  });
+  assert.equal(usage.error, 'auth');
+  assert.deepEqual(requests, []);
+});
+
+function credentialFromDeclaration(manifest, record) {
+  const at = path => path.split('.').reduce((value, key) => {
+    if (typeof value === 'string') { try { value = JSON.parse(value); } catch { return undefined; } }
+    return value?.[key];
+  }, record);
+  const format = manifest.credentialSource;
+  if (!Object.entries(format.requiredValues ?? {}).every(([path, value]) => at(path) === value)) return null;
+  const key = at(format.tokenPath);
+  return typeof key === 'string' && key.trim() ? key : null;
+}
+for (const [template, site, url, protocol] of [
+  ['glm', 'bigmodel', 'https://open.bigmodel.cn/api/monitor/usage/quota/limit', 'anthropic'],
+  ['zai-coding', 'zai', 'https://api.z.ai/api/monitor/usage/quota/limit', 'openai'],
+]) {
+  test(`ZCode ${site} OAuth declaration uses Coding key and existing ${template} quota adapter`, () => {
+    const manifest = JSON.parse(readFileSync(join(source, '../providers', template, 'manifest.json'), 'utf8'));
+    const state = { source: 'zcode', site, jwt: zcodeJWT, device: 'fixture-device', key: 'offline-coding-key' };
+    const record = { type: 'oauth', access: state.key, accountId: 'fixture-account', expires: 0, refresh: JSON.stringify(state) };
+    const key = credentialFromDeclaration(manifest, record);
+    assert.equal(key, 'offline-coding-key');
+    assert.equal(credentialFromDeclaration(manifest, { ...record, type: 'api' }), null);
+    assert.equal(credentialFromDeclaration(manifest, { ...record, refresh: JSON.stringify({ ...state, site: site === 'zai' ? 'bigmodel' : 'zai' }) }), null);
+    assert.equal(credentialFromDeclaration(manifest, { ...record, refresh: JSON.stringify({ ...state, key: undefined }) }), null);
+    assert(manifest.quotaAuthModes.includes('auth'));
+    assert(manifest.quotaAuthModes.includes('apikey'));
+    assert.equal(manifest.authCallProtocol, protocol);
+    assert.equal(manifest.authCallUrl, manifest.refreshUrl);
+    assert.equal(manifest.authCallHeader, manifest.refreshHeader);
+    assert.equal(manifest.inheritQueryUrl, url);
+    const snapshot = { authMode: 'auth', queryKey: key, apiUrl: url, tokenhudResolvedAuth: true,
+      headers: { Authorization: manifest.inheritQueryHeader.replace('Authorization: ', '').replace('<key>', key) } };
+    const { usage, requests } = runProvider(template, snapshot, { [url]: { body: { code: 200, success: true, data: { limits: [
+      { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 25, nextResetTime: 1900000000000 },
+      { type: 'TOKENS_LIMIT', unit: 6, percentage: 40, nextResetTime: 1900000000000 },
+    ] } } } }, {
+      script: template === 'glm' ? 'glm-usage-provider.mjs' : 'catalog-coding-provider.mjs',
+      environment: { USAGE_PROVIDER_NAME: template, TOKENHUD_CODING_PROVIDER: template },
+    });
+    assert.equal(usage.error, null);
+    assert.equal(usage.five_hour.used_percentage, 25);
+    assert.equal(usage.seven_day.used_percentage, 40);
+    assert.equal(requests.length, 1);
+    assert(requests[0].includes(url));
+    assert(requests[0].includes('Authorization: offline-coding-key'));
+    assert(!JSON.stringify(requests).includes(zcodeJWT));
+    assert(!requests[0].includes('--data-binary'));
+  });
+}

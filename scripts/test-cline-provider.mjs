@@ -23,15 +23,17 @@ function makeHome() {
 // $CLINE_TEST_FLAKE 存在时: 首次调用模拟 TLS 连接失败 (exit 35, 无应答)
 function installStubCurl(home) {
   const stub = join(home, 'bin/curl');
-  writeFileSync(stub, `#!/bin/sh
-printf '%s\\n' "$@" >> "$CLINE_TEST_CURLLOG"
-if [ -n "$CLINE_TEST_FLAKE" ] && [ ! -f "$CLINE_TEST_FLAKE" ]; then
-  : > "$CLINE_TEST_FLAKE"
-  echo 'curl: (35) SSL_connect failed' >&2
-  exit 35
-fi
-cat "$CLINE_TEST_BODY"
-printf '\\n%s\\n' "$CLINE_TEST_CODE"
+  writeFileSync(stub, `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.CLINE_TEST_CURLLOG, args.join('\\n') + '\\n');
+if (process.env.CLINE_TEST_FLAKE && !fs.existsSync(process.env.CLINE_TEST_FLAKE)) {
+ fs.writeFileSync(process.env.CLINE_TEST_FLAKE, ''); process.exit(35);
+}
+const routes = process.env.CLINE_TEST_ROUTES ? JSON.parse(fs.readFileSync(process.env.CLINE_TEST_ROUTES, 'utf8')) : {};
+const url = args[args.length - 1], reply = routes[new URL(url).pathname];
+if (reply) process.stdout.write(JSON.stringify(reply.body) + '\\n' + reply.status);
+else process.stdout.write(fs.readFileSync(process.env.CLINE_TEST_BODY, 'utf8') + '\\n' + process.env.CLINE_TEST_CODE);
 `, { mode: 0o755 });
 }
 
@@ -51,6 +53,7 @@ function run(home, body, code = '200', auth = { apiKey: 'clp_test' }) {
       CLINE_TEST_CURLLOG: join(home, 'curl.log'),
       CLINE_TEST_BODY: join(home, 'body'),
       CLINE_TEST_CODE: code,
+      CLINE_TEST_ROUTES: existsSync(join(home, 'routes.json')) ? join(home, 'routes.json') : '',
       CLINE_TEST_FLAKE: process.env.CLINE_TEST_FLAKE ? join(home, 'flaked') : '',
     },
     encoding: 'utf8', timeout: 30000,
@@ -150,20 +153,68 @@ test('不写回凭证; auth 文件说明键保留', () => {
   assert.deepEqual(JSON.parse(readFileSync(join(home, '.claude/hud/.cline-usage-auth.json'), 'utf8')), auth);
 });
 
-test('连接层失败重试一次即成功; 有应答失败不重试', () => {
+test('连接层失败交给外层 Runner 重试; 有应答失败也不内层重试', () => {
   const home = makeHome();
   installStubCurl(home);
   process.env.CLINE_TEST_FLAKE = '1';
   const c = run(home, THREE);
   delete process.env.CLINE_TEST_FLAKE;
-  assert.equal(c.error, null, '首次 TLS 失败须重试成功');
-  assert.equal(c.five_hour.used_percentage, 64);
-  assert.equal(readFileSync(join(home, 'curl.log'), 'utf8').split('\n').filter(l => l.includes('https://')).length, 2);
+  assert.equal(c.error, 'network', '适配器单次尝试，由 Runner 统一重试');
+  assert.equal(readFileSync(join(home, 'curl.log'), 'utf8').split('\n').filter(l => l.startsWith('https://api.cline.bot/api/v1/')).length, 1);
 
   const home2 = makeHome();
   installStubCurl(home2);
   run(home2, '{}', '500');
-  assert.equal(readFileSync(join(home2, 'curl.log'), 'utf8').split('\n').filter(l => l.includes('https://')).length, 1);
+  assert.equal(readFileSync(join(home2, 'curl.log'), 'utf8').split('\n').filter(l => l.startsWith('https://api.cline.bot/api/v1/')).length, 1);
+});
+
+function creditFixture(balance, status = 200) {
+  const home = makeHome(); installStubCurl(home);
+  writeFileSync(join(home, 'routes.json'), JSON.stringify({
+    '/api/v1/users/me': { status: 200, body: { success: true, data: { clineUserId: 'account/a', id: 'other' } } },
+    '/api/v1/users/account%2Fa/balance': { status, body: { success: status === 200, data: { balance } } },
+  }));
+  return home;
+}
+
+test('ClinePass 404 reads an independent USD credit pool with native client headers', () => {
+  const home = creditFixture('1250000');
+  const cache = run(home, '{}', '404');
+  assert.equal(cache.error, null); assert.equal(cache.stale, false);
+  assert.deepEqual(cache.windows, [{ label: '充值余额', amount: 1.25, unit: 'USD', period: 'balance' }]);
+  for (const field of ['five_hour', 'seven_day', 'monthly']) assert.equal(cache[field], null);
+  const log = readFileSync(join(home, 'curl.log'), 'utf8');
+  assert.deepEqual(log.split('\n').filter(line => line.startsWith('https://api.cline.bot/api/v1/')), [
+    'https://api.cline.bot/api/v1/users/me/plan/usage-limits',
+    'https://api.cline.bot/api/v1/users/me',
+    'https://api.cline.bot/api/v1/users/account%2Fa/balance',
+  ]);
+  assert.ok(log.includes('--http1.1'), 'native account and balance reads require the working HTTP/1.1 transport');
+  assert.ok(log.includes('X-CLIENT-TYPE: cline-desktop'));
+  assert.ok(log.includes('X-CLIENT-VERSION: 3.5.54')); assert.ok(log.includes('User-Agent: Cline/3.5.54'));
+  assert.ok(!log.includes('/chat/completions')); assert.ok(!JSON.stringify(cache).includes('account/a'));
+});
+
+test('zero credits are valid; missing or malformed credits remain unknown', () => {
+  assert.equal(run(creditFixture(0), '{}', '404').windows[0].amount, 0);
+  for (const value of [null, '', -1, true, {}, 'not-a-number']) {
+    const cache = run(creditFixture(value), '{}', '404');
+    assert.equal(cache.error, 'parse'); assert.equal(cache.windows, undefined);
+  }
+});
+
+test('credit endpoint refusal does not become a successful empty subscription', () => {
+  for (const [status, error] of [[401, 'auth'], [403, 'auth'], [429, 'ratelimit'], [500, 'network']]) {
+    const cache = run(creditFixture(0, status), '{}', '404');
+    assert.equal(cache.error, error); assert.equal(cache.windows, undefined);
+  }
+});
+
+test('failed credit reads preserve the previous balance without inventing subscription windows', () => {
+  const home = creditFixture(2500000); const good = run(home, '{}', '404');
+  const stale = run(home, '{}', '500');
+  assert.equal(stale.error, 'network'); assert.equal(stale.stale, true);
+  assert.deepEqual(stale.windows, good.windows); assert.equal(stale.five_hour, null);
 });
 
 test('模板路由: fetch.sh 与 statusline 指向 cline-usage-provider, 三桶齐备', () => {

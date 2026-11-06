@@ -86,7 +86,7 @@ struct ProviderAuthenticationTests {
         var request = URLRequest(url: try #require(URL(string: quota.queryUrl)))
         RefreshTrigger.applyHeaders(&request, quota.queryHeader, key: quota.queryKey, protocol: quota.refreshProtocol)
         #expect(request.value(forHTTPHeaderField: "Authorization") == (supplier == "glm" ? config.refreshKey : "Bearer \(config.refreshKey)"))
-        #expect(manifest.credentialSource == nil)
+        #expect(manifest.quotaAuthModes?.contains("apikey") == true)
         config.authMode = "auth"
         #expect(throws: ProviderAuthenticationError.self) { try ProviderAuthentication.resolveCall(config) }
     }

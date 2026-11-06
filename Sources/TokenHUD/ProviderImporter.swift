@@ -20,6 +20,7 @@ struct ImportCandidate: Identifiable {
     var sourceRecordId: String = ""
     var sourceReference: ProviderSourceReference? = nil
     var sourceAuthMode: String = "apikey"
+    var accountIdentity: String? = nil
 
     var authLabel: String { sourceAuthMode == "auth" || note.lowercased().contains("oauth") ? "Auth" : "API Key" }
     var origin: String {
@@ -32,6 +33,7 @@ struct ImportCandidate: Identifiable {
 
 enum ProviderImporter {
     static let sqlite = "/usr/bin/sqlite3"
+    private static let importLock = NSLock()
 
     /// Identity aliases only. Wire protocols and credentials remain manifest driven.
     static let sourceAliases = [
@@ -189,11 +191,20 @@ enum ProviderImporter {
             let reference = ProviderSourceReference(source: "magpie", path: authPath, recordId: key,
                                                     providerId: actualID, collection: "plugin-auth",
                                                     credentialProviderId: credentialID)
-            let label = cacheEntry?["name"] as? String ?? credentialID
+            let declared = templates.filter { type in
+                guard let source = type.manifest.credentialSource, source.importProviders?.contains(credentialID) == true else { return false }
+                return formats(source).contains { accepts($0, object: object) }
+            }
+            let priority = declared.map { $0.manifest.credentialSource?.importPriority ?? 0 }.max()
+            let selected = declared.filter { ($0.manifest.credentialSource?.importPriority ?? 0) == priority }
+            let preferred = selected.count == 1 ? selected.first : nil
+            let label = (cacheEntry?["name"] as? String ?? credentialID)
+                + (preferred.map { " · " + $0.manifest.fullName } ?? "")
             var c = candidate(reference: reference, provider: credentialID, label: label,
                               rawAccount: object["accountId"] as? String ?? object["email"] as? String ?? "",
                               mode: object["type"] as? String == "api" ? "apikey" : "auth",
-                              base: "", proto: "", templates: templates)
+                              base: "", proto: "", templates: templates, preferredTemplate: preferred)
+            if selected.count > 1 { c.unsupportedReason = "来源同时匹配多个额度类型，无法安全确定目标池" }
             if cacheEntry == nil || actualIDs.count != 1 {
                 c.unsupportedReason = "Magpie 插件缓存与原始供应商 ID 无法唯一对应；请在 Magpie 中确认账号"
             }
@@ -220,12 +231,13 @@ enum ProviderImporter {
     private static func candidate(reference: ProviderSourceReference, provider: String, label: String,
                                   rawAccount: String, mode: String, base: String, proto: String,
                                   templates: [PluginProvider], enabled: Bool = true,
-                                  allowGeneric: Bool = false) -> ImportCandidate {
-        let template = matchingTemplate(provider: provider, base: base, templates: templates)
+                                  allowGeneric: Bool = false, preferredTemplate: PluginProvider? = nil) -> ImportCandidate {
+        let template = preferredTemplate ?? matchingTemplate(provider: provider, base: base, templates: templates)
         var effectiveBase = base
         var effectiveProtocol = proto
         var reason: String?
         var initializedReference = reference
+        var accountIdentity: String?
         if let template {
             let manifest = template.manifest
             if !manifest.supportsQuota || (manifest.quotaAuthModes.map { !$0.contains(mode) } ?? false)
@@ -255,6 +267,7 @@ enum ProviderImporter {
                 reason = "源里这条没有可用的 API Key"
             }
             if reason == nil {
+                accountIdentity = ProviderAccountIdentity.fingerprint(record: record, template: template)
                 initializedReference = SourceSynchronizer.register(reference, record: record, template: template)
                 if record.authMode == "auth", reference.source == "magpie",
                    ["logins", "plugin-auth"].contains(reference.collection ?? ""), initializedReference.identityAccount == nil {
@@ -268,7 +281,8 @@ enum ProviderImporter {
             note: "\(reference.providerId ?? provider) / \(mode == "auth" ? "OAuth" : "apikey")",
             unsupportedReason: reason, enabled: enabled, slugHint: PluginGenerator.slugify(template?.slug ?? provider),
             sourceAccount: isAccountId(rawAccount) ? maskAccount(rawAccount) : "",
-            sourceRecordId: reference.recordId, sourceReference: initializedReference, sourceAuthMode: mode)
+            sourceRecordId: reference.recordId, sourceReference: initializedReference, sourceAuthMode: mode,
+            accountIdentity: accountIdentity)
     }
 
     static func matchingTemplate(provider: String, base: String, templates: [PluginProvider]) -> PluginProvider? {
@@ -341,18 +355,38 @@ enum ProviderImporter {
         return value == "glm" ? "GLM" : value.prefix(1).uppercased() + value.dropFirst()
     }
 
+    static func sameSourceAccount(_ candidate: ImportCandidate, manifest: ProviderManifest,
+                                  templateLookup: (String) -> ProviderManifest?) -> Bool {
+        guard let reference = candidate.sourceReference,
+              manifest.sourceReference?.sameSourceRecord(as: reference) == true else { return false }
+        guard manifest.template != candidate.template, reference.source == "magpie", reference.collection == "plugin-auth",
+              let provider = reference.credentialProviderId,
+              let old = manifest.template.flatMap(templateLookup)?.credentialSource?.importProviders,
+              let new = candidate.template.flatMap(templateLookup)?.credentialSource?.importProviders,
+              old.contains(provider), new.contains(provider) else { return true }
+        return false
+    }
+
     /// Stage only local metadata. Source credentials are revalidated and never written locally.
     @discardableResult
     static func apply(_ c: ImportCandidate, templates: [PluginProvider], userDir: URL, hudDir: URL) throws -> String {
+        importLock.lock()
+        defer { importLock.unlock() }
         guard c.unsupportedReason == nil, let reference = c.sourceReference,
               reference.source == c.source, !reference.recordId.isEmpty, reference.recordId == c.sourceRecordId else {
             throw ImportedSource.failure(c.unsupportedReason ?? "导入缺少经过验证的来源引用")
         }
         let existing = ProviderRegistry.scan(dir: userDir)
-        guard !existing.contains(where: { $0.manifest.sourceReference?.sameSourceRecord(as: reference) == true }) else {
+        guard !existing.contains(where: { provider in sameSourceAccount(c, manifest: provider.manifest,
+            templateLookup: { slug in templates.first { $0.slug == slug }?.manifest }) }) else {
             throw ImportedSource.failure("该来源账号已导入，不会覆盖现有配置")
         }
         let record = try ImportedSource.read(reference)
+        let type = templates.first { $0.slug == c.template }
+        if let identity = ProviderAccountIdentity.fingerprint(record: record, template: type),
+           ProviderAccountIdentity.index(providers: existing, templates: templates).values.contains(identity) {
+            throw ImportedSource.failure("该账号已从其他来源添加，不会重复导入或覆盖现有设置")
+        }
         let legacy = existing.filter { $0.manifest.sourceReference == nil && matchesExisting(c, manifest: $0.manifest) }
         guard legacy.count <= 1 else { throw ImportedSource.failure("多个旧账号对应同一来源，请先确认原账号") }
         if let account = legacy.first {

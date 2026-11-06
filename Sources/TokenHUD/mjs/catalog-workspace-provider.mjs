@@ -25,6 +25,8 @@ export function parseWorkspaceUsage(provider, data, now = Date.now()) {
   if (!obj(data)) return null;
   const windows = [];
   if (provider === 'zcode-start') {
+    // A successful empty Start/Gift pool says nothing about the separate Coding pool.
+    if (Array.isArray(data.plans) && Array.isArray(data.balances) && !data.plans.length && !data.balances.length) return { error: 'no-subscription' };
     const clock = num(data.server_time) ?? now / 1000;
     const live = (Array.isArray(data.plans) ? data.plans : []).filter(p => p.status === 'active' && !(num(p.starts_at) > clock) && !(num(p.ends_at) > 0 && num(p.ends_at) <= clock));
     for (const b of Array.isArray(data.balances) ? data.balances : []) {
@@ -124,6 +126,7 @@ export function main() {
   if (envelope.code !== undefined && !['0', '200'].includes(String(envelope.code))) return fail('parse');
   const usage = parseWorkspaceUsage(provider, envelope.data ?? envelope);
   if (!usage) return fail('parse');
+  if (usage.error) return fail(usage.error);
   emit({ ...usage, generatedAt: Date.now(), ttlMs: 60000, error: null, stale: false });
 }
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

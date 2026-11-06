@@ -22,8 +22,24 @@
   "testModel": "glm-4.7",
   "authMode": "apikey",
   "quotaAuthModes": [
-    "apikey"
+    "apikey",
+    "auth"
   ],
+  "authCallUrl": "https://open.bigmodel.cn/api/anthropic/v1/messages",
+  "authCallProtocol": "anthropic",
+  "authCallHeader": "Authorization: Bearer <key>\nanthropic-version: 2023-06-01",
+  "credentialSource": {
+    "file": "",
+    "tokenPath": "refresh.key",
+    "requiredValues": {
+      "type": "oauth",
+      "refresh.site": "bigmodel"
+    },
+    "importProviders": [
+      "zcode"
+    ],
+    "importPriority": 100
+  },
   "inheritQueryUrl": "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
   "inheritQueryHeader": "Authorization: <key>"
 }

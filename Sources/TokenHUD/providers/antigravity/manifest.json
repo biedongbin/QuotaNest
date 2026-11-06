@@ -27,7 +27,18 @@
     },
     "contextPaths": {
       "projectId": "project_id"
-    }
+    },
+    "alternatives": [
+      {
+        "tokenPath": "accessToken",
+        "requiredValues": {
+          "provider": "antigravity"
+        },
+        "contextPaths": {
+          "projectId": "projectId"
+        }
+      }
+    ]
   },
   "buckets": {}
 }

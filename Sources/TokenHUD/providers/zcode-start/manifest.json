@@ -59,6 +59,10 @@
         "tokenEncoding": "jwt"
       }
     ],
-    "tokenEncoding": "jwt"
+    "tokenEncoding": "jwt",
+    "importProviders": [
+      "zcode"
+    ],
+    "importPriority": 10
   }
 }

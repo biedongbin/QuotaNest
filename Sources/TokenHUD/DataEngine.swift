@@ -34,7 +34,7 @@ actor CallSlots {
 actor QueryGate {
     enum GateError: Error { case waitTimeout }
 
-    private var ops: [String: (revision: Double?, task: Task<UsageCache?, Never>)] = [:]
+    private var ops: [String: (id: UUID, revision: Double?, task: Task<UsageCache?, Never>)] = [:]
     private var globalInFlight = 0
     let globalLimit: Int
     let waitBudgetSec: Double
@@ -51,8 +51,9 @@ actor QueryGate {
              _ op: @escaping @Sendable () async -> UsageCache?) async throws -> UsageCache? {
         let deadline = Date().addingTimeInterval(waitBudgetSec)
         while true {
+            try Task.checkCancellation()
             if let existing = ops[slug], existing.revision == revision {
-                return await existing.task.value
+                return try await value(of: existing.task)
             }
             // 同账号旧凭证仍在飞：等它释放，绝不能把旧账号结果交给新 revision。
             if ops[slug] == nil && globalInFlight < globalLimit { break }
@@ -60,15 +61,27 @@ actor QueryGate {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         globalInFlight += 1
-        let task = Task { () async -> UsageCache? in
-            defer { Task { await self.finish(slug: slug) } }
-            return await op()
-        }
-        ops[slug] = (revision, task)
-        return await task.value
+        let id = UUID()
+        let task = Task { await op() }
+        ops[slug] = (id, revision, task)
+        defer { finish(slug: slug, id: id) }
+        return try await value(of: task)
     }
 
-    private func finish(slug: String) {
+    /// A cancelled caller cancels the shared read sequence, including its backoff and process.
+    private func value(of task: Task<UsageCache?, Never>) async throws -> UsageCache? {
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        try Task.checkCancellation()
+        if task.isCancelled { throw CancellationError() }
+        return result
+    }
+
+    private func finish(slug: String, id: UUID) {
+        guard ops[slug]?.id == id else { return }
         ops[slug] = nil
         globalInFlight = max(0, globalInFlight - 1)
     }
@@ -185,10 +198,20 @@ final class DataEngine: ObservableObject {
     private let defaults: UserDefaults
     private let settingsURL: URL
     private var timer: Timer?
+    private var isRefreshingBackground = false
     /// P1-4 模型调用并发位 (每账号 1 / 全局 2): 计划触发与测试调用共用
     let callSlots = CallSlots()
     /// P1-2 查询 op 体系: 手动 forceRefresh 与 timer refreshNow 走同一 gate (全局 3/每账号 1/同账号合并)
     let queryGate = QueryGate()
+    struct QueryDiagnostics {
+        let attemptCount: Int
+        let finalError: String?
+        var retryCount: Int { max(0, attemptCount - 1) }
+    }
+    private(set) var queryDiagnostics: [String: QueryDiagnostics] = [:]
+    /// Offline seams; production resolves a new credential snapshot for every attempt.
+    var quotaAttempt: ((PluginProvider) async -> UsageCache?)?
+    var quotaRetrySleep: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
 
     static let defaultsNodeKey = "quotanest.nodePath"
     static let defaultsIconKey = "quotanest.iconProvider"
@@ -880,10 +903,10 @@ final class DataEngine: ObservableObject {
             .sorted { orderIndex($0.slug) < orderIndex($1.slug) }
             .map {
                 let cache = readCache(slug: $0.slug, manifest: $0.manifest)
-                let interval = defaults.integer(forKey: Self.intervalKey($0.slug)) > 0
-                    ? defaults.integer(forKey: Self.intervalKey($0.slug)) * 60 : $0.manifest.interval
+                let interval = effectiveIntervalSeconds($0.slug, manifest: $0.manifest)
                 return ProviderState(slug: $0.slug, manifest: $0.manifest, cache: cache,
-                                     isStale: !HUDFmt.isFresh(cache, interval: interval, now: now))
+                                     isStale: cache?.error != nil || cache?.stale == true
+                                        || !HUDFmt.isFresh(cache, interval: interval, now: now))
             }
         // 图标指向的家若已不存在, 回退到全部取最高
         if let slug = iconProviderSlug, !states.contains(where: { $0.slug == slug }) {
@@ -950,14 +973,18 @@ final class DataEngine: ObservableObject {
         defaults.object(forKey: Self.intervalKey(slug)) != nil
     }
 
-    /// 有效间隔 (分钟): 覆盖值优先, 否则 manifest (秒→分)
-    func effectiveIntervalMinutes(_ slug: String, manifest: ProviderManifest) -> Int {
+    /// Every quota scheduling/freshness path uses this cap, including legacy saved values.
+    func effectiveIntervalSeconds(_ slug: String, manifest: ProviderManifest) -> Int {
         let saved = defaults.integer(forKey: Self.intervalKey(slug))
-        return saved > 0 ? saved : max(1, manifest.interval / 60)
+        return saved > 0 ? min(saved, 5) * 60 : max(1, min(300, manifest.interval))
+    }
+
+    func effectiveIntervalMinutes(_ slug: String, manifest: ProviderManifest) -> Int {
+        max(1, effectiveIntervalSeconds(slug, manifest: manifest) / 60)
     }
 
     func setIntervalMinutes(_ slug: String, minutes: Int) {
-        let clamped = max(1, min(1440, minutes))
+        let clamped = max(1, min(5, minutes))
         defaults.set(clamped, forKey: Self.intervalKey(slug))
         reloadRegistry()   // isStale 按 f际间隔重算
     }
@@ -1041,20 +1068,29 @@ final class DataEngine: ObservableObject {
     }
 
     func refreshNow() async {
+        guard !Task.isCancelled, !isRefreshingBackground else { return }
+        isRefreshingBackground = true
+        defer { isRefreshingBackground = false }
+        let now = Date().timeIntervalSince1970 * 1000
         for index in states.indices {
+            states[index].isStale = states[index].cache?.error != nil || states[index].cache?.stale == true
+                || !HUDFmt.isFresh(states[index].cache,
+                    interval: effectiveIntervalSeconds(states[index].slug, manifest: states[index].manifest), now: now)
             if let cache = states[index].cache,
                !cacheMatchesAuthSource(cache, slug: states[index].slug, manifest: states[index].manifest) {
                 states[index].cache = nil
                 states[index].isStale = true
             }
         }
-        let now = Date().timeIntervalSince1970 * 1000
         // P1-3 退避: ratelimit 暂停窗口内的账号跳过本轮自动查询 (到期自动恢复; 手动 forceRefresh 不受限)
         let paused = Self.loadPaused(defaults: defaults)
         // MainActor 上下文先筛过期家 (按尝试时间: 失败也会前移 lastAttemptAt, 免 10s timer 对失败家反复重刷)
         // v0.2: 间隔取每账号覆盖优先 (秒), 缺省 manifest.interval
         let due: [(String, PluginProvider)] = states.compactMap { st in
-            guard Self.canQuery(st.manifest), paused[st.slug] == nil else { return nil }
+            guard Self.canQuery(st.manifest) else { return nil }
+            // Old persisted hour-long pauses cannot bypass the five-minute query cap.
+            let latestAttempt = st.cache?.lastAttemptAt ?? st.cache?.generatedAt ?? 0
+            if let deadline = paused[st.slug], now < min(deadline, latestAttempt + 300_000) { return nil }
             if st.manifest.quotaMode != nil {
                 guard let auth = authURL(for: st) else { return nil }
                 let config = ProviderConfigStore.read(authFile: auth, manifest: st.manifest)
@@ -1062,11 +1098,12 @@ final class DataEngine: ObservableObject {
                 let ready = (try? ProviderAuthentication.resolveQuota(config)) != nil
                 guard ready else { return nil }
             }
-            let override = defaults.integer(forKey: Self.intervalKey(st.slug))
-            let interval = override > 0 ? override * 60 : st.manifest.interval
+            let interval = effectiveIntervalSeconds(st.slug, manifest: st.manifest)
             guard !HUDFmt.isAttemptFresh(st.cache, interval: interval, now: now) else { return nil }
-            return (st.slug, PluginProvider(slug: st.slug, manifest: st.manifest,
-                                            dir: pluginDir(slug: st.slug)))
+            // Preserve the registry's exact owner URL; reconstructing a directory URL can
+            // change its directory representation and fail the ownership check before attempt 1.
+            guard let plugin = allPlugins.first(where: { $0.slug == st.slug }) else { return nil }
+            return (st.slug, plugin)
         }
         guard !due.isEmpty else {
             return // 无家过期, 不更新 lastRefresh (避免假"0s前")
@@ -1074,9 +1111,36 @@ final class DataEngine: ObservableObject {
         await fetch(due, now: now)
     }
 
-    /// 强制刷新单家 (忽略 fresh 状态), 用于"刷新额度"后立即查余额更新
-    /// 停用跟踪的账号同样允许手动查询 (查询不消费额度), 结果写缓存不进 states
-    /// (迟到回包核对在 states 内提交路径上由 fetch 负责; 此路径的提交即用户当前所见, 不需要 revision 挡)
+    /// Hold one gate slot across all attempts. Each runner call resolves a fresh private auth snapshot.
+    private func queryWithRetries(_ plugin: PluginProvider, revision: Double, allowDisabled: Bool = true) async -> UsageCache? {
+        let result = await runner.runWithRetries(plugin, delay: quotaRetrySleep,
+            isCurrent: { [weak self] in
+                await self?.queryOwnerMatches(plugin, revision: revision, allowDisabled: allowDisabled) ?? false
+            }, attempt: quotaAttempt)
+        guard !Task.isCancelled, queryOwnerMatches(plugin, revision: revision, allowDisabled: allowDisabled) else { return nil }
+        queryDiagnostics[plugin.slug] = QueryDiagnostics(attemptCount: result.attemptCount,
+                                                         finalError: result.failureReason)
+        return result.cache
+    }
+
+    private func queryRevision(_ plugin: PluginProvider) -> Double {
+        var manifest = plugin.manifest
+        if manifest.authFile == nil { manifest.authFile = hudDir.appendingPathComponent(".\(plugin.slug)-usage-auth.json").path }
+        return Self.configRevision(slug: plugin.slug, manifest: manifest)
+    }
+
+    private func queryOwnerMatches(_ plugin: PluginProvider, revision: Double, allowDisabled: Bool = true) -> Bool {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let current = allPlugins.first(where: { $0.slug == plugin.slug }),
+              current.dir == plugin.dir,
+              allowDisabled || (current.manifest.isEnabled && !disabledSlugs.contains(plugin.slug)),
+              (try? encoder.encode(current.manifest)) == (try? encoder.encode(plugin.manifest)) else { return false }
+        return queryRevision(current) == revision
+    }
+
+    /// 强制刷新单家 (忽略 fresh 状态); 停用自动跟踪的账号仍可手动只读查询。
+
     @discardableResult
     func forceRefresh(slug: String) async -> RefreshOutcome {
         let plugin = allPlugins.first { $0.slug == slug }
@@ -1087,18 +1151,22 @@ final class DataEngine: ObservableObject {
         guard Self.canQuery(plugin.manifest) else { return .failed("该账号未配置额度查询") }
         invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
         // 核对: 查询期间账号被删/凭证被改 → 丢弃 (FR-05.3)
-        let rev0 = Self.configRevision(slug: slug, manifest: plugin.manifest)
+        let rev0 = queryRevision(plugin)
         let now = Date().timeIntervalSince1970 * 1000
         // P1-2: 查询 op 走统一 gate (同账号在飞 → 合并共享结果; 满位等待计入 20s 总预算)
         let fetched: UsageCache?
         do {
-            fetched = try await queryGate.run(slug: slug, revision: rev0) { [runner] in await runner.run(plugin) }
+            fetched = try await queryGate.run(slug: slug, revision: rev0) { [weak self] in
+                await self?.queryWithRetries(plugin, revision: rev0)
+            }
+        } catch is CancellationError {
+            return .failed("查询已取消")
         } catch {
             invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
             return .failed(Self.reason(for: "busy"))
         }
-        guard let p = allPlugins.first(where: { $0.slug == slug }),
-              Self.configRevision(slug: slug, manifest: p.manifest) == rev0 else {
+        guard !Task.isCancelled else { return .failed("查询已取消") }
+        guard queryOwnerMatches(plugin, revision: rev0) else {
             invalidateChangedReferencedSnapshot(slug, manifest: plugin.manifest)
             return .failed("查询期间配置已变更，结果已丢弃")
         }
@@ -1111,7 +1179,10 @@ final class DataEngine: ObservableObject {
         }
         lastRefresh = Date()
         guard let fetched else { return .failed("查询无结果") }
-        if let e = fetched.error { return .failed(Self.reason(for: e)) }
+        if let e = fetched.error {
+            let retries = queryDiagnostics[slug]?.retryCount ?? 0
+            return .failed("\(Self.reason(for: e))（已重试 \(retries) 次）")
+        }
         return .ok
     }
 
@@ -1119,25 +1190,33 @@ final class DataEngine: ObservableObject {
     /// P1-2: 每 op 经 QueryGate (全局 3/每账号 1/同账号合并), 满位等待计入总预算, 超时标 busy
     private func fetch(_ due: [(String, PluginProvider)], now: Double, checkRevision: Bool) async {
         let revisions: [String: Double] = checkRevision
-            ? Dictionary(uniqueKeysWithValues: due.map { ($0.0, Self.configRevision(slug: $0.0, manifest: $0.1.manifest)) })
+            ? Dictionary(uniqueKeysWithValues: due.map { ($0.0, queryRevision($0.1)) })
             : [:]
-        let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?).self) { group in
+        let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?)?.self) { group in
             for (slug, plugin) in due {
-                group.addTask { [gate = queryGate, runner] in
-                    // gate 抛超时 → 记 busy (该家本轮未查, 不误标 fetch 失败)
-                    let cache = try? await gate.run(slug: slug, revision: revisions[slug]) { await runner.run(plugin) }
-                    return (slug, cache ?? nil)
+                group.addTask { [gate = queryGate, weak self] in
+                    let revision = revisions[slug] ?? 0
+                    do {
+                        let cache = try await gate.run(slug: slug, revision: revision) {
+                            await self?.queryWithRetries(plugin, revision: revision, allowDisabled: false)
+                        }
+                        return (slug, cache)
+                    } catch {
+                        // No request completed: cancellation/queue expiry must not advance lastAttemptAt.
+                        return nil
+                    }
                 }
             }
             var acc: [(String, UsageCache?)] = []
-            for await r in group { acc.append(r) }
+            for await r in group { if let r { acc.append(r) } }
             return acc
         }
+        guard !Task.isCancelled, !results.isEmpty else { return }
         for (slug, cache) in results {
             // 版本核对: 查询期间账号被删 (slug 不在 allPlugins) 或凭证被改 (revision 变) → 丢弃, 不污染新状态
             if checkRevision {
-                guard let p = allPlugins.first(where: { $0.slug == slug }),
-                      revisions[slug] == Self.configRevision(slug: slug, manifest: p.manifest) else {
+                guard let original = due.first(where: { $0.0 == slug })?.1,
+                      let revision = revisions[slug], queryOwnerMatches(original, revision: revision, allowDisabled: false) else {
                     if let manifest = allPlugins.first(where: { $0.slug == slug })?.manifest {
                         invalidateChangedReferencedSnapshot(slug, manifest: manifest)
                     }
@@ -1160,8 +1239,10 @@ final class DataEngine: ObservableObject {
         } else {
             path = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud/.\(slug)-usage-auth.json")
         }
-        let ownRevision = (try? path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+        let ownModified = (try? path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
             .timeIntervalSince1970 ?? 0
+        let ownBytes = (try? Data(contentsOf: path)) ?? Data()
+        let ownRevision = ownBytes.isEmpty ? ownModified : revisionDigest(Data("\(ownModified)|".utf8) + ownBytes)
         let config = ProviderConfigStore.read(authFile: path, manifest: manifest)
         if let reference = config.sourceReference {
             let encoder = JSONEncoder()
@@ -1178,7 +1259,13 @@ final class DataEngine: ObservableObject {
         }
         let sourceRevision = (try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
             .timeIntervalSince1970 ?? 0
-        return ownRevision + sourceRevision
+        return revisionDigest(Data("\(ownRevision)|\(sourceRevision)|".utf8)
+            + ((try? Data(contentsOf: source)) ?? Data()))
+    }
+
+    nonisolated private static func revisionDigest(_ data: Data) -> Double {
+        let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return Double(UInt64(hex.prefix(13), radix: 16) ?? 0)
     }
 
     /// 错误码 → 人话 (缓存契约里的 error 字段值不变)
@@ -1188,6 +1275,11 @@ final class DataEngine: ObservableObject {
         case "fetch": return L10n.tr("查询无结果")
         case "ratelimit": return L10n.tr("触发限频（429），稍后自动恢复")
         case "busy": return L10n.tr("查询排队超时（并发已满），请稍后重试")
+        case "no-subscription": return L10n.tr("当前额度池没有可用套餐，请检查导入的套餐类型")
+        case "script-missing": return L10n.tr("额度查询脚本不存在")
+        case "process-launch": return L10n.tr("无法启动额度查询进程")
+        case "timeout": return L10n.tr("额度查询超时")
+        case "invalid-response": return L10n.tr("额度查询响应无法解析")
         default: return code
         }
     }
@@ -1226,7 +1318,7 @@ final class DataEngine: ObservableObject {
 
     /// 暂停窗口: error=ratelimit → max(interval, 60s) 秒 (纯函数, 可测)
     nonisolated static func rateLimitPauseMs(intervalSec: Int) -> Double {
-        Double(max(intervalSec, 60)) * 1000
+        Double(min(300, max(intervalSec, 60))) * 1000
     }
 
     /// 触发滚动窗口并刷新: 对全部启用供应商发 chat 请求触发额度计算, 再强制查余额+重置时间
@@ -1304,8 +1396,13 @@ final class DataEngine: ObservableObject {
         }
         if let fetched {
             var snapshot = fetched
+            // Process failures have no response accountId. A live reference digest can
+            // still prove ownership; an explicit conflicting accountId never qualifies.
+            let sameSourceWithoutAccountID = fetched.accountId == nil
+                && states[i].manifest.sourceReference != nil && fetched.sourceRevision != nil
+                && fetched.sourceRevision == states[i].cache?.sourceRevision
             if fetched.error != nil, var previous = states[i].cache,
-               fetched.accountId == previous.accountId,
+               fetched.accountId == previous.accountId || sameSourceWithoutAccountID,
                cacheMatchesAuthSource(previous, slug: slug, manifest: states[i].manifest),
                states[i].manifest.sourceReference != nil || fetched.accountId != nil
                    || (states[i].manifest.authStyle != "local" && states[i].manifest.queryAuth != "header") {
@@ -1320,7 +1417,8 @@ final class DataEngine: ObservableObject {
             // P1-3: 429 退避 — ratelimit → 暂停自动查询至 max(interval, 60s); 成功则清除暂停 (到期恢复的另一路径)
             var paused = Self.loadPaused(defaults: defaults)
             if fetched.error == "ratelimit" {
-                paused[slug] = now + Self.rateLimitPauseMs(intervalSec: states[i].manifest.interval)
+                paused[slug] = (fetched.lastAttemptAt ?? now) + Self.rateLimitPauseMs(
+                    intervalSec: effectiveIntervalSeconds(slug, manifest: states[i].manifest))
             } else {
                 paused.removeValue(forKey: slug)
             }
@@ -1393,7 +1491,14 @@ final class DataEngine: ObservableObject {
                                                          dir: hudDir),
                                      hudDir: hudDir)
         do {
-            try JSONEncoder().encode(cache).write(to: p, options: .atomic)
+            let encoded = try JSONEncoder().encode(cache)
+            var object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
+            if let diagnostic = queryDiagnostics[state.slug] {
+                object["queryAttemptCount"] = diagnostic.attemptCount
+                object["queryRetryCount"] = diagnostic.retryCount
+                object["queryFinalError"] = diagnostic.finalError
+            }
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: p, options: .atomic)
             if let reference = state.manifest.sourceReference {
                 try HUDSync.refreshReferenceDependencies(slug: state.slug, reference: reference, hudDir: hudDir)
             }

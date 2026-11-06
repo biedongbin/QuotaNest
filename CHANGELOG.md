@@ -4,6 +4,17 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
+## Unreleased
+
+### Fixed
+
+- Detect the same GPT/Codex account and workspace across imported sources using declared identity evidence; skip duplicates without merging or deleting existing account settings.
+- Select the correct ZCode Coding quota pool from its source login, and distinguish a missing Start subscription from an authentication or parser failure.
+- Match native Antigravity query headers and source formats; read Cline prepaid credit separately when no ClinePass subscription exists.
+- Cap effective background quota intervals at five minutes and retry failed quota queries twice, preserving correctly bound stale values and original success timestamps. Model calls are not automatically retried.
+- Clarify that imported-account removal only affects QuotaNest-owned links, settings, cache, and HUD entries; external source accounts and credentials are preserved.
+- Filter the sidebar and overview by local creation or import source, combined with search and account status.
+
 ## [1.0.0] — 2026-11-06
 
 Refreshed 1.0.0 release; replaces the original 2026-11-05 assets and tag.

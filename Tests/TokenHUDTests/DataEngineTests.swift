@@ -442,8 +442,8 @@ struct DataEngineTests {
 
         let bad = await engine.forceRefresh(slug: "badauth")
         #expect(!bad.ok)
-        #expect(bad.reason == "缺凭证或凭证失效")
-        #expect(bad.message("B") == "✗ B 刷新失败: 缺凭证或凭证失效")
+        #expect(bad.reason == "缺凭证或凭证失效（已重试 2 次）")
+        #expect(bad.message("B") == "✗ B 刷新失败: 缺凭证或凭证失效（已重试 2 次）")
 
         let missing = await engine.forceRefresh(slug: "nope")
         #expect(missing.reason == "供应商不存在")

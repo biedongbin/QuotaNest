@@ -110,6 +110,27 @@ import Testing
         #expect(ProviderImporter.fromMagpie(home: dir.path, sourceDirectory: dir.path).first?.unsupportedReason != nil)
     }
 
+    @Test(arguments: ["bigmodel", "zai"])
+    func zcodeCodingSiteSelectsItsOwnPoolInsteadOfStart(site: String) throws {
+        let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let refresh = String(decoding: try JSONSerialization.data(withJSONObject: ["jwt": jwt, "key": "fixture-plan-key", "device": "device", "site": site]), as: UTF8.self)
+        try write(["providers": [["id": "zcode"]]], dir.appendingPathComponent("providers.json"))
+        try write(["zcode": ["type": "oauth", "access": "fixture-plan-key", "refresh": refresh, "accountId": "fixture-account"]], dir.appendingPathComponent("plugin-auth.json"))
+        try write([["id": "zcode", "accounts": [["key": "zcode", "type": "oauth", "accountId": "fixture-account"]]]], dir.appendingPathComponent("plugin-providers.json"))
+        let row = try #require(ProviderImporter.fromMagpie(home: dir.path, sourceDirectory: dir.path).first)
+        #expect(row.template == (site == "bigmodel" ? "glm" : "zai-coding"))
+        #expect(row.unsupportedReason == nil && row.sourceRecordId == "zcode")
+        let resolved = try ProviderAuthentication.resolveQuota(config(row, directory: dir))
+        #expect(resolved.queryKey == "fixture-plan-key")
+        #expect(resolved.queryHeader == "Authorization: <key>")
+        #expect(resolved.queryUrl.hasPrefix(site == "bigmodel" ? "https://open.bigmodel.cn/" : "https://api.z.ai/"))
+        let type = try #require(ProviderImporter.bundledTemplates().first { $0.slug == row.template })
+        var old = type.manifest
+        old.template = "zcode-start"; old.sourceReference = row.sourceReference
+        #expect(!ProviderImporter.sameSourceAccount(row, manifest: old,
+            templateLookup: { slug in ProviderImporter.bundledTemplates().first { $0.slug == slug }?.manifest }))
+    }
+
     @Test func anOpaquePlanKeyDoesNotBecomeAStartJWT() throws {
         let dir = try directory(); defer { try? FileManager.default.removeItem(at: dir) }
         try write(["providers": [["id": "zcode"]]], dir.appendingPathComponent("providers.json"))
