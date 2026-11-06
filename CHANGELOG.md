@@ -4,6 +4,13 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
+## Unreleased
+
+### Fixed
+
+- Imported accounts can change their local display name without changing source identity, credentials, or other manifest fields.
+- Callable imported accounts can choose a temporary model and confirm one API test without saving model or schedule changes. Model-list reuse revalidates the current source connection; quota-only types remain clearly identified.
+
 ## [1.0.0] — 2026-11-06
 
 Refreshed 1.0.0 release; replaces the original 2026-11-05 assets and tag.

@@ -44,6 +44,9 @@ struct ProviderCapabilityPresentation {
 struct ConfigTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
+    @State private var renameOpen = false
+    @State private var localName = ""
+    @State private var temporaryModel = ""
     private var config: ProviderConfig { model.readConfig(row.plugin) }
     private var capability: ProviderCapabilityPresentation {
         ProviderCapabilityPresentation(manifest: row.plugin.manifest, generic: !row.builtin)
@@ -51,6 +54,7 @@ struct ConfigTabView: View {
     private var canCall: Bool { capability.canCall(using: config.authMode) }
     private var readOnly: Bool { row.plugin.manifest.isSourceConfigurationReadOnly }
     private var resolvedCall: ProviderConfig? { try? ProviderAuthentication.resolveCall(config) }
+    private var testReady: Bool { model.callConfigured(row, modelOverride: readOnly ? temporaryModel : nil) }
     private var quotaAddress: String {
         do {
             let resolved = try ProviderAuthentication.resolveQuota(config)
@@ -64,6 +68,10 @@ struct ConfigTabView: View {
             HStack {
                 Text(L10n.tr("连接配置")).font(.headline)
                 Spacer()
+                Button(L10n.tr("修改显示名"), systemImage: "pencil") {
+                    localName = row.name
+                    renameOpen = true
+                }.barButton().accessibilityIdentifier("account.rename")
                 AccountActionButton(title: L10n.tr("编辑连接"), identifier: "account.edit-connection", enabled: !readOnly) {
                     model.startEdit()
                 }.fixedSize().frame(height: 28)
@@ -80,6 +88,13 @@ struct ConfigTabView: View {
                 Button(L10n.tr("删除账号…"), role: .destructive) { model.delete(row.id) }
             }
         }
+        .onAppear { temporaryModel = resolvedCall?.testModel ?? "" }
+        .onChange(of: row.id) { _, _ in temporaryModel = resolvedCall?.testModel ?? ""; renameOpen = false }
+        .alert(L10n.tr("修改本地显示名"), isPresented: $renameOpen) {
+            TextField(L10n.tr("账号名称"), text: $localName)
+            Button(L10n.tr("取消"), role: .cancel) {}
+            Button(L10n.tr("保存")) { model.renameDisplayName(row.id, name: localName) }
+        } message: { Text(L10n.tr("仅修改 QuotaNest 中的显示名，不修改来源账号。")) }
     }
     private var sourceDetails: some View {
         GroupBox(L10n.tr("来源配置 · 只读")) {
@@ -147,15 +162,25 @@ struct ConfigTabView: View {
                         }
                     }
                     if row.builtin && canCall { Label(L10n.tr("供应商类型固定服务地址与协议"), systemImage: "lock").font(.callout).foregroundStyle(.secondary) }
+                    if readOnly && canCall {
+                        TextField(L10n.tr("临时测试模型"), text: $temporaryModel)
+                            .fieldBox().accessibilityIdentifier("account.source-test-model")
+                        ModelCatalogControls(model: model, savedAccount: row, modelSelection: $temporaryModel)
+                        Text(L10n.tr("模型只用于本次测试，不修改来源配置或调用计划。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     HStack {
-                        Label(!canCall ? L10n.tr("模型测试与调度未接入") : (model.callConfigured(row) ? L10n.tr("调用配置完整") : L10n.tr("调用尚未配置完整")),
-                              systemImage: model.callConfigured(row) ? "checkmark.circle" : "info.circle")
+                        Label(!canCall ? L10n.tr("模型测试与调度未接入") : (testReady ? L10n.tr("调用配置完整") : L10n.tr("调用尚未配置完整")),
+                              systemImage: testReady ? "checkmark.circle" : "info.circle")
                             .font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button(model.callRunning.contains(row.id) ? L10n.tr("测试中…") : L10n.tr("测试 API 调用")) { model.testCall(row.id) }
-                            .disabled(!canCall || !model.callConfigured(row) || model.callRunning.contains(row.id))
+                        Button(model.callRunning.contains(row.id) ? L10n.tr("测试中…") : L10n.tr("测试 API 调用")) {
+                            model.testCall(row.id, modelOverride: readOnly ? temporaryModel : nil)
+                        }
+                            .disabled(!canCall || !testReady || model.callRunning.contains(row.id))
+                            .help(!canCall ? L10n.tr("此类型未接入模型调用，不是来源只读限制。") : L10n.tr("选择模型后发送一次已确认的测试请求。"))
                     }
-                    Text(canCall ? L10n.tr("使用已保存配置发送一次请求，会消耗账号额度。") : L10n.tr("可使用已接入的用量查询；此类型当前不提供模型测试或调用计划。")).font(.caption).foregroundStyle(.secondary)
+                    Text(canCall ? (readOnly ? L10n.tr("使用来源认证和临时模型发送一次请求，会消耗账号额度。") : L10n.tr("使用已保存配置发送一次请求，会消耗账号额度。")) : L10n.tr("可使用已接入的用量查询；此类型当前不提供模型测试或调用计划。")).font(.caption).foregroundStyle(.secondary)
                     if let result = model.callTestResult(for: row.id) { CallTestResultView(result: result) }
                 }
             }

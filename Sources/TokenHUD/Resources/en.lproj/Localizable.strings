@@ -158,7 +158,7 @@
 "导入状态" = "Import status";
 "导入账号" = "Import Accounts";
 "导入账号…" = "Import Accounts…";
-"导入账号的配置只读，请到来源工具修改；本地启停、显示和删除关联仍可使用。" = "Imported account settings are read-only. Edit them in the source tool. Local enablement, display, and unlinking remain available.";
+"来源凭证、接口与计划只读；可修改本地显示名，并使用支持的模型进行临时测试，不会写回来源。" = "Source credentials, endpoints, and schedules are read-only. You can rename the local display and test a supported model without writing to the source.";
 "将发送 1 次请求，会消耗该账号额度。" = "Sends 1 request and consumes this account’s quota.";
 "将移除本应用的账号记录与自有凭证、缓存。外部凭证或数据来源文件会保留。" = "Removes this app’s account record, owned credentials, and cache. External credential and source files are retained.";
 "尚无调用计划" = "No Call Schedules";
@@ -718,3 +718,16 @@
 "Magpie 插件缓存与授权快照的认证类型不一致" = "The Magpie plugin cache and authorization snapshot have different authentication types";
 "Magpie 原生登录记录身份无效" = "The Magpie native login has an invalid record identity";
 "来源授权没有可绑定的稳定账号身份，无法安全导入" = "The source authorization has no stable account identity to bind, so it cannot be imported safely";
+"显示名不能为空，最多 80 个字符。" = "Enter a display name of up to 80 characters.";
+"本地显示名已更新，来源账号未修改。" = "The local display name was updated. The source account is unchanged.";
+"修改显示名" = "Rename";
+"修改本地显示名" = "Rename Local Display";
+"仅修改 QuotaNest 中的显示名，不修改来源账号。" = "Only the name displayed in QuotaNest changes. The source account is unchanged.";
+"临时测试模型" = "Temporary test model";
+"模型只用于本次测试，不修改来源配置或调用计划。" = "The model is used only for this test. Source settings and schedules are unchanged.";
+"此类型未接入模型调用，不是来源只读限制。" = "This type has no model-call adapter. Source read-only protection is not the cause.";
+"选择模型后发送一次已确认的测试请求。" = "Choose a model, then confirm one test request.";
+"使用来源认证和临时模型发送一次请求，会消耗账号额度。" = "Send one request using the source authentication and temporary model. This consumes quota.";
+"已选择 %@，仅用于本次测试" = "Selected %@ for this test only";
+"临时测试（不保存）" = "Temporary test (not saved)";
+"来源认证或接口已变化，请重新拉取模型列表" = "The source authentication or endpoint changed. Fetch the model list again";

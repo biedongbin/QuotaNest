@@ -3,8 +3,11 @@ import SwiftUI
 
 struct ModelCatalogControls: View {
     @ObservedObject var model: SettingsModel
+    var savedAccount: AccountRow? = nil
+    var modelSelection: Binding<String>? = nil
     @State private var models: [String] = []
     @State private var loadedConnection: Fingerprint?
+    @State private var loadedResolved: ModelCatalogConnection?
     @State private var request: Task<Void, Never>?
     @State private var generation = UUID()
     @State private var busy = false
@@ -19,9 +22,12 @@ struct ModelCatalogControls: View {
     private struct Fingerprint: Equatable {
         let slug: String?
         let template: String?
-        let values: DraftValues
+        let values: DraftValues?
     }
     private var connection: Fingerprint? {
+        if let account = savedAccount {
+            return Fingerprint(slug: account.id, template: account.plugin.manifest.template, values: nil)
+        }
         guard let draft = model.draft else { return nil }
         var values = draft.values
         // Model choice and schedule do not change the account's connection.
@@ -42,7 +48,10 @@ struct ModelCatalogControls: View {
             Text(L10n.tr("轻量模型建议仅用于连通性测试，不能证明调用会启动 5h 窗口；请确认目标套餐支持。"))
                 .font(Typo.small).foregroundStyle(Palette.muted)
             if !models.isEmpty {
-                    Button(L10n.tr("选择模型（%@）", String(describing: models.count))) { showModels.toggle() }.barButton(.ghost)
+                    Button(L10n.tr("选择模型（%@）", String(describing: models.count))) {
+                        if cachedConnectionIsCurrent() { showModels.toggle() }
+                        else { reset(); fetch(recommend: false) }
+                    }.barButton(.ghost)
                         .popover(isPresented: $showModels) {
                             VStack(spacing: 10) {
                                 TextField(L10n.tr("搜索模型"), text: $search).fieldBox()
@@ -50,8 +59,9 @@ struct ModelCatalogControls: View {
                                     LazyVStack(alignment: .leading, spacing: 2) {
                                         ForEach(filteredModels, id: \.self) { id in
                                             Button {
-                                                model.draft?.values.model = id
-                                                feedback = L10n.resource("已选择 \(id)，保存后生效")
+                                                guard select(id) else { return }
+                                                feedback = savedAccount == nil ? L10n.resource("已选择 \(id)，保存后生效")
+                                                    : L10n.resource("已选择 \(id)，仅用于本次测试")
                                                 showModels = false
                                             } label: {
                                                 Text(id).font(Typo.mono).lineLimit(2)
@@ -86,12 +96,36 @@ struct ModelCatalogControls: View {
         .onDisappear { request?.cancel(); generation = UUID(); busy = false }
     }
 
+    private func currentCallConfig() -> ProviderConfig? {
+        if let account = savedAccount {
+            guard let current = model.row(account.id) else { return nil }
+            return model.readConfig(current.plugin)
+        }
+        guard let draft = model.draft else { return nil }
+        return model.callConfigForDraft(draft.values)
+    }
+    private func cachedConnectionIsCurrent() -> Bool {
+        guard let loadedResolved, let config = currentCallConfig(),
+              let current = try? ProviderAuthentication.resolveCall(config) else { return false }
+        return ModelCatalogConnection(callConfig: current) == loadedResolved
+    }
+    @discardableResult private func select(_ id: String) -> Bool {
+        guard cachedConnectionIsCurrent() else {
+            reset(); showModels = false
+            feedback = L10n.resource("来源认证或接口已变化，请重新拉取模型列表")
+            return false
+        }
+        if let modelSelection { modelSelection.wrappedValue = id }
+        else { model.draft?.values.model = id }
+        return true
+    }
+
     private func reset() {
         request?.cancel(); generation = UUID(); busy = false
-        models = []; loadedConnection = nil; feedback = L10n.resource(""); failure = nil; copied = false
+        models = []; loadedConnection = nil; loadedResolved = nil; feedback = L10n.resource(""); failure = nil; copied = false
     }
     private func recommend() {
-        guard model.draft?.values.authMode != "auth", loadedConnection == connection, !models.isEmpty else {
+        guard currentCallConfig()?.authMode != "auth", loadedConnection == connection, !models.isEmpty, cachedConnectionIsCurrent() else {
             fetch(recommend: true); return
         }
         applyRecommendation()
@@ -101,8 +135,10 @@ struct ModelCatalogControls: View {
             feedback = L10n.resource("未找到可推荐的文本模型，请手动填写测试模型")
             return
         }
-        model.draft?.values.model = suggestion.model
-        feedback = L10n.resource("轻量连通性测试建议 \(suggestion.model)：\(suggestion.reason)；保存后生效")
+        guard select(suggestion.model) else { return }
+        feedback = savedAccount == nil
+            ? L10n.resource("轻量连通性测试建议 \(suggestion.model)：\(suggestion.reason)；保存后生效")
+            : L10n.resource("已选择 \(suggestion.model)，仅用于本次测试")
     }
     private func fetch(recommend: Bool) {
         guard let snapshot = connection else { return }
@@ -112,25 +148,26 @@ struct ModelCatalogControls: View {
         request = Task { @MainActor in
             defer { if generation == token { busy = false } }
             do {
-                guard let draft = model.draft else { return }
-                let config = try ProviderAuthentication.resolveCall(model.callConfigForDraft(draft.values))
+                guard let snapshotConfig = currentCallConfig() else { return }
+                let config = try ProviderAuthentication.resolveCall(snapshotConfig)
                 let resolved = ModelCatalogConnection(callConfig: config)
                 let result = try await ModelCatalogService.fetch(connection: resolved)
                 guard !Task.isCancelled, generation == token, connection == snapshot else { return }
-                let current = try ProviderAuthentication.resolveCall(model.callConfigForDraft(draft.values))
+                guard let fresh = currentCallConfig() else { return }
+                let current = try ProviderAuthentication.resolveCall(fresh)
                 let currentConnection = ModelCatalogConnection(callConfig: current)
                 guard currentConnection == resolved else {
-                    models = []; loadedConnection = nil
+                    models = []; loadedConnection = nil; loadedResolved = nil
                     feedback = L10n.resource("本机授权已变化，请重新拉取当前账号的模型列表")
                     return
                 }
-                models = result; loadedConnection = snapshot
+                models = result; loadedConnection = snapshot; loadedResolved = resolved
                 feedback = L10n.resource("已拉取 \(String(result.count)) 个模型；请确认目标套餐支持所选模型")
                 if recommend { applyRecommendation() }
                 else { showModels = true }
             } catch {
                 guard !Task.isCancelled, generation == token, connection == snapshot else { return }
-                models = []; loadedConnection = nil; feedback = L10n.resource("")
+                models = []; loadedConnection = nil; loadedResolved = nil; feedback = L10n.resource("")
                 failure = error
             }
         }

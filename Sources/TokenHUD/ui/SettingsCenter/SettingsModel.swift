@@ -521,11 +521,11 @@ final class SettingsModel: ObservableObject {
         } catch { return false }
     }
 
-    nonisolated private static func callReady(_ config: ProviderConfig) -> Bool {
+    nonisolated private static func callReady(_ config: ProviderConfig, modelOverride: String? = nil) -> Bool {
         do {
             let resolved = try ProviderAuthentication.resolveCall(config)
             return SettingsValidation.isValidURL(resolved.refreshUrl) && !resolved.refreshKey.isEmpty
-                && !resolved.testModel.isEmpty
+                && !(modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? resolved.testModel).isEmpty
         } catch { return false }
     }
 
@@ -582,9 +582,9 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func callConfigured(_ row: AccountRow) -> Bool {
+    func callConfigured(_ row: AccountRow, modelOverride: String? = nil) -> Bool {
         let cfg = readConfig(row.plugin)
-        return Self.callReady(cfg)
+        return Self.callReady(cfg, modelOverride: modelOverride)
     }
 
     func quotaConfigured(_ row: AccountRow) -> Bool {
@@ -708,7 +708,7 @@ final class SettingsModel: ObservableObject {
         importOpen = true
     }
 
-    static var sourceReadOnlyMessage: String { L10n.tr("导入账号的配置只读，请到来源工具修改；本地启停、显示和删除关联仍可使用。") }
+    static var sourceReadOnlyMessage: String { L10n.tr("来源凭证、接口与计划只读；可修改本地显示名，并使用支持的模型进行临时测试，不会写回来源。") }
 
     func configurationReadOnly(_ slug: String?) -> Bool {
         guard let slug, let plugin = engine.allPlugins.first(where: { $0.slug == slug }) else { return false }
@@ -722,6 +722,36 @@ final class SettingsModel: ObservableObject {
         topError = Self.sourceReadOnlyMessage
         flash(topError, error: true)
         return true
+    }
+
+    /// A local display override only: never rewrites source identity, credentials or account configuration.
+    @discardableResult func renameDisplayName(_ slug: String, name: String) -> Bool {
+        let alias = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !alias.isEmpty, alias.count <= 80,
+              alias.rangeOfCharacter(from: .controlCharacters) == nil else {
+            flash(L10n.tr("显示名不能为空，最多 80 个字符。"), error: true)
+            return false
+        }
+        guard let plugin = engine.allPlugins.first(where: { $0.slug == slug }),
+              plugin.dir.standardizedFileURL == userDir.appendingPathComponent(slug).standardizedFileURL else {
+            flash(L10n.tr("账号已不存在，请重新选择"), error: true)
+            return false
+        }
+        do {
+            let file = plugin.dir.appendingPathComponent("manifest.json")
+            guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            object["displayName"] = alias
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: file, options: .atomic)
+            engine.reloadRegistry()
+            flash(L10n.tr("本地显示名已更新，来源账号未修改。"), error: false)
+            return true
+        } catch {
+            flash(L10n.errorDescription(error), error: true)
+            return false
+        }
     }
 
     func startEdit() {
@@ -1082,7 +1112,7 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func testCall(_ slug: String) {
+    func testCall(_ slug: String, modelOverride: String? = nil) {
         guard let row = row(slug), row.canCall else {
             flash(L10n.tr("该账号尚未接入模型调用"), error: true)
             return
@@ -1090,7 +1120,9 @@ final class SettingsModel: ObservableObject {
         var config = readConfig(row.plugin)
         if config.testModel.isEmpty { config.testModel = row.plugin.manifest.refreshModel }
         if config.testPrompt.isEmpty, let prompt = row.plugin.manifest.testPrompt { config.testPrompt = prompt }
-        performTestCall(config: config, key: slug, source: "已保存配置", providerName: row.name)
+        performTestCall(config: config, key: slug,
+            source: modelOverride == nil ? "已保存配置" : "临时测试（不保存）", providerName: row.name,
+            modelOverride: modelOverride)
     }
 
     /// 供测试与模型目录共用点击时的配置快照，不保存、不发请求。
@@ -1109,8 +1141,9 @@ final class SettingsModel: ObservableObject {
                         providerName: values.name.isEmpty ? L10n.tr("新账号") : values.name)
     }
 
-    private func performTestCall(config original: ProviderConfig, key: String, source: String, providerName: String) {
-        let config: ProviderConfig
+    private func performTestCall(config original: ProviderConfig, key: String, source: String, providerName: String,
+                                 modelOverride: String? = nil) {
+        var config: ProviderConfig
         do { config = try ProviderAuthentication.resolveCall(original) }
         catch {
             let message = L10n.errorDescription(error)
@@ -1120,6 +1153,7 @@ final class SettingsModel: ObservableObject {
             flash(message, error: true)
             return
         }
+        if let modelOverride { config.testModel = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines) }
         let target = CallTestResult.targetDescription(config.refreshUrl)
         func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
             CallTestResult(phase: phase, model: config.testModel, target: target,

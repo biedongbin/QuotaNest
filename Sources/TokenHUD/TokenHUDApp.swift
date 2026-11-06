@@ -216,6 +216,26 @@ struct QuotaNestApp: App {
         preferences.navPage = .settings
         shot("settings-light", SettingsCenterView(model: preferences, engine: fixture.engine),
              size: NSSize(width: 1000, height: 1100), dark: false)
+        if onlyScene == nil || onlyScene?.contains("imported-connection") == true {
+            let source = fixture.userDir.deletingLastPathComponent().appendingPathComponent("demo-imported-codex.json")
+            let object: [String: Any] = ["type": "codex", "access_token": "fixture-preview-token",
+                "account_id": "fixture-preview-workspace", "model": "fixture-codex-model"]
+            if let bytes = try? JSONSerialization.data(withJSONObject: object) { try? bytes.write(to: source) }
+            let reference = ProviderSourceReference(source: "cpamp", path: source.path, recordId: source.lastPathComponent,
+                                                   providerId: "codex", collection: "auth-files")
+            let candidate = ImportCandidate(source: "cpamp", name: "Codex · Demo import", template: "gpt", apiKey: "",
+                baseURL: "", proto: "responses", note: "", sourceRecordId: source.lastPathComponent,
+                sourceReference: reference, sourceAuthMode: "auth")
+            do {
+                let slug = try ProviderImporter.apply(candidate, templates: fixture.engine.templates,
+                    userDir: fixture.userDir, hudDir: fixture.paths.hudDir)
+                fixture.engine.reloadRegistry()
+                let imported = model()
+                _ = imported.selectAccount(slug, tab: .config)
+                shot("imported-connection-light", SettingsCenterView(model: imported, engine: fixture.engine),
+                     size: NSSize(width: 1200, height: 880), dark: false)
+            } catch { print("imported preview fixture failed: \(error.localizedDescription)") }
+        }
         let feedback = FeedbackCoordinator(context: .init(area: .accountImport, source: .magpie, stage: .scan),
                                            counts: .init(candidates: 3), tools: .init())
         feedback.title = english ? "Import preview is empty" : "导入预览未显示账号"

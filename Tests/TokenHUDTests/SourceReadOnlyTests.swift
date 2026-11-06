@@ -20,7 +20,7 @@ struct SourceReadOnlyTests {
         }
     }
 
-    private func fixture(legacy: Bool = false) throws -> Fixture {
+    private func fixture(legacy: Bool = false, onTest: ((ProviderConfig) -> String?)? = nil) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-readonly-\(UUID().uuidString)")
         let hud = root.appendingPathComponent("hud")
         let providers = root.appendingPathComponent("providers")
@@ -49,7 +49,7 @@ struct SourceReadOnlyTests {
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hud, userDir: providers, settingsURL: settings,
             bundleDir: nil, defaults: defaults, confirmDiscardChanges: { true }, confirmResumePlan: { true },
-            executeTestCall: { _ in "offline" }, executeQuotaQuery: { _ in .ok }, confirmDeleteAccount: { true })
+            executeTestCall: { onTest?($0) ?? "offline" }, executeQuotaQuery: { _ in .ok }, confirmDeleteAccount: { true })
         model.selected = "linked"
         return Fixture(root: root, source: source, auth: auth,
             manifest: providers.appendingPathComponent("linked/manifest.json"), model: model,
@@ -125,6 +125,65 @@ struct SourceReadOnlyTests {
         #expect(f.model.engine.allPlugins.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: f.manifest.path))
         #expect(try Data(contentsOf: f.source) == beforeSource)
+    }
+
+    @Test(arguments: [false, true])
+    func localRenamePreservesSourceIdentityAndCredentials(legacy: Bool) throws {
+        let f = try fixture(legacy: legacy); defer { f.cleanup() }
+        let beforeSource = try Data(contentsOf: f.source)
+        let beforeAuth = try Data(contentsOf: f.auth)
+        let before = try #require(f.model.current).plugin.manifest
+        var raw = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: f.manifest)) as? [String: Any])
+        raw["extensionMetadata"] = ["keep": "fixture-value"]
+        try JSONSerialization.data(withJSONObject: raw).write(to: f.manifest)
+        #expect(f.model.renameDisplayName("linked", name: "  Local alias  "))
+        let row = try #require(f.model.current)
+        #expect(row.id == "linked" && row.name == "Local alias")
+        #expect(row.plugin.manifest.sourceReference == before.sourceReference)
+        #expect(row.plugin.manifest.origin == before.origin)
+        #expect(try Data(contentsOf: f.source) == beforeSource)
+        #expect(try Data(contentsOf: f.auth) == beforeAuth)
+        let renamed = try Data(contentsOf: f.manifest)
+        let renamedObject = try #require(JSONSerialization.jsonObject(with: renamed) as? [String: Any])
+        #expect((renamedObject["extensionMetadata"] as? [String: String])?["keep"] == "fixture-value")
+        #expect(!f.model.renameDisplayName("linked", name: "  "))
+        #expect(try Data(contentsOf: f.manifest) == renamed)
+    }
+
+    @Test func temporaryModelEnablesConfirmedSourceTestWithoutSaving() async throws {
+        var received: ProviderConfig?
+        let f = try fixture(onTest: { received = $0; return "✓ offline fixture" }); defer { f.cleanup() }
+        var manifest = try #require(f.model.current).plugin.manifest
+        manifest.testModel = ""
+        try JSONEncoder().encode(manifest).write(to: f.manifest)
+        try Data(#"{"schemaVersion":4,"quotaMode":"none"}"#.utf8).write(to: f.auth)
+        var source: [String: Any] = ["type": "clinepass", "api_key": "fixture-source-key", "base_url": "https://source.example.test"]
+        try JSONSerialization.data(withJSONObject: source).write(to: f.source)
+        f.model.engine.reloadRegistry()
+        let row = try #require(f.model.current)
+        #expect(!f.model.callConfigured(row))
+        #expect(f.model.callConfigured(row, modelOverride: "temporary-model"))
+        let beforeAuth = try Data(contentsOf: f.auth)
+        let beforeManifest = try Data(contentsOf: f.manifest)
+        let beforeSource = try Data(contentsOf: f.source)
+        f.model.testCall("linked", modelOverride: "temporary-model")
+        #expect(f.model.pendingTestConfirmation?.model == "temporary-model")
+        #expect(f.model.callRunning.isEmpty)
+        f.model.cancelPendingTestCall()
+        #expect(try Data(contentsOf: f.source) == beforeSource)
+        source["model"] = "source-selected-model"
+        try JSONSerialization.data(withJSONObject: source).write(to: f.source)
+        let sourceWithModel = try Data(contentsOf: f.source)
+        f.model.testCall("linked", modelOverride: "temporary-model")
+        #expect(f.model.pendingTestConfirmation?.model == "temporary-model")
+        #expect(received == nil)
+        f.model.confirmPendingTestCall()
+        for _ in 0..<100 where received == nil || f.model.callRunning.contains("linked") { try await Task.sleep(nanoseconds: 5_000_000) }
+        #expect(received?.testModel == "temporary-model")
+        #expect(received?.refreshKey == "fixture-source-key")
+        #expect(try Data(contentsOf: f.source) == sourceWithModel)
+        #expect(try Data(contentsOf: f.auth) == beforeAuth)
+        #expect(try Data(contentsOf: f.manifest) == beforeManifest)
     }
 
     @Test func sourceLocationRemovesURLCredentialsAndParameters() {
