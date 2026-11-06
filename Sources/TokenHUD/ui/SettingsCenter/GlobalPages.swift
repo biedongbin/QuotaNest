@@ -64,6 +64,7 @@ struct GlobalSettingsPage: View {
                             .font(Typo.small).foregroundStyle(Palette.muted)
                     }
                 }
+                LaunchAtLoginSettings()
                 GroupBox(L10n.tr("菜单栏")) {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 12) {

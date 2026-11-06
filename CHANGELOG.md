@@ -4,6 +4,13 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
+## Unreleased
+
+### Added
+
+- Native launch-at-login setting, backed by macOS Login Items, with pending-approval and error states.
+- A feasibility proposal for privacy-first provider/import feedback using reviewed diagnostics, optional local Claude CLI summarization, and user-confirmed GitHub issue submission. The feedback UI is not implemented yet.
+
 ## [1.0.0] — 2026-11-05
 
 ### Core features

@@ -642,3 +642,14 @@
 "剩余 Credits" = "Remaining Credits";
 "月剩余余额" = "Remaining Monthly Balance";
 "%@，%@" = "%@, %@";
+"启动" = "Startup";
+"登录时自动启动 QuotaNest" = "Launch QuotaNest at login";
+"登录 macOS 后自动启动菜单栏应用。" = "Start the menu bar app automatically after signing in to macOS.";
+"已启用开机启动" = "Launch at login is enabled";
+"未启用开机启动" = "Launch at login is disabled";
+"等待系统批准，请在登录项设置中允许。" = "Waiting for system approval. Allow QuotaNest in Login Items.";
+"系统暂未找到登录项，请尝试重新启用。" = "The system has not found the login item. Try enabling it again.";
+"无法读取登录项状态。" = "Unable to read the login item status.";
+"打开系统登录项设置" = "Open System Login Items";
+"无法更新开机启动设置：%@" = "Unable to update launch at login: %@";
+"请从安装的 QuotaNest.app 修改登录项。" = "Change login items from the installed QuotaNest.app.";
