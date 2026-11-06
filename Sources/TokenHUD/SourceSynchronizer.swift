@@ -89,6 +89,9 @@ enum SourceSynchronizer {
         result.identityProtocol = record.protocolName
         result.identityEndpoint = digest(record.baseURL)
         result.identityProviderType = providerType(record)
+        if reference.source == "magpie", ["logins", "plugin-auth"].contains(reference.collection ?? "") {
+            result.identityAccount = trace.identityAccount ?? ImportedSource.accountIdentity(record.object)
+        }
         return result
     }
 
@@ -162,9 +165,8 @@ enum SourceSynchronizer {
     private static func credentialAnchor(_ record: SourceRecord, template: PluginProvider?) -> String? {
         if record.authMode == "apikey" { return record.key.isEmpty ? nil : digest(record.key) }
         if let source = template?.manifest.credentialSource {
-            let formats = [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
-                requiredValues: source.requiredValues, contextPaths: source.contextPaths)] + (source.alternatives ?? [])
-            for format in formats where (format.requiredValues ?? [:]).allSatisfy({ string($0.key, in: record.object) == $0.value }) {
+            let formats = ProviderAuthentication.formats(source)
+            for format in formats where ProviderAuthentication.accepts(format, object: record.object) {
                 if let token = string(format.tokenPath, in: record.object), !token.isEmpty { return digest(token) }
             }
             return nil
@@ -177,10 +179,7 @@ enum SourceSynchronizer {
     }
 
     private static func string(_ path: String, in object: [String: Any]) -> String? {
-        let keys = path.hasPrefix("/")
-            ? path.dropFirst().split(separator: "/").map { String($0).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~") }
-            : path.split(separator: ".").map(String.init)
-        return keys.reduce(object as Any?) { ($0 as? [String: Any])?[$1] } as? String
+        ProviderAuthentication.string(at: path, in: object)
     }
 
     private static func providerType(_ record: SourceRecord) -> String? {

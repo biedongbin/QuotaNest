@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 struct ProviderAuthenticationError: LocalizedError {
     let message: String
@@ -118,18 +119,14 @@ enum ProviderAuthentication {
                 }
                 object = parsed
             }
-            let formats = [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
-                requiredValues: source.requiredValues, contextPaths: source.contextPaths)] + (source.alternatives ?? [])
-            guard let format = formats.first(where: { format in
-                (format.requiredValues ?? [:]).allSatisfy { string(at: $0.key, in: object) == $0.value }
-                    && validString(at: format.tokenPath, in: object) != nil
-            }), let token = validString(at: format.tokenPath, in: object) else {
+            guard let format = formats(source).first(where: { accepts($0, object: object) }),
+                  let token = validString(at: format.tokenPath, in: object) else {
                 throw ProviderAuthenticationError(message: "本机授权文件缺少受支持登录格式的有效访问令牌，请重新登录")
             }
             resolved.refreshKey = token
             resolved.authContext = [:]
             for (key, path) in format.contextPaths ?? [:] {
-                if let value = string(at: path, in: object), !value.isEmpty {
+                if let value = contextString(at: path, in: object), !value.isEmpty {
                     guard value.rangeOfCharacter(from: .controlCharacters) == nil else {
                         throw ProviderAuthenticationError(message: "授权身份字段格式无效，请重新登录")
                     }
@@ -159,17 +156,51 @@ enum ProviderAuthentication {
         return value
     }
 
-    private static func string(at path: String, in object: [String: Any]) -> String? {
-        let keys: [String]
-        if path.hasPrefix("/") {
-            keys = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map {
-                String($0).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
-            }
-        } else {
-            keys = path.split(separator: ".").map(String.init)
+    static func formats(_ source: ProviderCredentialSource) -> [ProviderCredentialFormat] {
+        [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
+            requiredValues: source.requiredValues, contextPaths: source.contextPaths,
+            tokenEncoding: source.tokenEncoding)] + (source.alternatives ?? [])
+    }
+
+    static func accepts(_ format: ProviderCredentialFormat, object: [String: Any]) -> Bool {
+        guard (format.requiredValues ?? [:]).allSatisfy({ string(at: $0.key, in: object) == $0.value }),
+              let token = validString(at: format.tokenPath, in: object) else { return false }
+        guard let encoding = format.tokenEncoding else { return true }
+        guard encoding == "jwt" else { return false }
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 3 && parts.allSatisfy({ !$0.isEmpty })
+            && jwtObject(String(parts[0])) != nil && jwtObject(String(parts[1])) != nil
+    }
+
+    static func jwtObject(_ segment: String) -> [String: Any]? {
+        var encoded = segment.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    static func string(at path: String, in object: [String: Any]) -> String? {
+        value(at: path, in: object) as? String
+    }
+
+    private static func contextString(at path: String, in object: [String: Any]) -> String? {
+        if let text = string(at: path, in: object) { return text }
+        if let number = value(at: path, in: object) as? NSNumber,
+           CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite { return number.stringValue }
+        return nil
+    }
+
+    private static func value(at path: String, in object: [String: Any]) -> Any? {
+        let keys = path.hasPrefix("/")
+            ? path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map {
+                String($0).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~") }
+            : path.split(separator: ".").map(String.init)
+        return keys.reduce(object as Any?) { current, key in
+            if let dictionary = current as? [String: Any] { return dictionary[key] }
+            // Some source formats embed a JSON object in a string. Decode only along the declared path.
+            guard let text = current as? String, let data = text.data(using: .utf8),
+                  let dictionary = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+            return dictionary[key]
         }
-        return keys.reduce(object as Any?) { value, key in
-            (value as? [String: Any])?[key]
-        } as? String
     }
 }

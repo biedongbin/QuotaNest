@@ -29,11 +29,23 @@
     },
     "alternatives": [
       {
+        "tokenPath": "refresh.jwt",
+        "contextPaths": {
+          "device": "refresh.device",
+          "expiresAt": "expires"
+        },
+        "requiredValues": {
+          "type": "oauth"
+        },
+        "tokenEncoding": "jwt"
+      },
+      {
         "tokenPath": "jwt",
         "contextPaths": {
           "device": "device",
           "expiresAt": "expires"
-        }
+        },
+        "tokenEncoding": "jwt"
       },
       {
         "tokenPath": "access",
@@ -43,8 +55,10 @@
         },
         "requiredValues": {
           "type": "oauth"
-        }
+        },
+        "tokenEncoding": "jwt"
       }
-    ]
+    ],
+    "tokenEncoding": "jwt"
   }
 }

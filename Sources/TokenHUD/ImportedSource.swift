@@ -72,15 +72,29 @@ enum ImportedSource {
             model = object["model"] as? String ?? ""
         case "magpie":
             let bytes = try Data(contentsOf: file)
-            if reference.collection == "plugin-auth" {
+            if reference.collection == "logins" {
+                guard file.lastPathComponent == "logins.json",
+                      let records = try JSONSerialization.jsonObject(with: bytes) as? [[String: Any]] else {
+                    throw failure("Magpie 原生登录列表格式无效")
+                }
+                let matches = records.filter { $0["id"] as? String == reference.recordId }
+                guard matches.count == 1, let login = matches.first, login["agent"] as? String == expected else {
+                    throw failure("Magpie 原生登录记录已删除、不唯一或类型已变化")
+                }
+                guard let snapshot = login["auth"] as? [String: Any], !snapshot.isEmpty else {
+                    throw failure("此 Magpie 原生登录没有可只读使用的内联授权快照")
+                }
+                object = snapshot
+                mode = "auth"
+            } else if reference.collection == "plugin-auth" {
                 let credentialProvider = reference.credentialProviderId ?? expected
                 guard file.lastPathComponent == "plugin-auth.json",
                       reference.recordId == credentialProvider || reference.recordId.hasPrefix(credentialProvider + "#") else {
                     throw failure("Magpie 插件来源引用类型不一致")
                 }
-                try validateMagpiePlugin(reference, file: file, credentialProvider: credentialProvider, expected: expected)
                 let records = try json(bytes)
                 guard let record = records[reference.recordId] as? [String: Any] else { throw failure("Magpie 来源记录已删除") }
+                try validateMagpiePlugin(reference, file: file, credentialProvider: credentialProvider, expected: expected, record: record)
                 object = record
                 switch record["type"] as? String {
                 case "oauth": mode = "auth"
@@ -123,6 +137,9 @@ enum ImportedSource {
         default:
             throw failure("不支持的导入来源")
         }
+        if let expectedAccount = reference.identityAccount, accountIdentity(object) != expectedAccount {
+            throw failure("来源账号身份已变化，请重新扫描导入；不会改用其他账号")
+        }
         let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         let revision = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         return SourceRecord(object: object, authMode: mode, key: key, baseURL: base,
@@ -130,7 +147,7 @@ enum ImportedSource {
     }
 
     private static func validateMagpiePlugin(_ reference: ProviderSourceReference, file: URL,
-                                             credentialProvider: String, expected: String) throws {
+                                             credentialProvider: String, expected: String, record: [String: Any]) throws {
         let directory = file.deletingLastPathComponent()
         let providers = try json(Data(contentsOf: directory.appendingPathComponent("providers.json")))["providers"] as? [[String: Any]] ?? []
         let actual = providers.filter { $0["id"] as? String == expected }
@@ -145,9 +162,40 @@ enum ImportedSource {
         let owners = cache.filter { $0["id"] as? String == credentialProvider }
         guard owners.count == 1, let owner = owners.first else { throw failure("Magpie 插件身份映射不唯一或已删除") }
         let accounts = owner["accounts"] as? [[String: Any]] ?? []
-        guard accounts.filter({ $0["key"] as? String == reference.recordId }).count == 1 else {
+        let matches = accounts.filter { $0["key"] as? String == reference.recordId }
+        guard matches.count == 1, let account = matches.first else {
             throw failure("Magpie 插件来源账号已删除或归属变化")
         }
+        if let cached = account["accountId"] as? String, !cached.isEmpty, cached != accountIdentifier(record) {
+            throw failure("Magpie 插件缓存与授权快照的账号身份不一致")
+        }
+        if let cached = account["type"] as? String, cached != record["type"] as? String {
+            throw failure("Magpie 插件缓存与授权快照的认证类型不一致")
+        }
+    }
+
+    private static func accountIdentifier(_ object: [String: Any]) -> String? {
+        ["tokens.account_id", "accountId", "metadata.email", "email"].lazy
+            .compactMap { ProviderAuthentication.string(at: $0, in: object) }.first { !$0.isEmpty }
+    }
+
+    /// Account evidence is hashed, separate from rotating access tokens. Never uses display names.
+    static func accountIdentity(_ object: [String: Any]) -> String? {
+        var evidence: [String: String] = [:]
+        if let account = accountIdentifier(object) { evidence["account"] = account }
+        if let uid = object["uid"] as? String, !uid.isEmpty { evidence["uid"] = uid }
+        for path in ["tokens.id_token", "tokens.access_token", "accessToken", "jwt", "refresh.jwt", "access"] {
+            guard let token = ProviderAuthentication.string(at: path, in: object) else { continue }
+            let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+            if parts.count == 3, let claims = ProviderAuthentication.jwtObject(String(parts[1])),
+               let subject = claims["sub"] as? String, !subject.isEmpty {
+                evidence["subject"] = subject
+                break
+            }
+        }
+        guard !evidence.isEmpty else { return nil }
+        guard let bytes = try? JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]) else { return nil }
+        return "sha256:" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Enumerates only the referenced container. Every returned record is re-read through `read`.
@@ -181,6 +229,18 @@ enum ImportedSource {
                     return ref(item.lastPathComponent, type, path: item.path)
                 }
         case "magpie":
+            if reference.collection == "logins" {
+                guard file.lastPathComponent == "logins.json",
+                      let records = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [[String: Any]] else {
+                    throw failure("Magpie 原生登录列表格式无效")
+                }
+                return try records.map { item in
+                    guard let id = item["id"] as? String, !id.isEmpty, let agent = item["agent"] as? String else {
+                        throw failure("Magpie 原生登录记录身份无效")
+                    }
+                    return ref(id, agent)
+                }
+            }
             let object = try json(Data(contentsOf: file))
             if reference.collection == "plugin-auth" {
                 return object.keys.sorted().map { ref($0, reference.providerId ?? "") }

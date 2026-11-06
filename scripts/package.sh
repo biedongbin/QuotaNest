@@ -6,10 +6,13 @@ PROJECT_DIR="${0:A:h:h}"
 cd "$PROJECT_DIR"
 
 RELEASE=0
+BUILD_ONLY=0
 if [[ "${1:-}" == "--release" && $# == 1 ]]; then
   RELEASE=1
+elif [[ "${1:-}" == "--build-only" && $# == 1 ]]; then
+  BUILD_ONLY=1
 elif [[ $# != 0 ]]; then
-  echo "Usage: zsh scripts/package.sh [--release]" >&2
+  echo "Usage: zsh scripts/package.sh [--release|--build-only]" >&2
   exit 2
 fi
 VERSION=$(tr -d '\r\n' < "$PROJECT_DIR/VERSION")
@@ -18,7 +21,7 @@ REVISION=$(git rev-parse HEAD)
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 OUT="$PROJECT_DIR/.build/QuotaNest.app"
 [[ "${OUT:A}" == "$PROJECT_DIR/.build/QuotaNest.app" ]] || exit 1
-if [[ "$RELEASE" == 0 ]] && { pgrep -x QuotaNest >/dev/null || pgrep -x TokenHUD >/dev/null; }; then
+if [[ "$RELEASE" == 0 && "$BUILD_ONLY" == 0 ]] && { pgrep -x QuotaNest >/dev/null || pgrep -x TokenHUD >/dev/null; }; then
   echo "QuotaNest 正在运行，请先退出再安装（菜单栏 → 退出）" >&2
   exit 1
 fi
@@ -91,6 +94,11 @@ if [[ "$RELEASE" == 1 ]]; then
   echo "  ZIP: $ZIP"
   echo "  Revision: $REVISION"
   echo "  Architectures: $(lipo -archs "$APP/MacOS/QuotaNest")"
+  exit 0
+fi
+
+if [[ "$BUILD_ONLY" == 1 ]]; then
+  echo "✓ QuotaNest $VERSION 已打包，未安装: $OUT"
   exit 0
 fi
 

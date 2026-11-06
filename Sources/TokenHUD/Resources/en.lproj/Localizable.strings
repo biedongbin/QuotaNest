@@ -710,3 +710,11 @@
 "未找到 gh，可在项目页手动 Star。" = "gh was not found. You can star the project in your browser.";
 "gh 尚未登录，可在项目页手动 Star。" = "gh is not logged in. You can star the project in your browser.";
 "未能确认 Star，请重试或打开项目页。" = "The star could not be confirmed. Retry or open the project page.";
+"Magpie 原生登录列表格式无效" = "The Magpie native login list is invalid";
+"Magpie 原生登录记录已删除、不唯一或类型已变化" = "The Magpie native login was removed, is ambiguous, or has changed type";
+"此 Magpie 原生登录没有可只读使用的内联授权快照" = "This Magpie native login has no inline authorization snapshot for read-only access";
+"来源账号身份已变化，请重新扫描导入；不会改用其他账号" = "The source account identity changed. Scan and import again; no other account will be used";
+"Magpie 插件缓存与授权快照的账号身份不一致" = "The Magpie plugin cache and authorization snapshot identify different accounts";
+"Magpie 插件缓存与授权快照的认证类型不一致" = "The Magpie plugin cache and authorization snapshot have different authentication types";
+"Magpie 原生登录记录身份无效" = "The Magpie native login has an invalid record identity";
+"来源授权没有可绑定的稳定账号身份，无法安全导入" = "The source authorization has no stable account identity to bind, so it cannot be imported safely";

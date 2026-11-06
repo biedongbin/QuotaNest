@@ -165,7 +165,7 @@ struct ImportTests {
         defer { try? FileManager.default.removeItem(at: home) }
         let root = home.appendingPathComponent("portable")
         try write(["providers": [["id": "codex-plugin", "name": "Codex plugin"]]], to: root.appendingPathComponent("providers.json"))
-        try write(["codex#slot01": ["type": "oauth", "access_token": "FAKE_PLUGIN_ACCESS", "typeMarker": "unused", "provider": "codex"]],
+        try write(["codex#slot01": ["type": "oauth", "access_token": "FAKE_PLUGIN_ACCESS", "accountId": "demo", "typeMarker": "unused", "provider": "codex"]],
                   to: root.appendingPathComponent("plugin-auth.json"))
         // A declared Auth format can consume this plugin's access_token/provider layout.
         let dir = home.appendingPathComponent("template")
@@ -192,7 +192,7 @@ struct ImportTests {
                   to: root.appendingPathComponent("logins.json"))
         let row = try #require(ProviderImporter.fromMagpie(home: home.path, sourceDirectory: root.path, templates: []).first)
         #expect(row.sourceRecordId == "stable-login")
-        #expect(row.unsupportedReason?.contains("Keychain") == true)
+        #expect(row.unsupportedReason == "该来源没有匹配的 Auth 类型与授权格式")
         #expect(row.apiKey.isEmpty)
     }
 

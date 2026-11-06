@@ -61,11 +61,23 @@ struct QuotaNestApp: App {
                 exit(0)
             } catch { print("settings diagnostic failed: \(error.localizedDescription)"); exit(1) }
         case .importScan:
-            for (name, rows) in [("9router", ProviderImporter.from9Router(home: home.path)),
-                                 ("cc-switch", ProviderImporter.fromCCSwitch(home: home.path)),
-                                 ("cpamp", ProviderImporter.fromCPAMP(home: home.path)),
-                                 ("magpie", ProviderImporter.fromMagpie(home: home.path))] {
-                print("\(name): total=\(rows.count), importable=\(rows.filter { $0.unsupportedReason == nil }.count)")
+            let requested = ProcessInfo.processInfo.environment["QUOTANEST_IMPORT_SOURCE"]
+            let scanners: [(String, () -> [ImportCandidate])] = [
+                ("9router", { ProviderImporter.from9Router(home: home.path) }),
+                ("cc-switch", { ProviderImporter.fromCCSwitch(home: home.path) }),
+                ("cpamp", { ProviderImporter.fromCPAMP(home: home.path) }),
+                ("magpie", { ProviderImporter.fromMagpie(home: home.path) })]
+            let templates = ProviderImporter.bundledTemplates()
+            for (name, scan) in scanners where requested == nil || requested == name {
+                let rows = scan()
+                let eligible = rows.filter { row in row.unsupportedReason == nil && ImportCenterModel.quotaAdapted(row,
+                    templateLookup: { slug in templates.first { $0.slug == slug }?.manifest }) }
+                print("\(name): total=\(rows.count), importable=\(eligible.count)")
+                if requested != nil {
+                    for slug in Set(eligible.compactMap(\.template)).sorted() {
+                        print("\(slug): importable=\(eligible.filter { $0.template == slug }.count)")
+                    }
+                }
             }
             exit(0)
         case .repairHud:

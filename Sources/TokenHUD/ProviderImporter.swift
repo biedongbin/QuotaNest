@@ -35,7 +35,7 @@ enum ProviderImporter {
 
     /// Identity aliases only. Wire protocols and credentials remain manifest driven.
     static let sourceAliases = [
-        "codex": "gpt", "claude": "claude-code", "copilot": "github-copilot",
+        "codex": "gpt", "zcode": "zcode-start", "claude": "claude-code", "copilot": "github-copilot",
         "github": "github-copilot", "clinepass": "cline", "cline-pass": "cline",
         "glm-cn": "glm", "glm-international": "zai-coding", "z-ai": "zai-coding",
         "zai": "zai-coding", "gemini": "gemini-cli", "grok": "grok-cli",
@@ -204,16 +204,15 @@ enum ProviderImporter {
             (try? JSONSerialization.jsonObject(with: $0)) as? [[String: Any]]
         } ?? []
         for login in logins {
-            guard let agent = login["agent"] as? String else { continue }
+            guard let agent = login["agent"] as? String, !agent.hasPrefix("plugin:"),
+                  let recordID = login["id"] as? String, !recordID.isEmpty else { continue }
             let user = login["user"] as? String ?? ""
-            let recordID = login["id"] as? String ?? ""
-            result.append(ImportCandidate(source: "magpie", name: familyName(agent) + " · " + maskIfAccount(user),
-                template: nil, apiKey: "", baseURL: "", proto: "", note: agent + " / OAuth",
-                unsupportedReason: "原生账号的活动凭据可能由 CLI 或 Keychain 持有；当前不支持安全的只读账号解析",
-                enabled: login["on"] as? Bool ?? false, slugHint: PluginGenerator.slugify(agent),
-                sourceAccount: maskAccount(user), sourceRecordId: recordID,
-                sourceReference: ProviderSourceReference(source: "magpie", path: loginsPath, recordId: recordID,
-                    providerId: agent, collection: "logins"), sourceAuthMode: "auth"))
+            let reference = ProviderSourceReference(source: "magpie", path: loginsPath, recordId: recordID,
+                                                   providerId: agent, collection: "logins")
+            // Magpie's `on` is a backup-routing switch, not a quota-monitor enable flag.
+            result.append(candidate(reference: reference, provider: agent,
+                label: familyName(agent) + " · " + maskIfAccount(user), rawAccount: user,
+                mode: "auth", base: "", proto: "", templates: templates))
         }
         return result
     }
@@ -257,6 +256,10 @@ enum ProviderImporter {
             }
             if reason == nil {
                 initializedReference = SourceSynchronizer.register(reference, record: record, template: template)
+                if record.authMode == "auth", reference.source == "magpie",
+                   ["logins", "plugin-auth"].contains(reference.collection ?? ""), initializedReference.identityAccount == nil {
+                    reason = "来源授权没有可绑定的稳定账号身份，无法安全导入"
+                }
             }
         } catch { reason = error.localizedDescription }
         let name = maskIfAccount(label)
@@ -306,19 +309,11 @@ enum ProviderImporter {
     private static func validEndpoint(_ value: String) -> Bool { canonicalEndpoint(value) != nil }
 
     private static func formats(_ source: ProviderCredentialSource) -> [ProviderCredentialFormat] {
-        [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
-            requiredValues: source.requiredValues, contextPaths: source.contextPaths)] + (source.alternatives ?? [])
+        ProviderAuthentication.formats(source)
     }
 
     private static func accepts(_ format: ProviderCredentialFormat, object: [String: Any]) -> Bool {
-        func string(_ path: String) -> String? {
-            let keys = path.hasPrefix("/")
-                ? path.dropFirst().split(separator: "/").map { String($0).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~") }
-                : path.split(separator: ".").map(String.init)
-            return keys.reduce(object as Any?) { ($0 as? [String: Any])?[$1] } as? String
-        }
-        return (format.requiredValues ?? [:]).allSatisfy { string($0.key) == $0.value }
-            && string(format.tokenPath)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        ProviderAuthentication.accepts(format, object: object)
     }
 
     static func isAccountId(_ s: String) -> Bool {

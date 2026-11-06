@@ -6,6 +6,7 @@ struct ProviderCredentialFormat: Codable, Equatable, Sendable {
     var headerPaths: [String: String]?
     var requiredValues: [String: String]?
     var contextPaths: [String: String]?
+    var tokenEncoding: String? = nil
 }
 
 /// Declares an existing CLI authorization file; no token is copied into account settings.
@@ -18,6 +19,7 @@ struct ProviderCredentialSource: Codable, Equatable, Sendable {
     var fileConfigKey: String?
     var contextPaths: [String: String]?
     var alternatives: [ProviderCredentialFormat]?
+    var tokenEncoding: String? = nil
 }
 
 /// A live, read-only reference. Never contains credentials.
@@ -34,6 +36,7 @@ struct ProviderSourceReference: Codable, Equatable, Sendable {
     var identityProtocol: String? = nil
     var identityEndpoint: String? = nil
     var identityProviderType: String? = nil
+    var identityAccount: String? = nil
 }
 
 struct ProviderManifest: Codable {

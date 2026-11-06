@@ -4,6 +4,13 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
+## Unreleased
+
+### Fixed
+
+- Recognize Magpie native Codex Auth snapshots by their stable record ID instead of rejecting all native logins. Keep routing switches separate from quota-monitor enabled state.
+- Import ZCode Start from the exact plugin slot using its nested JWT and device context; never send the Coding plan Key to the Start endpoint. Imported account identity remains pinned and credentials are not copied.
+
 ## [1.0.0] — 2026-11-06
 
 Refreshed 1.0.0 release; replaces the original 2026-11-05 assets and tag.

@@ -132,7 +132,7 @@ Auth 选项只在类型声明授权来源时可用；未声明来源的类型禁
 | 9router | `providerConnections.id + provider`；Auth/API Key结构必须符合对应模板。通用兼容记录只在显式协议、地址有效时接入。 |
 | cc-switch | 当前仅Claude，按 `id + app_type` 复合身份读取；其它命名空间预览为不支持，不跨类型取同名主键。 |
 | CPAMP | 引用既有CPA授权文件，以文件名和 `type` 校验；仅已有模板支持的认证格式可导入，不复制JSON秘密或触发refresh。 |
-| Magpie | 主Key引用 `providers.json` 的原providerID并跟随当前Key；额外Key以SHA256前10位十六进制指纹定位槽，删除或更换后不可用，不自动改指向别的Key。插件保留完整账号slot、实际providerID（可含 `-plugin`）及credential providerID，并结合 `plugin-providers.json` 验证唯一归属；原生logins的owner/CLI/Keychain凭证不支持，按不支持处理。默认根目录为绝对 `XDG_CONFIG_HOME` 下的magpie，否则为 `~/.config/magpie`；UI允许显式选择含配置文件的portable根目录。 |
+| Magpie | 主Key引用 `providers.json` 的原providerID并跟随当前Key；额外Key以SHA256前10位十六进制指纹定位槽，删除或更换后不可用，不自动改指向别的Key。插件保留完整账号slot、实际providerID（可含 `-plugin`）及credential providerID，并结合 `plugin-providers.json` 验证唯一归属和账号一致性。原生 `logins.json` 中有内联Auth快照且匹配模板时，按唯一 `id + agent` 只读绑定；无快照、需Keychain或续期的记录仍不支持。原生 `on` 仅为Magpie备用路由标记，不控制QuotaNest启用状态。新Auth引用另存稳定账号证据的哈希，账号变化即拒绝，不随默认slot改用另一用户；访问令牌轮换不复制落盘。ZCode Start只按声明路径读取 `refresh.jwt/device`，不把Coding plan Key当Start JWT，不信任源base覆盖模板查询地址。默认根目录为绝对 `XDG_CONFIG_HOME` 下的magpie，否则为 `~/.config/magpie`；UI允许显式选择含配置文件的portable根目录。 |
 
 导入配置只读：名称、认证、接口地址、模型及计划配置不能在TokenHUD内改写；允许本地启停、显示、查询和删除关联，均不修改来源。通用来源账号每次使用源记录当前显式协议与URL，内置模板则保持类型固定协议；URL展示去除userinfo与query，避免带出秘密。旧 `origin` 导入账号锁定，可通过重扫转换为来源引用，保持原slug并清除旧本地Key与不再匹配的缓存。
 

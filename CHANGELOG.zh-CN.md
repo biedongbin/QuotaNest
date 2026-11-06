@@ -4,6 +4,13 @@
 
 所有更新按发布版本归档，版本号遵循 [Semantic Versioning](https://semver.org/)。尚未归属正式版本的改动放在 `Unreleased`；已发布内容保留在对应版本号和日期下。
 
+## Unreleased
+
+### 修复
+
+- 按稳定原始记录 ID 识别 Magpie 原生 Codex Auth 快照，不再统一拒绝原生登录；备用路由开关不再控制 QuotaNest 账号启用状态。
+- ZCode Start 从原始插件 slot 读取嵌套 JWT 和 device，不将 Coding plan Key 发往 Start 接口；绑定来源账号身份，不复制凭证。
+
 ## [1.0.0] — 2026-11-06
 
 补齐后的 1.0.0 重发版，替换 2026-11-05 的原安装包和 tag。

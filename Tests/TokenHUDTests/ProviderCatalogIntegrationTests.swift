@@ -109,7 +109,7 @@ struct ProviderCatalogIntegrationTests {
 
     private func formats(for source: ProviderCredentialSource) -> [ProviderCredentialFormat] {
         [ProviderCredentialFormat(tokenPath: source.tokenPath, headerPaths: source.headerPaths,
-                                  requiredValues: source.requiredValues, contextPaths: source.contextPaths)]
+                                  requiredValues: source.requiredValues, contextPaths: source.contextPaths, tokenEncoding: source.tokenEncoding)]
             + (source.alternatives ?? [])
     }
 
@@ -125,7 +125,7 @@ struct ProviderCatalogIntegrationTests {
         #expect(f.model.draft?.values.quotaMode == "script")
         #expect(f.model.draft?.values.autoTrigger == false)
         f.model.draft?.values.name = "catalog-\(template.slug)-\(suffix)"
-        let token = "offline-fixture-token-\(template.slug)-\(suffix)"
+        var token = "offline-fixture-token-\(template.slug)-\(suffix)"
         var sourceURL: URL?
         var sourceContents: Data?
         var usedFormat: ProviderCredentialFormat?
@@ -134,6 +134,11 @@ struct ProviderCatalogIntegrationTests {
             let source = try #require(template.manifest.credentialSource)
             let selectedFormat = try #require(format ?? formats(for: source).first)
             usedFormat = selectedFormat
+            if selectedFormat.tokenEncoding == "jwt" {
+                let header = Data(#"{"alg":"none"}"#.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+                let payload = Data(#"{"sub":"offline-fixture","exp":4102444800}"#.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+                token = header + "." + payload + ".offline-signature"
+            }
             let file = f.root.appendingPathComponent("selected-auth/\(template.slug)-\(suffix).json")
             let contents = try fakeAuthorization(selectedFormat, token: token)
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
