@@ -603,7 +603,7 @@ final class SettingsModel: ObservableObject {
     private func cachedState(for p: PluginProvider) -> ProviderState? {
         guard let cache = engine.readCache(slug: p.slug, manifest: p.manifest) else { return nil }
         return ProviderState(slug: p.slug, manifest: p.manifest, cache: cache,
-                             isStale: !HUDFmt.isFresh(cache, interval: engine.effectiveIntervalSeconds(p.slug, manifest: p.manifest),
+                             isStale: !HUDFmt.isDisplayFresh(cache, interval: engine.effectiveIntervalSeconds(p.slug, manifest: p.manifest),
                                                       now: Date().timeIntervalSince1970 * 1000))
     }
 

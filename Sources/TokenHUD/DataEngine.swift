@@ -110,10 +110,17 @@ enum HUDFmt {
         return d > 0 ? "\(d)d\(h % 24)h" : "\(h)h\(m)m"
     }
 
-    /// generatedAt(=最近成功快照时间, 失败不推进) 距 now 未超 interval 秒 — 展示新鲜度/stale 判定用
+    /// generatedAt(=最近成功快照时间, 失败不推进) 距 now 未超 interval 秒 — 保留严格新鲜度语义
     static func isFresh(_ cache: UsageCache?, interval: Int, now: Double) -> Bool {
         guard let g = cache?.generatedAt else { return false }
         return now - g < Double(interval) * 1000
+    }
+
+    /// Successful snapshots get one extra query cycle for display; scheduling keeps its strict interval.
+    static func isDisplayFresh(_ cache: UsageCache?, interval: Int, now: Double) -> Bool {
+        guard let cache, cache.error == nil, cache.stale != true,
+              let generatedAt = cache.generatedAt else { return false }
+        return now - generatedAt < Double(max(1, interval)) * 2 * 1000
     }
 
     /// 尝试时间 (lastAttemptAt, 旧缓存缺省回退 generatedAt) 距 now 未超 interval 秒 — due/防重刷判定用
@@ -165,6 +172,8 @@ final class DataEngine: ObservableObject {
     @Published private(set) var lastRefresh: Date?
     /// "立刻刷新"进行中 (状态栏图标显示 ⟳ 反馈)
     @Published private(set) var isRefreshingAll = false
+    /// Accounts holding a query gate slot across the entire retry sequence.
+    @Published private(set) var queryingSlugs: Set<String> = []
     @Published private(set) var sourceSyncing = false
     @Published private(set) var sourceSyncLastAttempt: Date?
     @Published private(set) var sourceSyncLastSuccess: Date?
@@ -905,8 +914,7 @@ final class DataEngine: ObservableObject {
                 let cache = readCache(slug: $0.slug, manifest: $0.manifest)
                 let interval = effectiveIntervalSeconds($0.slug, manifest: $0.manifest)
                 return ProviderState(slug: $0.slug, manifest: $0.manifest, cache: cache,
-                                     isStale: cache?.error != nil || cache?.stale == true
-                                        || !HUDFmt.isFresh(cache, interval: interval, now: now))
+                                     isStale: !HUDFmt.isDisplayFresh(cache, interval: interval, now: now))
             }
         // 图标指向的家若已不存在, 回退到全部取最高
         if let slug = iconProviderSlug, !states.contains(where: { $0.slug == slug }) {
@@ -1073,8 +1081,7 @@ final class DataEngine: ObservableObject {
         defer { isRefreshingBackground = false }
         let now = Date().timeIntervalSince1970 * 1000
         for index in states.indices {
-            states[index].isStale = states[index].cache?.error != nil || states[index].cache?.stale == true
-                || !HUDFmt.isFresh(states[index].cache,
+            states[index].isStale = !HUDFmt.isDisplayFresh(states[index].cache,
                     interval: effectiveIntervalSeconds(states[index].slug, manifest: states[index].manifest), now: now)
             if let cache = states[index].cache,
                !cacheMatchesAuthSource(cache, slug: states[index].slug, manifest: states[index].manifest) {
@@ -1113,6 +1120,10 @@ final class DataEngine: ObservableObject {
 
     /// Hold one gate slot across all attempts. Each runner call resolves a fresh private auth snapshot.
     private func queryWithRetries(_ plugin: PluginProvider, revision: Double, allowDisabled: Bool = true) async -> UsageCache? {
+        guard !Task.isCancelled, queryOwnerMatches(plugin, revision: revision, allowDisabled: allowDisabled) else { return nil }
+        // QueryGate serializes every revision of a slug, so an old sequence cannot remove a new one's state.
+        queryingSlugs.insert(plugin.slug)
+        defer { queryingSlugs.remove(plugin.slug) }
         let result = await runner.runWithRetries(plugin, delay: quotaRetrySleep,
             isCurrent: { [weak self] in
                 await self?.queryOwnerMatches(plugin, revision: revision, allowDisabled: allowDisabled) ?? false
@@ -1192,7 +1203,7 @@ final class DataEngine: ObservableObject {
         let revisions: [String: Double] = checkRevision
             ? Dictionary(uniqueKeysWithValues: due.map { ($0.0, queryRevision($0.1)) })
             : [:]
-        let results: [(String, UsageCache?)] = await withTaskGroup(of: (String, UsageCache?)?.self) { group in
+        await withTaskGroup(of: (String, UsageCache?)?.self) { group in
             for (slug, plugin) in due {
                 group.addTask { [gate = queryGate, weak self] in
                     let revision = revisions[slug] ?? 0
@@ -1207,26 +1218,23 @@ final class DataEngine: ObservableObject {
                     }
                 }
             }
-            var acc: [(String, UsageCache?)] = []
-            for await r in group { if let r { acc.append(r) } }
-            return acc
-        }
-        guard !Task.isCancelled, !results.isEmpty else { return }
-        for (slug, cache) in results {
-            // 版本核对: 查询期间账号被删 (slug 不在 allPlugins) 或凭证被改 (revision 变) → 丢弃, 不污染新状态
-            if checkRevision {
-                guard let original = due.first(where: { $0.0 == slug })?.1,
-                      let revision = revisions[slug], queryOwnerMatches(original, revision: revision, allowDisabled: false) else {
-                    if let manifest = allPlugins.first(where: { $0.slug == slug })?.manifest {
-                        invalidateChangedReferencedSnapshot(slug, manifest: manifest)
+            for await result in group {
+                guard !Task.isCancelled, let (slug, cache) = result else { continue }
+                // Validate and publish on MainActor as each account completes, without waiting for slower peers.
+                if checkRevision {
+                    guard let original = due.first(where: { $0.0 == slug })?.1,
+                          let revision = revisions[slug], queryOwnerMatches(original, revision: revision, allowDisabled: false) else {
+                        if let manifest = allPlugins.first(where: { $0.slug == slug })?.manifest {
+                            invalidateChangedReferencedSnapshot(slug, manifest: manifest)
+                        }
+                        print("[DataEngine] discard late result for \(slug) (config changed or removed)")
+                        continue
                     }
-                    print("[DataEngine] discard late result for \(slug) (config changed or removed)")
-                    continue
                 }
+                apply(slug: slug, fetched: cache, now: now)
+                lastRefresh = Date()
             }
-            apply(slug: slug, fetched: cache, now: now)
         }
-        lastRefresh = Date()
     }
 
     /// 配置版本: auth 文件 mtime (epoch 秒); 文件缺失 = 0。最简可用, 凭证/时间点变更都会反映
@@ -1347,7 +1355,7 @@ final class DataEngine: ObservableObject {
         }
     }
 
-    /// 并行刷给定家, 结果收齐后回 MainActor 统一落盘/更新内存态 (迟到回包按 configRevision 核对丢弃)
+    /// 并行刷给定家，每条完成即回 MainActor 落盘/更新内存态 (迟到回包按 configRevision 核对丢弃)
     private func fetch(_ due: [(String, PluginProvider)], now: Double) async {
         await fetch(due, now: now, checkRevision: true)
     }

@@ -154,7 +154,7 @@ struct FloatingView: View {
             } label: { Image(systemName: "square.grid.2x2") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .frame(width: 23, height: 23).accessibilityLabel(L10n.tr("切换悬浮窗样式")).help(L10n.tr("显示样式"))
-            if engine.isRefreshingAll {
+            if engine.isRefreshingAll || !engine.queryingSlugs.isEmpty {
                 ProgressView().controlSize(.mini).frame(width: 23, height: 23)
                     .accessibilityLabel(L10n.tr("正在刷新额度"))
             } else {
@@ -189,13 +189,14 @@ struct FloatingView: View {
         }
     }
     private func inlineAccount(_ state: ProviderState) -> some View {
-        let snapshot = QuotaPresentation(state: state)
+        let snapshot = QuotaPresentation(state: state, isRefreshing: engine.queryingSlugs.contains(state.slug))
         return HStack(spacing: 7) {
             HStack(spacing: 3) {
                 ProviderLogo(manifest: state.manifest, slug: state.slug, size: 13)
                 Text(state.manifest.fullName).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                if state.manifest.supportsQuota && snapshot.isOld {
-                    Text(L10n.tr("旧值")).font(.system(size: 9)).foregroundStyle(Palette.warn).fixedSize()
+                if state.manifest.supportsQuota && (snapshot.isOld || snapshot.isRefreshing) {
+                    Text(snapshot.isOld ? L10n.tr("旧值") : L10n.tr("刷新中")).font(.system(size: 9))
+                        .foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).fixedSize()
                 }
             }.frame(width: listNameWidth, alignment: .leading)
                 .help(snapshot.isOld ? state.manifest.fullName + " · " + snapshot.status : state.manifest.fullName)
@@ -224,7 +225,7 @@ struct FloatingView: View {
         .contextMenu { accountMenu(state) }
     }
     private func listAccount(_ state: ProviderState) -> some View {
-        let snapshot = QuotaPresentation(state: state)
+        let snapshot = QuotaPresentation(state: state, isRefreshing: engine.queryingSlugs.contains(state.slug))
         return VStack(alignment: .leading, spacing: 7) {
             if snapshot.metrics.isEmpty { inlineAccount(state) }
             ForEach(snapshot.metrics) { metric in
@@ -262,10 +263,10 @@ struct FloatingView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.tr("打开账号配置"))
-            if state.manifest.supportsQuota && snapshot.isOld {
-                Text(L10n.tr("旧值")).font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Palette.warn).padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Palette.warn.opacity(0.1), in: Capsule())
+            if state.manifest.supportsQuota && (snapshot.isOld || snapshot.isRefreshing) {
+                Text(snapshot.isOld ? L10n.tr("旧值") : L10n.tr("刷新中")).font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).padding(.horizontal, 5).padding(.vertical, 2)
+                    .background((snapshot.isOld ? Palette.warn : Palette.badgeBg).opacity(0.1), in: Capsule())
             }
             if state.manifest.supportsQuota, let model = operationModel {
                 FloatingQueryAction(model: model, slug: state.slug, name: state.manifest.fullName)
@@ -274,7 +275,7 @@ struct FloatingView: View {
     }
 
     private func cardAccount(_ state: ProviderState, detailed: Bool = false) -> some View {
-        let snapshot = QuotaPresentation(state: state)
+        let snapshot = QuotaPresentation(state: state, isRefreshing: engine.queryingSlugs.contains(state.slug))
         let columns = Array(repeating: GridItem(.flexible(), alignment: .leading), count: min(3, max(1, snapshot.metrics.count)))
         return VStack(alignment: .leading, spacing: 11) {
             accountHeading(state, snapshot: snapshot)
@@ -301,8 +302,8 @@ struct FloatingView: View {
                     }
                 }
             }
-            if state.manifest.supportsQuota && (detailed || snapshot.isOld) {
-                Text(snapshot.isOld ? snapshot.status : snapshot.updated)
+            if state.manifest.supportsQuota && (detailed || snapshot.isOld || snapshot.isRefreshing) {
+                Text(snapshot.isOld || snapshot.isRefreshing ? snapshot.status : snapshot.updated)
                     .font(.system(size: 9.5)).foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).lineLimit(2)
             }
         }
@@ -313,7 +314,7 @@ struct FloatingView: View {
     }
 
     private func glassAccount(_ state: ProviderState) -> some View {
-        let snapshot = QuotaPresentation(state: state)
+        let snapshot = QuotaPresentation(state: state, isRefreshing: engine.queryingSlugs.contains(state.slug))
         let primary = snapshot.metrics.filter { $0.percentage != nil }.max {
             ($0.percentage ?? 0) < ($1.percentage ?? 0)
         } ?? snapshot.metrics.first
@@ -330,7 +331,7 @@ struct FloatingView: View {
                         if let percentage = primary.percentage {
                             ProgressLine(pct: percentage).opacity(snapshot.isOld ? 0.45 : 1)
                         }
-                        Text(snapshot.isOld ? snapshot.status : snapshot.updated)
+                        Text(snapshot.isOld || snapshot.isRefreshing ? snapshot.status : snapshot.updated)
                             .font(.system(size: 9.5)).foregroundStyle(snapshot.isOld ? Palette.warn : Palette.muted).lineLimit(2)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }

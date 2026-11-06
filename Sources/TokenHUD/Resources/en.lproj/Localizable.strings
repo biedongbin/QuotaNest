@@ -758,3 +758,6 @@
 "悬浮窗显示与顺序" = "Floating window visibility and order";
 "显示于悬浮窗与菜单快览" = "Show in the floating window and menu preview";
 "勾选控制悬浮窗与菜单快览显示；用上下箭头排序，立即保存。隐藏账号保留位置。" = "Use checkboxes to control visibility in the floating window and menu preview. Use the arrows to reorder; changes save immediately. Hidden accounts keep their positions.";
+"正在刷新，显示上次成功快照" = "Refreshing; showing the last successful snapshot";
+"正在重试；上次查询失败：%@" = "Retrying; the previous query failed: %@";
+"刷新中" = "Refreshing";

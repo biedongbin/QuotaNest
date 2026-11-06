@@ -13,6 +13,8 @@ All notable changes are grouped by release version. Versions follow [Semantic Ve
 - Select the correct ZCode Coding quota pool from its source login, and distinguish a missing Start subscription from an authentication or parser failure.
 - Match native Antigravity query headers and source formats; read Cline prepaid credit separately when no ClinePass subscription exists.
 - Cap effective background quota intervals at five minutes and retry failed quota queries twice, preserving correctly bound stale values and original success timestamps. Model calls are not automatically retried.
+- Keep successful quota snapshots visually current for two effective query cycles (two minutes at a one-minute interval, ten minutes at five minutes); query failures mark values old immediately. Show per-account refresh progress while preserving the previous snapshot and visible errors.
+- Publish each account's quota result as soon as it completes, so fast accounts no longer wait for slower queries.
 - Clarify that imported-account removal only affects QuotaNest-owned links, settings, cache, and HUD entries; external source accounts and credentials are preserved.
 - Filter the sidebar and overview by local creation or import source, combined with search and account status.
 

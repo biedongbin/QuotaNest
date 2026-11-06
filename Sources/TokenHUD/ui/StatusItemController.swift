@@ -39,7 +39,10 @@ final class StatusItemController: ObservableObject {
         let percentage = states.compactMap { state in
             QuotaPresentation(state: state).metrics.compactMap(\.percentage).max()
         }.max()
-        let old = states.contains { QuotaPresentation(state: $0).isOld }
+        let old = states.contains {
+            let snapshot = QuotaPresentation(state: $0)
+            return !snapshot.metrics.isEmpty && snapshot.isOld
+        }
         let value = percentage.map { L10n.percent($0.rounded(), fractionLength: 0...0) } ?? "—"
         statusItem.button?.title = (engine.isRefreshingAll ? "↻ " : "") + value + (old && percentage != nil ? " ·" : "")
         statusItem.button?.toolTip = L10n.tr("%@ · 单击快览，双击悬浮，右键操作", String(describing: AppBrand.name)) + (old ? L10n.tr(" · 包含旧数据") : "")

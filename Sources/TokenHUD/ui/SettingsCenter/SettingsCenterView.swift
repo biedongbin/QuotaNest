@@ -399,7 +399,9 @@ struct OverviewPage: View {
 private struct OverviewAccountCard: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
-    private var quota: QuotaPresentation { QuotaPresentation(state: row.state) }
+    private var quota: QuotaPresentation {
+        QuotaPresentation(state: row.state, isRefreshing: model.running.contains(row.id) || model.engine.queryingSlugs.contains(row.id))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -443,8 +445,8 @@ private struct OverviewAccountCard: View {
         if !row.enabled {
             return row.health.issueReason.map { L10n.tr("已停用 · 账号异常：") + $0 } ?? L10n.tr("已停用 · 配置和计划保留")
         }
+        if quota.isRefreshing { return quota.status }
         if let issue = row.health.issueReason { return L10n.tr("账号异常 · ") + issue }
-        if model.running.contains(row.id) { return L10n.tr("正在查询额度…") }
         if !row.canQuery { return model.callConfigured(row) ? L10n.tr("API 已配置 · 无额度查询") : L10n.tr("API 待配置 · 无额度查询") }
         if !model.quotaConfigured(row) { return L10n.tr("额度查询待配置") }
         return quota.status

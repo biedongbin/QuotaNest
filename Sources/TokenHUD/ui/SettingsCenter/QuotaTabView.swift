@@ -3,11 +3,18 @@ import SwiftUI
 /// One snapshot contract is shared by the account window, menu and floating panel.
 struct QuotaPresentation {
     let state: ProviderState?
+    var isRefreshing = false
     var isOld: Bool {
-        guard let state else { return false }
-        return state.isStale || state.cache?.stale == true || state.cache?.error != nil
+        guard let state, let cache = state.cache else { return false }
+        return state.isStale || cache.stale == true || cache.error != nil
     }
     var status: String {
+        if isRefreshing {
+            if let error = state?.cache?.error {
+                return L10n.tr("正在重试；上次查询失败：%@", QuotaErrorPresentation.message(for: error))
+            }
+            return state?.cache?.generatedAt == nil ? L10n.tr("正在查询额度…") : L10n.tr("正在刷新，显示上次成功快照")
+        }
         guard let cache = state?.cache else { return L10n.tr("尚未查询") }
         if let error = cache.error { return L10n.tr("查询失败：") + QuotaErrorPresentation.message(for: error) }
         return isOld ? L10n.tr("数据已过期") : L10n.tr("额度已更新")
@@ -116,7 +123,9 @@ struct QuotaMetricView: View {
 struct QuotaTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
-    private var presentation: QuotaPresentation { QuotaPresentation(state: row.state) }
+    private var presentation: QuotaPresentation {
+        QuotaPresentation(state: row.state, isRefreshing: model.running.contains(row.id) || model.engine.queryingSlugs.contains(row.id))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center) {
@@ -129,10 +138,10 @@ struct QuotaTabView: View {
                 Button {
                     model.query(row.id)
                 } label: {
-                    Label(model.running.contains(row.id) ? L10n.tr("查询中") : L10n.tr("刷新额度"), systemImage: "arrow.clockwise")
+                    Label(presentation.isRefreshing ? L10n.tr("查询中") : L10n.tr("刷新额度"), systemImage: "arrow.clockwise")
                 }
                 .barButton()
-                .disabled(!row.canQuery || !model.quotaConfigured(row) || model.running.contains(row.id))
+                .disabled(!row.canQuery || !model.quotaConfigured(row) || presentation.isRefreshing)
                 .keyboardShortcut("r", modifiers: .command)
             }
             if !row.canQuery {
@@ -152,9 +161,9 @@ struct QuotaTabView: View {
                 CardBox {
                     VStack(alignment: .leading, spacing: 18) {
                         HStack(spacing: 7) {
-                            if model.running.contains(row.id) {
+                            if presentation.isRefreshing {
                                 ProgressView().controlSize(.mini)
-                                Text(L10n.tr("正在查询")).foregroundStyle(Palette.muted)
+                                Text(presentation.status).foregroundStyle(presentation.isOld ? Palette.warn : Palette.muted)
                             } else {
                                 Circle().fill(presentation.isOld ? Palette.warn : Palette.accent)
                                     .frame(width: 5, height: 5).accessibilityHidden(true)

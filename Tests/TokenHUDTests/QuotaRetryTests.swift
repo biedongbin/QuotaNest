@@ -48,7 +48,8 @@ struct QuotaRetryTests {
             sevenDay: Bucket(usedPercentage: 12))
         try JSONEncoder().encode(cache).write(to: root.appendingPathComponent("hud/.account-usage-cache.json"))
         engine.reloadRegistry()
-        #expect(engine.states.first?.isStale == true)
+        // Refresh is already due, while display freshness still has one cycle of grace.
+        #expect(engine.states.first?.isStale == false)
         var count = 0
         engine.quotaAttempt = { _ in
             count += 1

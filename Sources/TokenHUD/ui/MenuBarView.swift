@@ -72,7 +72,7 @@ struct MenuBarView: View {
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Palette.accentSoft, in: Capsule())
             Spacer()
-            if engine.isRefreshingAll {
+            if engine.isRefreshingAll || !engine.queryingSlugs.isEmpty {
                 ProgressView().controlSize(.mini).frame(width: 26, height: 26)
                     .accessibilityLabel(L10n.tr("正在刷新额度"))
             } else {
@@ -97,7 +97,8 @@ struct MenuBarView: View {
         .padding(.horizontal, 2)
     }
     private func accountCard(_ row: AccountRow) -> some View {
-        let snapshot = QuotaPresentation(state: row.state)
+        let snapshot = QuotaPresentation(state: row.state,
+            isRefreshing: model.running.contains(row.id) || engine.queryingSlugs.contains(row.id))
         return VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .center, spacing: 8) {
                 Button { onOpenAccount(row.id) } label: {
@@ -115,7 +116,7 @@ struct MenuBarView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.tr("打开账号 %@", String(describing: row.name)))
                 .help(L10n.tr("打开账号配置"))
-                if model.running.contains(row.id) {
+                if snapshot.isRefreshing {
                     ProgressView().controlSize(.mini).frame(width: 22, height: 22)
                         .accessibilityLabel(L10n.tr("正在查询 %@", String(describing: row.name)))
                 } else if row.canQuery {
@@ -134,7 +135,7 @@ struct MenuBarView: View {
                     QuotaMetricGrid(metrics: snapshot.metrics, old: snapshot.isOld, compact: true)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    if snapshot.isOld {
+                    if snapshot.isOld || snapshot.isRefreshing {
                         Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
                         Text(snapshot.status).lineLimit(2)
                     } else {
