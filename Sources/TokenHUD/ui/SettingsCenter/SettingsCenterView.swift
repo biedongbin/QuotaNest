@@ -406,7 +406,13 @@ private struct OverviewAccountCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Button { _ = model.selectAccount(row.id, tab: .config) } label: {
-                    Text(row.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(row.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text("· " + AccountSourceFilter.origin(of: row.plugin.manifest).label)
+                            .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            .accessibilityIdentifier("account-source." + row.id)
+                    }
                 }.buttonStyle(.plain)
                 Spacer(minLength: 0)
                 Toggle(L10n.tr("启用"), isOn: Binding(get: { row.enabled }, set: { model.toggleMonitoring(row.id, enabled: $0) }))
@@ -416,9 +422,6 @@ private struct OverviewAccountCard: View {
                     Image(systemName: "ellipsis").frame(width: 20, height: 20)
                 }.menuStyle(.borderlessButton).fixedSize().help(L10n.tr("账号操作"))
             }
-            Text(L10n.tr("账号来源") + " · " + AccountSourceFilter.origin(of: row.plugin.manifest).label)
-                .font(.system(size: 10.5)).foregroundStyle(Palette.muted)
-                .accessibilityIdentifier("account-source." + row.id)
             if row.canQuery && !quota.metrics.isEmpty {
                 QuotaMetricGrid(metrics: quota.metrics, old: quota.isOld || !row.enabled, compact: true)
             }

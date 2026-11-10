@@ -16,7 +16,8 @@ elif [[ $# != 0 ]]; then
   exit 2
 fi
 VERSION=$(tr -d '\r\n' < "$PROJECT_DIR/VERSION")
-[[ "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || { echo "Invalid VERSION" >&2; exit 1; }
+# Accept the project's optional fourth hotfix component (for example 1.0.0.1).
+[[ "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$' ]] || { echo "Invalid VERSION" >&2; exit 1; }
 REVISION=$(git rev-parse HEAD)
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 OUT="$PROJECT_DIR/.build/QuotaNest.app"

@@ -109,7 +109,7 @@ struct ReferencedSourceCacheTests {
         #expect(engine.readCache(slug: "fixture", manifest: manifest) == nil)
     }
 
-    @Test @MainActor func acceptedNewCacheRefreshesOnlyExistingHUDDependencyProjection() throws {
+    @Test @MainActor func acceptedNewCacheNeverTouchesHudExport() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tokenhud-ref-export-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -120,21 +120,21 @@ struct ReferencedSourceCacheTests {
         let hud = root.appendingPathComponent("hud")
         let plugin = try #require(engine.allPlugins.first)
         let entry = try #require(HUDSync.envsDict(plugins: [plugin], hudDir: hud, builtinNames: [])["fixture"])
-        #expect(entry.sourceReferenceDependencies?[source.path] != nil)
+        #expect(entry.reference != nil)
+        #expect(entry.credential?.keyFile == nil)
+        #expect(entry.credential?.file == nil)
         let envs = hud.appendingPathComponent("envs.json")
         try HUDSync.writeEnvs(["fixture": entry], to: envs)
-        let exported = String(decoding: try Data(contentsOf: envs), as: UTF8.self)
-        #expect(!exported.contains("fixture-A"))
+        let exported = try Data(contentsOf: envs)
+        let text = String(decoding: exported, as: UTF8.self)
+        #expect(!text.contains("fixture-A"))
+        #expect(!text.contains("sourceReferenceDependencies"))
+        // A successful App query updates only the App cache; the HUD export is a user action.
         try saveJSON(source, key: "fixture-rotated-key")
-        let oldDate = Date(timeIntervalSinceNow: -2)
-        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: source.path)
         engine.applyForTest(slug: "fixture", fetched: cached(try ImportedSource.read(reference).revision), now: 1, checkRevision: true)
-        let entries = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: envs))
-        let deps = try #require(entries["fixture"]?.sourceReferenceDependencies)
-        #expect(abs((deps[source.path] ?? 0) - oldDate.timeIntervalSince1970 * 1000) < 1)
         #expect(engine.states.first?.cache?.sevenDay?.usedPercentage == 73)
-        let safe = String(decoding: try Data(contentsOf: envs), as: UTF8.self)
-        #expect(!safe.contains("fixture-rotated-key"))
+        #expect(try Data(contentsOf: envs) == exported)
+        #expect(!String(decoding: try Data(contentsOf: envs), as: UTF8.self).contains("fixture-rotated-key"))
     }
 
     @Test @MainActor func snapshotAndRunnerStampFrozenRevisionWithoutChangingSource() async throws {

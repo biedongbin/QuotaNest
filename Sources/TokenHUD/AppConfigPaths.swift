@@ -6,6 +6,8 @@ struct AppConfigPaths {
     let userProvidersDir: URL
     var hudDir: URL { configDir.appendingPathComponent("hud", isDirectory: true) }
     var settingsURL: URL { configDir.appendingPathComponent("settings.json") }
+    /// App-private runtime dir for its own provider scripts (never the HUD-owned directory).
+    var runtimeDir: URL { userProvidersDir.deletingLastPathComponent().appendingPathComponent("runtime", isDirectory: true) }
 
     init(environment: [String: String], userHome: URL, workingDirectory: URL) {
         userProvidersDir = userHome.appendingPathComponent("Library/Application Support/QuotaNest/providers", isDirectory: true)

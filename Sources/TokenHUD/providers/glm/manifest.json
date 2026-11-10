@@ -20,6 +20,7 @@
   "refreshProtocol": "anthropic",
   "refreshUrl": "https://open.bigmodel.cn/api/anthropic/v1/messages",
   "testModel": "glm-4.7",
+  "windowTrigger": { "period": "five_hour", "model": "glm-4.7" },
   "authMode": "apikey",
   "quotaAuthModes": [
     "apikey",

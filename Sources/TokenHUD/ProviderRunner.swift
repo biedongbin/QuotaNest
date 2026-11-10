@@ -45,10 +45,14 @@ struct QuotaQueryResult {
 final class ProviderRunner {
     let nodePath: String?
     private let logDir: URL
+    /// App-private runtime dir holding the provider mjs. Never the HUD-owned directory:
+    /// the App must not execute (or depend on) scripts the HUD may replace.
+    var runtimeDir: URL
 
-    init(nodePath: String?, logDir: URL? = nil) {
+    init(nodePath: String?, logDir: URL? = nil, runtimeDir: URL? = nil) {
         self.nodePath = nodePath
         self.logDir = logDir ?? URL(fileURLWithPath: NSHomeDirectory() + "/.claude/hud", isDirectory: true)
+        self.runtimeDir = runtimeDir ?? self.logDir
     }
 
     /// Quota reads only. The caller holds its account gate across this entire sequence.
@@ -129,7 +133,7 @@ final class ProviderRunner {
         var env = ProcessInfo.processInfo.environment
         if let nodePath { env["TOKENHUD_NODE"] = nodePath }
         env["TOKENHUD_STDOUT_ONLY"] = "1"
-        env["TOKENHUD_HUD_DIR"] = logDir.path
+        env["TOKENHUD_HUD_DIR"] = runtimeDir.path
         env["TOKENHUD_AUTH_FILE"] = snapshot?.file.path ?? originalAuth.path
         env["TOKENHUD_CACHE_FILE"] = DataEngine.cachePath(for: plugin, hudDir: logDir).path
         env["TOKENHUD_QUERY_URL"] = snapshot?.queryURL ?? plugin.manifest.queryUrl ?? ""
@@ -186,7 +190,7 @@ final class ProviderRunner {
         let text = String(data: tail, encoding: .utf8) ?? String(decoding: tail, as: UTF8.self)
         var safe = Self.redact(text)
         for secret in secrets where !secret.isEmpty { safe = safe.replacingOccurrences(of: secret, with: "[REDACTED]") }
-        let log = logDir.appendingPathComponent(".\(plugin.slug)-usage-stderr.log")
+        let log = runtimeDir.appendingPathComponent(".\(plugin.slug)-usage-stderr.log")
         try? Data(safe.utf8).write(to: log, options: .atomic)
     }
 

@@ -169,7 +169,7 @@ enum AccountRebuildVerification {
                                     runner: ProviderRunner(nodePath: nil, logDir: hud), defaults: defaults,
                                     settingsURL: scratchSettings)
             engine.quotaAttempt = { _ in requests.quotas += 1; return nil }
-            engine.installScripts()
+            engine.installRuntimeScripts()
             engine.reloadRegistry()
             let model = SettingsModel(engine: engine, hudDir: hud, userDir: userDir,
                                       settingsURL: scratchSettings, bundleDir: bundle, defaults: defaults,

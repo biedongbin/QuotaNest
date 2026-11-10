@@ -33,6 +33,9 @@ enum RefreshTrigger {
         guard !config.refreshUrl.isEmpty else { throw ProviderAuthenticationError(message: "未配置刷新 url") }
         guard let url = validHTTPURL(config.refreshUrl) else { throw ProviderAuthenticationError(message: "刷新 url 非法") }
         guard !config.testModel.isEmpty else { throw ProviderAuthenticationError(message: "未配置测试模型") }
+        guard config.modelCatalog?.allows(config.testModel) != false else {
+            throw ProviderAuthenticationError(message: "所选模型不属于该供应商套餐，请选择套餐模型，避免使用付费 API 模型")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyHeaders(&request, config.refreshHeader, key: config.refreshKey, protocol: config.refreshProtocol)
@@ -51,6 +54,16 @@ enum RefreshTrigger {
         } else { throw ProviderAuthenticationError(message: "该调用协议尚未支持") }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
+    }
+
+    static func scheduleConfig(config: ProviderConfig, manifest: ProviderManifest) throws -> ProviderConfig {
+        var resolved = try ProviderAuthentication.resolveCall(config)
+        resolved.testModel = resolved.effectiveScheduleModel(manifest: manifest)
+        return resolved
+    }
+
+    static func scheduleRequest(config: ProviderConfig, manifest: ProviderManifest) throws -> URLRequest {
+        try callRequest(config: scheduleConfig(config: config, manifest: manifest))
     }
 
     /// Session injection is for offline URLProtocol tests; regular calls share this same path.
@@ -83,6 +96,8 @@ enum RefreshTrigger {
         if config.testPrompt.isEmpty {
             config.testPrompt = manifest.testPrompt ?? ProviderConfig.defaultPrompt
         }
+        do { config = try scheduleConfig(config: config, manifest: manifest) }
+        catch { return error.localizedDescription }
         return await testRefresh(config: config, session: session)
     }
 

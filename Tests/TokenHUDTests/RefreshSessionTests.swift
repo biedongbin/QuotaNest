@@ -78,6 +78,41 @@ struct RefreshSessionTests {
         #expect(try Data(contentsOf: auth) == authData)
     }
 
+    @Test(arguments: [false, true]) func scheduledWindowCallUsesLocalPlanModelOrDeclaration(customModel: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("window-schedule-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let auth = root.appendingPathComponent("auth.json")
+        var settings: [String: Any] = ["authMode": "apikey", "refreshApiKey": "fixture-key", "callModelOverride": "validation-model"]
+        if customModel { settings["windowModelOverride"] = "user-plan-model" }
+        try JSONSerialization.data(withJSONObject: settings).write(to: auth)
+        var declared = try manifest()
+        declared.windowTrigger = ProviderWindowTrigger(period: "five_hour", model: "plan-model")
+        declared.refreshUrl = "https://session.example.invalid/v1/chat/completions"
+        let session = URLSession(configuration: setup())
+        defer { session.invalidateAndCancel() }
+        SessionHeaderProtocol.state.reset()
+        let result = await RefreshTrigger.trigger(manifest: declared, authFile: auth, session: session)
+        #expect(result?.hasPrefix("✓") == true)
+        let request = try #require(SessionHeaderProtocol.state.requests.first)
+        let data: Data
+        if let body = request.httpBody { data = body }
+        else if let stream = request.httpBodyStream {
+            stream.open(); defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            var bytes = Data()
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                bytes.append(contentsOf: buffer.prefix(count))
+            }
+            data = bytes
+        } else { throw ProviderAuthenticationError(message: "Missing body") }
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(body["model"] as? String == (customModel ? "user-plan-model" : "plan-model"))
+        #expect(SessionHeaderProtocol.state.requests.count == 1)
+    }
+
     @Test func undeclaredVendorAndQuotaHeadersDoNotGainSessions() throws {
         var config = ProviderConfig()
         config.refreshUrl = "https://other.example.invalid/v1/chat/completions"

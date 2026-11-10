@@ -370,6 +370,7 @@ final class SettingsModel: ObservableObject {
     @Published var running: Set<String> = []
     @Published private(set) var callRunning: Set<String> = []
     @Published private(set) var callTestResults: [String: CallTestResult] = [:]
+    @Published private(set) var windowCallResults: [String: CallTestResult] = [:]
     /// Saved-account evidence survives draft-only tests, whose inputs may differ from disk.
     @Published private var savedCallHealthResults: [String: CallTestResult] = [:]
     @Published private(set) var pendingTestConfirmation: CallTestConfirmation?
@@ -385,6 +386,12 @@ final class SettingsModel: ObservableObject {
         callRunning.contains(callTestResultKey) || pendingTestCall?.key == callTestResultKey
     }
     func callTestResult(for slug: String?) -> CallTestResult? { callTestResults[slug ?? callTestResultKey] }
+    func windowCallResult(for slug: String) -> CallTestResult? { windowCallResults[slug] }
+
+    private func storeCallResult(_ result: CallTestResult, key: String) {
+        if result.sourceLabel == "5h 窗口调用" { windowCallResults[key] = result }
+        else { callTestResults[key] = result }
+    }
 
     @Published var toast: Toast?
     @Published var importOpen = false
@@ -716,7 +723,7 @@ final class SettingsModel: ObservableObject {
         importOpen = true
     }
 
-    static var sourceReadOnlyMessage: String { L10n.tr("来源凭证、接口与计划只读；可修改本地显示名，并使用支持的模型进行临时测试，不会写回来源。") }
+    static var sourceReadOnlyMessage: String { L10n.tr("外部认证只读引用；显示名、调用模型、查询间隔和定时计划由 QuotaNest 本地管理，不会写回来源。") }
 
     func configurationReadOnly(_ slug: String?) -> Bool {
         guard let slug, let plugin = engine.allPlugins.first(where: { $0.slug == slug }) else { return false }
@@ -753,6 +760,7 @@ final class SettingsModel: ObservableObject {
             object["displayName"] = alias
             let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: file, options: .atomic)
+            engine.markHUDExportNeeded()
             engine.reloadRegistry()
             flash(L10n.tr("本地显示名已更新，来源账号未修改。"), error: false)
             return true
@@ -766,7 +774,7 @@ final class SettingsModel: ObservableObject {
         guard let row = current, !rejectSourceConfigurationEdit(row.id) else { return }
         let cfg = readConfig(row.plugin)
         var v = DraftValues(name: row.name, url: cfg.apiBaseURL, key: cfg.refreshKey,
-                            model: cfg.testModel, prompt: cfg.testPrompt, proto: cfg.refreshProtocol,
+                            model: cfg.savedScheduleModel ?? cfg.testModel, prompt: cfg.testPrompt, proto: cfg.refreshProtocol,
                             autoQuery: row.enabled,
                             autoTrigger: !engine.triggerDisabledSlugs.contains(row.id)
                                 && !cfg.scheduleTimes.isEmpty && row.canCall, times: cfg.scheduleTimes)
@@ -992,6 +1000,12 @@ final class SettingsModel: ObservableObject {
         cfg.authMode = values.authMode
         cfg.authCredentialFile = values.authCredentialFile
         cfg.testModel = values.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        cfg.callModelOverride = nil
+        cfg.savedScheduleModel = cfg.testModel
+        // An explicit base-model edit also selects the plan model. Unrelated saves preserve local plans.
+        if draft?.isNew == true || values.model != draft?.base.model {
+            cfg.windowModelOverride = cfg.testModel.isEmpty ? nil : cfg.testModel
+        }
         cfg.testPrompt = values.prompt
         cfg.scheduleTimes = values.times
         if let manifest = draftManifest(), draftBuiltin() {
@@ -1006,7 +1020,8 @@ final class SettingsModel: ObservableObject {
     private func draftCallReady(_ values: DraftValues) -> Bool {
         let existing = draft?.slug.flatMap { slug in engine.allPlugins.first { $0.slug == slug }.map(readConfig) }
         let cfg = draftConfig(values, existing: existing)
-        return Self.callReady(cfg)
+        guard let manifest = draftManifest() else { return Self.callReady(cfg) }
+        return (try? RefreshTrigger.scheduleRequest(config: cfg, manifest: manifest)) != nil
     }
 
     private func create(values: DraftValues, draft d: Draft) throws -> String {
@@ -1120,6 +1135,91 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// Plans belong to QuotaNest, even when authentication is a live external reference.
+    @discardableResult func saveCallSchedule(_ slug: String, times: [String], timeInput: String = "",
+                                           model: String, enabled: Bool) -> Bool {
+        topError = ""
+        guard let row = row(slug), let file = authURL(row.plugin) else { return false }
+        let pending = timeInput.trimmingCharacters(in: .whitespaces)
+        let validation = SettingsValidation.triggerErrors(times: times, timeInput: pending, triggerEnabled: enabled, canCall: true)
+        if let message = validation["time"] ?? validation["times"] { flash(message, error: true); return false }
+        var config = readConfig(row.plugin)
+        let input = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = config.modelCatalog?.canonicalModel(input) ?? input
+        if !chosen.isEmpty, config.modelCatalog?.allows(chosen) == false {
+            flash(L10n.tr("所选模型不属于该供应商套餐，请选择套餐模型，避免使用付费 API 模型"), error: true); return false
+        }
+        config.windowModelOverride = chosen.isEmpty ? nil : chosen
+        if enabled && (try? RefreshTrigger.scheduleRequest(config: config, manifest: row.plugin.manifest)) == nil {
+            flash(L10n.tr("请先配置 API 调用"), error: true); return false
+        }
+        config.scheduleTimes = (times + (pending.isEmpty ? [] : [pending])).sorted()
+        config.windowModelOverride = chosen.isEmpty ? nil : chosen
+        do {
+            try ProviderConfigStore.write(config, manifest: row.plugin.manifest, to: file)
+            engine.setTriggerEnabled(slug, enabled: enabled)
+            engine.reloadRegistry()
+            flash(L10n.tr("本地调用计划已保存，外部认证未修改"), error: false)
+            return true
+        } catch { flash(L10n.errorDescription(error), error: true); return false }
+    }
+
+    @discardableResult func saveCallModel(_ slug: String, model: String) -> Bool {
+        let value = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let row = row(slug), let file = authURL(row.plugin), !value.isEmpty else {
+            flash(L10n.tr("请先填写测试模型"), error: true); return false
+        }
+        var config = readConfig(row.plugin)
+        let canonical = config.modelCatalog?.canonicalModel(value) ?? value
+        guard config.modelCatalog?.allows(canonical) != false else {
+            flash(L10n.tr("所选模型不属于该供应商套餐，请选择套餐模型，避免使用付费 API 模型"), error: true); return false
+        }
+        config.callModelOverride = canonical
+        do {
+            try ProviderConfigStore.write(config, manifest: row.plugin.manifest, to: file)
+            engine.reloadRegistry()
+            flash(L10n.tr("模型已保存，仅修改 QuotaNest 本地调用设置"), error: false)
+            return true
+        } catch { flash(L10n.errorDescription(error), error: true); return false }
+    }
+
+    func scheduleModel(_ row: AccountRow) -> String {
+        let config = readConfig(row.plugin)
+        return ((try? ProviderAuthentication.resolveCall(config)) ?? config).effectiveScheduleModel(manifest: row.plugin.manifest)
+    }
+
+    func draftScheduleModel(_ values: DraftValues) -> String {
+        let config = callConfigForDraft(values)
+        guard let manifest = draftManifest() else { return config.testModel }
+        return ((try? ProviderAuthentication.resolveCall(config)) ?? config).effectiveScheduleModel(manifest: manifest)
+    }
+
+    func scheduleConfigured(_ row: AccountRow) -> Bool {
+        (try? RefreshTrigger.scheduleRequest(config: readConfig(row.plugin), manifest: row.plugin.manifest)) != nil
+    }
+
+    func windowCallConfigured(_ row: AccountRow) -> Bool {
+        guard let trigger = row.plugin.manifest.windowTrigger, trigger.period == "five_hour", !trigger.model.isEmpty else { return false }
+        return scheduleConfigured(row)
+    }
+
+    /// Explicit 5h-window click: one request, no navigation, confirmation sheet, retry or schedule change.
+    func triggerWindow(_ slug: String) {
+        guard let row = row(slug), row.enabled, let trigger = row.plugin.manifest.windowTrigger,
+              trigger.period == "five_hour", row.canCall else {
+            flash(L10n.tr("该账号未声明动态 5h 开窗调用能力"), error: true); return
+        }
+        guard !callRunning.contains(slug) else { return }
+        do {
+            let config = try RefreshTrigger.scheduleConfig(config: readConfig(row.plugin), manifest: row.plugin.manifest)
+            _ = try RefreshTrigger.callRequest(config: config)
+            guard !config.testModel.isEmpty, SettingsValidation.isValidURL(config.refreshUrl) else {
+                flash(L10n.tr("请先配置 API 调用"), error: true); return
+            }
+            executeConfirmedTestCall(config: config, key: slug, source: "5h 窗口调用")
+        } catch { flash(L10n.errorDescription(error), error: true) }
+    }
+
     func testCall(_ slug: String, modelOverride: String? = nil) {
         guard let row = row(slug), row.canCall else {
             flash(L10n.tr("该账号尚未接入模型调用"), error: true)
@@ -1162,10 +1262,14 @@ final class SettingsModel: ObservableObject {
             return
         }
         if let modelOverride { config.testModel = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines) }
+        config.testModel = config.modelCatalog?.canonicalModel(config.testModel) ?? config.testModel
+        guard config.modelCatalog?.allows(config.testModel) != false else {
+            flash(L10n.tr("所选模型不属于该供应商套餐，请选择套餐模型，避免使用付费 API 模型"), error: true); return
+        }
         let target = CallTestResult.targetDescription(config.refreshUrl)
         func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
             CallTestResult(phase: phase, model: config.testModel, target: target,
-                           sourceLabel: source, message: message, date: Date())
+                           sourceLabel: source, message: message, date: Date(), maxTokens: config.testMaxTokens)
         }
         guard !callRunning.contains(key) else { flash(L10n.tr("该账号已有测试进行中"), error: true); return }
         let invalid: String?
@@ -1209,15 +1313,15 @@ final class SettingsModel: ObservableObject {
         let target = CallTestResult.targetDescription(config.refreshUrl)
         func result(_ phase: CallTestResult.Phase, _ message: String) -> CallTestResult {
             CallTestResult(phase: phase, model: config.testModel, target: target,
-                           sourceLabel: source, message: message, date: Date())
+                           sourceLabel: source, message: message, date: Date(), maxTokens: config.testMaxTokens)
         }
         callRunning.insert(key)
-        callTestResults[key] = result(.running, L10n.tr("正在发送一次测试调用…"))
+        storeCallResult(result(.running, L10n.tr("正在发送一次测试调用…")), key: key)
         let execute = executeTestCall
         Task {
             guard await engine.callSlots.acquire(key) else {
                 callRunning.remove(key)
-                callTestResults[key] = result(.failure, L10n.tr("调用繁忙：已有调用进行中，本次未发送"))
+                storeCallResult(result(.failure, L10n.tr("调用繁忙：已有调用进行中，本次未发送")), key: key)
                 flash(L10n.tr("调用繁忙，本次未发送"), error: true)
                 return
             }
@@ -1236,17 +1340,18 @@ final class SettingsModel: ObservableObject {
                     .replacingOccurrences(of: config.refreshUrl, with: target)
             }
             let completed = result(phase, message)
-            callTestResults[key] = completed
+            storeCallResult(completed, key: key)
             if source == "已保存配置",
                phase == .success || (phase == .failure && AccountHealthAssessment.persistentIssue(message) != nil),
                let row = row(key), currentAuthenticationMatches(config, row: row),
-               readConfig(row.plugin).testModel == config.testModel {
+               (try? ProviderAuthentication.resolveCall(readConfig(row.plugin)).testModel) == config.testModel {
                 savedCallHealthResults[key] = completed
             }
             let summary = phase == .success ? message
                 : (phase == .uncertain ? L10n.tr("测试结果不确定，可能已消费；请查看下方完整详情") : L10n.tr("测试调用未成功，请查看下方完整详情"))
-            flash(summary, error: phase != .success)
-            if phase == .success, source == "已保存配置",
+            flash(source == "5h 窗口调用" && phase == .success
+                  ? L10n.tr("调用成功；是否开启 5h 窗口以供应商额度为准") : summary, error: phase != .success)
+            if phase == .success, source == "已保存配置" || source == "5h 窗口调用",
                let row = row(key), quotaConfigured(row),
                currentAuthenticationMatches(config, row: row) {
                 query(key)
@@ -1325,11 +1430,6 @@ final class SettingsModel: ObservableObject {
         selected = nil
         navPage = .overview
         engine.reloadRegistry()
-        let hasSameName = engine.allPlugins.contains { $0.manifest.name == p.manifest.name }
-        let removed = hasSameName ? Set([p.slug]) : Set([p.slug, p.manifest.name])
-        if case .failure(let error) = engine.writeEnvsForHudSync(removingManagedNames: removed) {
-            cleanupFailures.append(L10n.tr("HUD 未更新：%@", String(describing: error.localizedDescription)))
-        }
         if cleanupFailures.isEmpty {
             flash(p.manifest.isSourceConfigurationReadOnly
                 ? L10n.tr("已移除 %@ 的本地关联，外部账号和凭证未修改。", String(describing: p.manifest.fullName))
@@ -1339,9 +1439,10 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// 唯一写入 HUD 的入口: 脚本 + envs.json + settings.json 一次性导出。
+    /// 启动、来源同步、缓存写入、开关/排序/删除都不会自动写 HUD。
     func syncHUD() {
-        engine.installScripts()
-        switch engine.writeEnvsForHudSync() {
+        switch engine.exportHUD() {
         case .success:
             flash(L10n.tr("已写入 Claude Code HUD（下次渲染生效）"), error: false)
         case .failure(let error):
@@ -1382,16 +1483,9 @@ final class SettingsModel: ObservableObject {
             currentDraft.base.autoQuery = enabled
             draft = currentDraft
         }
-        let sync = engine.writeEnvsForHudSync()
         let name = account.name
-        switch sync {
-        case .success:
-            flash(enabled ? L10n.tr("已启用 %@", String(describing: name)) : L10n.tr("已停用 %@，后台查询和定时调用已暂停", String(describing: name)),
-                  error: false)
-        case .failure(let error):
-            flash(L10n.tr("%@ 已%@，但 HUD 未更新：%@", String(describing: name), String(describing: enabled ? L10n.tr("启用") : L10n.tr("停用")), String(describing: error.localizedDescription)),
-                  error: true)
-        }
+        flash(enabled ? L10n.tr("已启用 %@", String(describing: name)) : L10n.tr("已停用 %@，后台查询和定时调用已暂停", String(describing: name)),
+              error: false)
     }
 
     /// 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示
@@ -1401,15 +1495,12 @@ final class SettingsModel: ObservableObject {
               error: false)
     }
 
-    /// 「同步 HUD」: 关闭即时从 envs.json / ACCOUNT_ENVS 摘除
+    /// 「HUD 选择」只改本地选择，不写 HUD；点击“写入 Claude Code HUD”后生效。
     func toggleHudSync(_ slug: String, synced: Bool) {
-        switch engine.setHudHidden(slug, hidden: !synced) {
-        case .success:
-            flash(synced ? L10n.tr("已同步该账号到 Claude Code HUD") : L10n.tr("已从 Claude Code HUD 摘除该账号"),
-                  error: false)
-        case .failure(let error):
-            flash(L10n.tr("HUD 同步失败：%@", String(describing: error.localizedDescription)), error: true)
-        }
+        engine.setHudHidden(slug, hidden: !synced)
+        flash(synced ? L10n.tr("已选择该账号，点击「写入 Claude Code HUD」后生效")
+                     : L10n.tr("已取消该账号的 HUD 选择，点击「写入 Claude Code HUD」后生效"),
+              error: false)
     }
 
     // MARK: v0.2 调用计划页数据 (全部账号的定时计划 + 最近执行结果)

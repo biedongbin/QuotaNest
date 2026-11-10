@@ -51,6 +51,24 @@ struct ProviderSourceReference: Codable, Equatable, Sendable {
     var identityAccount: String? = nil
 }
 
+struct ProviderModelCatalog: Codable, Equatable, Sendable {
+    var url: String? = nil
+    var format: String? = nil
+    var section: String? = nil
+    var allowedPrefixes: [String]? = nil
+    var aliases: [String: String]? = nil
+    func canonicalModel(_ model: String) -> String { aliases?[model] ?? model }
+    func allows(_ model: String) -> Bool {
+        guard let prefixes = allowedPrefixes, !prefixes.isEmpty else { return true }
+        return prefixes.contains { model.hasPrefix($0) }
+    }
+}
+
+struct ProviderWindowTrigger: Codable, Equatable {
+    let period: String
+    let model: String
+}
+
 struct ProviderManifest: Codable {
     let name: String
     let label: String
@@ -63,6 +81,9 @@ struct ProviderManifest: Codable {
     var needsCredential: Bool?  // 无 API 查余额, 需登录凭证 (如 glm JWT)
     var testModel: String?      // 额度刷新测试 model (如 glm-4.7)
     var testPrompt: String?     // 额度刷新测试 prompt
+    var testMaxTokens: Int?
+    var windowTrigger: ProviderWindowTrigger?
+    var modelCatalog: ProviderModelCatalog?
     var queryUrl: String?       // 查余额 url (缺省用 auth.apiUrl/url)
     var queryAuth: String?      // 查余额凭证类型: jwt/bearer/cookie/header
     /// 查余额凭证在 auth 文件里的字段名 (如 "apiKey"); 声明后 read/write 直接读写该字段, 不走 headers.Authorization
@@ -115,7 +136,7 @@ struct ProviderManifest: Codable {
     var authStyle: String { authMode ?? (queryAuth == "header" ? "local" : "apikey") }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader, autoCreateDefault, sourceReference
+        case name, label, displayName, fetch, intervalSec, buckets, cacheFile, authFile, needsCredential, testModel, testPrompt, testMaxTokens, windowTrigger, modelCatalog, queryUrl, queryAuth, queryKeyField, refreshUrl, refreshProtocol, refreshAuth, refreshHeader, builtin, template, accent, icon, enabled, authMode, origin, quotaMode, quotaAuthModes, credentialSource, authCallUrl, authCallProtocol, authCallHeader, authModelsUrl, inheritQueryUrl, inheritQueryHeader, autoCreateDefault, sourceReference
     }
 
     init(name: String, label: String, displayName: String? = nil, fetch: String = "./fetch.sh",
@@ -130,7 +151,8 @@ struct ProviderManifest: Codable {
          quotaAuthModes: [String]? = nil, credentialSource: ProviderCredentialSource? = nil,
          authCallUrl: String? = nil, authCallProtocol: String? = nil, authCallHeader: String? = nil,
          authModelsUrl: String? = nil, inheritQueryUrl: String? = nil, inheritQueryHeader: String? = nil,
-         autoCreateDefault: Bool? = nil, sourceReference: ProviderSourceReference? = nil) {
+         autoCreateDefault: Bool? = nil, sourceReference: ProviderSourceReference? = nil,
+         testMaxTokens: Int? = nil, windowTrigger: ProviderWindowTrigger? = nil, modelCatalog: ProviderModelCatalog? = nil) {
         self.name = name
         self.label = label
         self.displayName = displayName
@@ -142,6 +164,9 @@ struct ProviderManifest: Codable {
         self.needsCredential = needsCredential
         self.testModel = testModel
         self.testPrompt = testPrompt
+        self.testMaxTokens = testMaxTokens
+        self.windowTrigger = windowTrigger
+        self.modelCatalog = modelCatalog
         self.queryUrl = queryUrl
         self.queryAuth = queryAuth
         self.queryKeyField = queryKeyField
@@ -182,6 +207,9 @@ struct ProviderManifest: Codable {
         needsCredential = try c.decodeIfPresent(Bool.self, forKey: .needsCredential)
         testModel = try c.decodeIfPresent(String.self, forKey: .testModel)
         testPrompt = try c.decodeIfPresent(String.self, forKey: .testPrompt)
+        testMaxTokens = try c.decodeIfPresent(Int.self, forKey: .testMaxTokens)
+        windowTrigger = try c.decodeIfPresent(ProviderWindowTrigger.self, forKey: .windowTrigger)
+        modelCatalog = try c.decodeIfPresent(ProviderModelCatalog.self, forKey: .modelCatalog)
         queryUrl = try c.decodeIfPresent(String.self, forKey: .queryUrl)
         queryAuth = try c.decodeIfPresent(String.self, forKey: .queryAuth)
         queryKeyField = try c.decodeIfPresent(String.self, forKey: .queryKeyField)
@@ -254,6 +282,22 @@ struct WindowBucket: Codable, Equatable {
     /// Standard labels emitted by the bundled adapters; custom provider labels
     /// remain data and are displayed exactly as returned.
     var displayLabel: String? { localizedLabel(language: AppLanguageSettings.shared.selection) }
+
+    /// Stable raw identity, independent of translated labels, reset timestamps and list order.
+    var menuBarSelectionKey: String {
+        func canonical(_ value: String?) -> String? {
+            let value = (value ?? "").lowercased().replacingOccurrences(of: " ", with: "")
+            switch value {
+            case "five_hour", "5h", "5hour", "5hours", "5小时": return "five_hour"
+            case "seven_day", "7d", "7days", "7天", "week", "weekly", "本周", "thisweek": return "seven_day"
+            case "monthly", "month", "本月", "thismonth": return "monthly"
+            default: return nil
+            }
+        }
+        if let key = canonical(label) { return key }
+        if label == nil || label == "额度窗口", let key = canonical(period) { return key }
+        return "window|" + [period ?? "", label ?? "", unit ?? ""].joined(separator: "|")
+    }
 
     func localizedLabel(language: AppLanguage) -> String? {
         guard let label else { return nil }

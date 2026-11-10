@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { resolveCredential } from '../Sources/TokenHUD/mjs/source-readers.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, chmodSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -62,6 +63,28 @@ try {
    assert.equal(child.status, 0, `${id}: ${child.stderr}`);
    return JSON.parse(child.stdout);
   };
+  if (id === 'zai-coding') {
+   const manifest = JSON.parse(readFileSync(join(root, `Sources/TokenHUD/providers/${id}/manifest.json`)));
+   const formats = [manifest.credentialSource];
+   const object = { type: 'oauth', refresh: JSON.stringify({ key: 'zai-auth-fixture', site: 'zai' }) };
+   const bytes = JSON.stringify(object);
+   const resolved = resolveCredential({ mode: 'auth', object }, formats);
+   check(() => { assert.equal(resolved.key, 'zai-auth-fixture'); assert.equal(JSON.stringify(object), bytes); });
+   check(() => { assert.equal(manifest.authCallUrl, 'https://api.z.ai/api/coding/paas/v4/chat/completions'); assert.equal(manifest.authCallHeader, 'Authorization: Bearer <key>'); assert.equal(manifest.inheritQueryHeader, 'Authorization: <key>'); });
+   for (const invalid of [
+    { type: 'oauth', refresh: { key: 'wrong-site-key', site: 'bigmodel' } },
+    { type: 'api', refresh: { key: 'wrong-type-key', site: 'zai' } },
+    { type: 'oauth', refresh: { site: 'zai' } },
+    { type: 'oauth', refresh: { key: ' ', site: 'zai' } },
+    { type: 'oauth', refresh: { key: 'injected\r\nheader', site: 'zai' } },
+   ]) check(() => assert.throws(() => resolveCredential({ mode: 'auth', object: invalid }, formats), { code: 'source-format' }));
+   const authSnapshot = join(temp, 'zai-auth.json');
+   writeFileSync(authSnapshot, JSON.stringify({ tokenhudResolvedAuth: true, authMode: 'auth', queryKey: resolved.key }));
+   check(() => assert.equal(run({ TOKENHUD_AUTH_FILE: authSnapshot }).error, null));
+   const authArgs = JSON.parse(readFileSync(requests, 'utf8').trim());
+   check(() => assert.ok(authArgs.includes('Authorization: zai-auth-fixture')));
+   writeFileSync(requests, '');
+  }
   const result = run({});
   check(() => { assert.equal(result.error, null, id); assert.equal(result.stale, false); assert.ok(result.generatedAt > 0); assert.ok(result.windows.length > 0); assert.equal(existsSync(cache), false); });
   const invocations = readFileSync(requests, 'utf8').trim().split('\n').map(JSON.parse);
@@ -78,7 +101,7 @@ try {
    }
   });
   const manifest = JSON.parse(readFileSync(join(root, `Sources/TokenHUD/providers/${id}/manifest.json`)));
-  check(() => { assert.equal(manifest.autoCreateDefault, false); assert.equal(manifest.authMode, 'apikey'); assert.deepEqual(manifest.quotaAuthModes, ['apikey']); assert.equal(manifest.queryAuth, 'bearer'); assert.equal(manifest.quotaMode, 'script'); assert.equal(manifest.inheritQueryUrl, config.url); assert.equal(manifest.testModel, ''); assert.ok(manifest.refreshUrl.startsWith('https://')); });
+  check(() => { assert.equal(manifest.autoCreateDefault, false); assert.equal(manifest.authMode, 'apikey'); assert.deepEqual(manifest.quotaAuthModes, id === 'zai-coding' ? ['apikey', 'auth'] : ['apikey']); assert.equal(manifest.queryAuth, 'bearer'); assert.equal(manifest.quotaMode, 'script'); assert.equal(manifest.inheritQueryUrl, config.url); assert.equal(manifest.testModel, ''); assert.ok(manifest.refreshUrl.startsWith('https://')); });
   check(() => assert.equal(run({ TEST_HTTP_CODE: '403' }).error, 'auth'));
   check(() => assert.equal(run({ TEST_HTTP_CODE: '302' }).error, 'network'));
   check(() => assert.equal(run({ TOKENHUD_AUTH_FILE: '', USAGE_AUTH_FILE: authB }).error, 'no-auth'));

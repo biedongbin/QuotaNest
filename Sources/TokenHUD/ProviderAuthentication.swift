@@ -145,6 +145,10 @@ enum ProviderAuthentication {
         default:
             throw ProviderAuthenticationError(message: "基础接入模式必须是 Auth 或 API Key")
         }
+        if let model = config.callModelOverride, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resolved.testModel = model
+        }
+        resolved.testModel = config.modelCatalog?.canonicalModel(resolved.testModel) ?? resolved.testModel
         resolved.credentialsResolved = true
         return resolved
     }

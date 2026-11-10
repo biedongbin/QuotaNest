@@ -7,7 +7,7 @@
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-阅读中文版-red?style=for-the-badge" alt="简体中文" /></a>
 </p>
 <p align="center">
-  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-blue?style=flat-square" alt="Version 1.0.0" /></a>
+  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1"><img src="https://img.shields.io/badge/version-1.0.0.1-blue?style=flat-square" alt="Version 1.0.0.1" /></a>
   <img src="https://img.shields.io/badge/platform-macOS_14+-lightgrey?style=flat-square" alt="macOS 14 or later" />
   <img src="https://img.shields.io/badge/built_with-SwiftUI-orange?style=flat-square" alt="Built with SwiftUI" />
   <img src="https://img.shields.io/badge/provider_types-55-blue?style=flat-square" alt="55 built-in provider types" />
@@ -40,7 +40,7 @@ The demos use the current native app with isolated sample accounts and illustrat
 | Capability | What it does |
 | --- | --- |
 | Four floating layouts | Card, glass, compact, and list; drag from anywhere. The title appears on click and hides five seconds after the pointer leaves. |
-| Claude Code HUD | Choose displayed accounts in settings or the account display page; both controls share the same preference. |
+| Claude Code HUD | Choose displayed accounts in settings or the account display page; both controls share the same preference. Nothing is written until **Write Claude Code HUD**. |
 | Small scheduled calls | Configure local-time requests for eligible plans with dynamic usage windows. Calls consume quota and cannot guarantee opening or resetting a window. |
 | Read-only imports | Reference existing records from 9router, cc-switch, CPAMP, or Magpie, preserving original record and provider IDs. |
 | Multi-account overview | View quota windows, balances, reset times, old data, and configuration health without opening each provider site. |
@@ -69,7 +69,7 @@ The cask supports **Apple Silicon and Intel on macOS 14+** and installs Node.js 
 
 For later releases, use `brew upgrade --cask quotanest`. You can pass `--appdir="$HOME/Applications"` to keep applications in your home directory; quit and remove an older manually installed app bundle before taking it over with Homebrew. Account data is stored separately.
 
-**Manual download:** get [QuotaNest-1.0.0-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0/QuotaNest-1.0.0-universal.zip) from [Release v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0), verify it against `SHA256SUMS`, unzip it, and move `QuotaNest.app` to Applications. macOS may require approval in **System Settings → Privacy & Security** on first launch.
+**Manual download:** get [QuotaNest-1.0.0.1-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0.1/QuotaNest-1.0.0.1-universal.zip) from [Release v1.0.0.1](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1), verify it against `SHA256SUMS`, unzip it, and move `QuotaNest.app` to Applications. macOS may require approval in **System Settings → Privacy & Security** on first launch.
 
 ### Build from source
 
@@ -142,7 +142,7 @@ Import previews show the source tool, provider identity, source record ID, authe
 | 9router | References `providerConnections` records by original primary key and provider identity; the authentication layout must be adapted. |
 | cc-switch | Currently supports the Claude namespace, identified by `id + app_type`. Other namespaces are shown as unsupported. |
 | CPAMP | References supported CPA JSON authorization files by filename and type. |
-| Magpie | Supports adapted provider keys and plugin credential slots; preserves original provider IDs and supports an explicit portable configuration directory. Native CLI/Keychain-owned logins are not imported. |
+| Magpie | Supports adapted provider keys and plugin credential slots; preserves original provider IDs and supports an explicit portable configuration directory. Native login records with readable inline Auth snapshots are supported when their format matches an adapter; logins requiring Keychain access or renewal are not imported. |
 
 Imported connection fields are read-only. Maintain credentials in the source tool; local monitoring, visibility, quota queries, and removing the association remain available. Deleting the association does not delete the source.
 
@@ -176,7 +176,7 @@ Click the menu-bar item for the overview, double-click it to toggle the floating
 
 ### 6. Select Claude Code HUD accounts and adjust preferences
 
-Use **Settings & Appearance → Claude Code HUD** to select accounts horizontally with automatic wrapping. The account's **Display** page uses the same state. Changes sync immediately; a failed HUD write restores the previous selection. Disabled accounts retain their preference for when they are enabled again.
+Use **Settings & Appearance → Claude Code HUD** to select accounts horizontally with automatic wrapping. The account's **Display** page uses the same state. Selection is local until you press **Write Claude Code HUD**, which exports scripts, source references, and query settings in one action; startup, queries, source sync, ordering, enabling, hiding, and deletion never rewrite the HUD. The HUD queries independently: Claude Code rendering triggers it, it reads source records directly, and it writes its own cache with a 60-second minimum TTL.
 
 ![Language, compact pickers, and HUD selection](docs/screenshots/en/settings.png)
 
@@ -192,7 +192,7 @@ Use **Report a Problem / Request Support** in the provider catalog, or **Report 
 
 **Claude is optional.** Without it, the app still generates the draft locally. With an authenticated `gh`, submit directly; without `gh` or a usable login, copy the draft or complete submission in your browser. Nothing is installed automatically.
 
-This version generates diagnostics entirely in the app and does not invoke Claude, even if it is installed. An isolated CLI prototype is kept in test-only code: its privacy checks pass, but the restricted runtime's DNS/TLS path is not verified, so it is not exposed as an app action. See the [feedback and privacy guide](docs/issue-feedback-proposal.md) for exact limits. The feedback feature is included in the refreshed **v1.0.0** download. If you installed the original 1.0.0, update the tap and run `brew reinstall --cask quotanest` to receive the replacement package.
+This version generates diagnostics entirely in the app and does not invoke Claude, even if it is installed. An isolated CLI prototype is kept in test-only code: its privacy checks pass, but the restricted runtime's DNS/TLS path is not verified, so it is not exposed as an app action. See the [feedback and privacy guide](docs/issue-feedback-proposal.md) for exact limits. The feedback feature is included in **v1.0.0.1**. Existing users can update the tap and run `brew upgrade --cask quotanest` to install the latest package.
 
 The **Star on GitHub** button sits above Settings & Appearance in the sidebar. Clicking it uses the local authenticated `gh` to star QuotaNest; if the tool or login is unavailable, a project-page link is offered. No star is added automatically.
 
@@ -231,7 +231,7 @@ See the [provider catalog](docs/provider-catalog.md), [account/authentication co
 ## Release notes
 
 - **[Changelog](CHANGELOG.md)** — user-facing changes grouped by version.
-- **[v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0)** — current release and app downloads.
+- **[v1.0.0.1](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1)** — current release and app downloads.
 
 ## Acknowledgments
 

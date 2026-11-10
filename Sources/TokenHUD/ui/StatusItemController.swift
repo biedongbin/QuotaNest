@@ -19,6 +19,8 @@ final class StatusItemController: ObservableObject {
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.action = #selector(onClick(_:))
         statusItem.button?.target = self
+        statusItem.button?.image = Self.menuBarLogo
+        statusItem.button?.imagePosition = .imageLeading
         Self.shared = self
         updateTitle()
         cancellable = engine.objectWillChange.sink { [weak self] _ in
@@ -32,20 +34,52 @@ final class StatusItemController: ObservableObject {
         }
     }
 
-    private func updateTitle() {
-        let eligible = engine.states.filter { $0.manifest.supportsQuota }
-        let chosen = engine.iconProviderSlug.flatMap { slug in eligible.first { $0.slug == slug } }
-        let states = chosen.map { [$0] } ?? eligible
-        let percentage = states.compactMap { state in
-            QuotaPresentation(state: state).metrics.compactMap(\.percentage).max()
-        }.max()
-        let old = states.contains {
-            let snapshot = QuotaPresentation(state: $0)
-            return !snapshot.metrics.isEmpty && snapshot.isOld
+    /// The app's quota ring / nested-account mark, without the icon tile at menu-bar size.
+    /// Template rendering follows the menu bar's appearance and selected state.
+    static let menuBarLogo: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState()
+            defer { context.restoreGState() }
+            context.translateBy(x: 0.5, y: 17.5)
+            context.scaleBy(x: 17 / 600, y: -17 / 600)
+            context.translateBy(x: -220, y: -210)
+            context.setStrokeColor(NSColor.black.cgColor)
+            context.setFillColor(NSColor.black.cgColor)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.setLineWidth(66)
+            context.addArc(center: CGPoint(x: 512, y: 492), radius: 242,
+                           startAngle: 39.4 * .pi / 180, endAngle: 324.4 * .pi / 180, clockwise: false)
+            context.strokePath()
+            context.move(to: CGPoint(x: 693, y: 648))
+            context.addLine(to: CGPoint(x: 759, y: 714))
+            context.strokePath()
+            context.setLineWidth(32)
+            context.addArc(center: CGPoint(x: 512, y: 480), radius: 145,
+                           startAngle: 28 * .pi / 180, endAngle: 152 * .pi / 180, clockwise: false)
+            context.strokePath()
+            context.setLineWidth(27)
+            context.addArc(center: CGPoint(x: 512, y: 477), radius: 86,
+                           startAngle: 28 * .pi / 180, endAngle: 152 * .pi / 180, clockwise: false)
+            context.strokePath()
+            context.fillEllipse(in: CGRect(x: 469, y: 384, width: 86, height: 86))
+            return true
         }
+        image.isTemplate = true
+        image.accessibilityDescription = AppBrand.name
+        return image
+    }()
+
+    private func updateTitle() {
+        let metric = engine.menuBarMetric
+        let percentage = metric?.percentage
+        let old = engine.menuBarIsOld
         let value = percentage.map { L10n.percent($0.rounded(), fractionLength: 0...0) } ?? "—"
         statusItem.button?.title = (engine.isRefreshingAll ? "↻ " : "") + value + (old && percentage != nil ? " ·" : "")
-        statusItem.button?.toolTip = L10n.tr("%@ · 单击快览，双击悬浮，右键操作", String(describing: AppBrand.name)) + (old ? L10n.tr(" · 包含旧数据") : "")
+        statusItem.button?.toolTip = L10n.tr("%@ · 单击快览，双击悬浮，右键操作", String(describing: AppBrand.name))
+            + (metric.map { " · " + $0.label } ?? (engine.iconMetricKey != nil ? " · " + L10n.tr("所选额度周期暂不可用") : ""))
+            + (old ? L10n.tr(" · 包含旧数据") : "")
         statusItem.button?.setAccessibilityLabel(L10n.tr("%@，%@", AppBrand.name, value) + (old ? L10n.tr("，包含旧数据") : ""))
     }
 

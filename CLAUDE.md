@@ -27,9 +27,15 @@ macOS 菜单栏 App（LSUIElement），SwiftUI + NSPanel/NSStatusItem 自绘，S
   open ~/Applications/QuotaNest.app
   ```
 
-## 当前业务契约（2026-11-04）
+## 需求与设计入口（2026-11-09）
 
-当前权威入口为 [供应商账号三层需求与技术契约](docs/account-management-rebuild.md)，旧重构文档仅供历史追溯。
+- [A/B/C 架构与需求契约](docs/abc-architecture-requirements.md)：系统定位、独立运行、唯一导出操作及验收场景，是架构需求权威入口。
+- [Claude Code HUD 程序代码架构设计](docs/claude-code-hud-design.md)：Swift 导出端、Node 运行端、配置／缓存契约、身份与并发保护及当前实现边界。
+- [供应商账号三层需求与技术契约](docs/account-management-rebuild.md)：基础接入、用量查询和定时调用的业务规则。
+
+A/B/C 是系统角色；业务“三层”是账号能力，不能混用。用户最新澄清优先于历史文档和既有实现；实现与需求有差距时明确记录，不反过来用旧代码限制需求。
+
+## 当前业务契约
 
 1. 基础模型接入分 **Auth 认证调用／API Key 调用**；Auth 当前只读既有本机 CLI／JSON 授权来源。编辑时必须可直接填写 `auth.json` 路径或通过文件选择器选择，留空采用供应商类型默认来源；不写回外部 auth，不把尚未实现的 App 浏览器 OAuth 登录写成已实现。
 2. 用量查询统一继承基础接入的同一认证，地址／解析可以不同；不提供独立查询认证模式或额外 Key／Token／Cookie 配置区。保存时清理旧查询字段，保留基础 API Key 和授权文件引用；不得要求用户手工删除旧数据。旧网页契约仅供历史取证，不再是当前启用方案。
@@ -39,12 +45,21 @@ macOS 菜单栏 App（LSUIElement），SwiftUI + NSPanel/NSStatusItem 自绘，S
 
 ## 架构（不可违反）
 
+**A/B/C 定位**：A 是 Magpie／9router／cc-switch／CPAMP 等外部凭证来源，由来源工具负责账号与授权维护；B 是 QuotaNest，负责自己的账号管理、用量查询、菜单栏／悬浮窗和调用计划；C 是 Claude Code HUD，负责自己的来源读取、用量查询和状态栏展示。
+
+1. **独立运行**：B、C 各自直接只读复用 A 的凭证，各自请求供应商、各自缓存和处理错误。B 退出后 C 仍能查询，C 未运行不影响 B；两边不要求实时显示相同结果。A 不是被要求参与两边查询调度的组件。
+2. **唯一交接**：B → C 只有用户点击「写入 Claude Code HUD」这一操作，按当前已保存配置导出独立脚本、来源引用、查询及显示配置。启动、安装升级、查询、小时同步、保存、排序、启停、删除和显示勾选均不得自动修改 C。B 删除账号后，现有 C 继续使用上次导出，直到再次显式导出移除条目。
+3. **C 自行执行**：Node 直接解析 A 的指定记录，不调用 B CLI、IPC 或服务，不读取 B 查询缓存。Claude Code 渲染触发查询，当前按 60 秒尝试 TTL 节流；没有渲染就没有每分钟查询保证。不得恢复来源整文件 mtime 变更后隐藏额度并等待 B 的投影模式。
+4. **三套时钟**：B 每小时来源同步、B 自身额度轮询、C 渲染与 TTL 互不代替。B 同步修正的引用只有再次导出才传给 C，B 悬浮窗始终消费 B 数据。
+5. **凭证边界**：导入账号仅导出 A 的引用与格式元数据，C 自行解析；独立 Auth 使用外部只读文件；手填 Key 仅显式导出时复制到 C 自有受限文件。B 改 Key 不会实时更新 C 快照；两者都不能写回 A 或擅自续期。
+6. **需求与实现分开记录**：完整要求及验收见 [A/B/C 契约](docs/abc-architecture-requirements.md)。旧内置 HUD 兼容分支、现有状态栏命令保留和导出回滚范围见 [HUD 设计](docs/claude-code-hud-design.md)，不得把这些限制写成新的产品要求。
+
 **插件式供应商**：每家供应商 = `providers/<name>/`（manifest.json + fetch.sh），主框架自动扫描加载，**加供应商不改主框架**。
 
 - 协议差异（queryUrl/queryAuth/refreshUrl/refreshProtocol/refreshAuth/refreshHeader/testModel/testPrompt）全部声明在 **manifest.json**，主框架（ProviderConfigStore/RefreshTrigger）纯通用，无 slug switch
 - 账号通过 `template` 引用供应商类型；固定地址／协议及支持的认证、查询能力由类型声明。旧 `builtin` 字段仅保留兼容读取，不再单凭该布尔值定义当前类型能力或编辑锁定规则。
 - 查询请求与解析差异留在各自 provider 适配，不进主框架；认证统一继承基础 Auth／API Key，不恢复旧网页凭证配置入口。
-- auth 文件（~/.claude/hud/.*-usage-auth.json）存凭证 + scheduleTimes；缓存 .{slug}-usage-cache.json
+- B 的既有 auth 文件（~/.claude/hud/.*-usage-auth.json）和 .{slug}-usage-cache.json 保留兼容存储；C 使用独立 .{slug}-hud-cache.json。导入账号在 C 中只保存 A 的来源引用；手填 API Key 在显式导出时写入 C 自有的受限文件。
 
 ## UI 交互基线（每次交付强制检查，先于用户发现）
 
@@ -60,4 +75,4 @@ macOS 菜单栏 App（LSUIElement），SwiftUI + NSPanel/NSStatusItem 自绘，S
 
 - 菜单栏图标用自绘 NSStatusItem（MenuBarExtra 右键被系统拦截）
 - 悬浮窗 NSPanel 用 nonactivatingPanel（不抢焦点），contextMenu 可用
-- fetch.sh 读 ~/.claude/hud/ 下脚本（依赖用户环境 node，TOKENHUD_NODE 注入）
+- fetch.sh 通过 TOKENHUD_HUD_DIR 查找脚本：B 注入自己的私有 runtime 目录，C 注入自己的 HUD 目录；两者均通过 TOKENHUD_NODE 指定 Node。

@@ -2,11 +2,25 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
-All notable changes are grouped by release version. Versions follow [Semantic Versioning](https://semver.org/). Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
+All notable changes are grouped by release version. Versions use three numeric components with an optional fourth hotfix component. Changes not yet assigned to a release belong in `Unreleased`; released sections are retained under their version and date.
 
 ## Unreleased
 
+## [1.0.0.1] — 2026-11-10
+
+### Added
+
+- Export an independent Claude Code HUD runtime explicitly; it reads source credentials and queries providers without the app running.
+- Configure local call-plan models and times, with consistent model selection across editing, account health and execution.
+
 ### Fixed
+
+- Isolate HUD quota snapshots by request workspace, read cc-switch composite identities correctly, and recover worker locks without deleting a successor's claim.
+- Resume HUD queries after clock rollback and retain third-party HUD configuration fields during export.
+- Persist pending-export indicators across app restarts, renaming and imports.
+- Keep verification-model preferences separate from scheduled-call models, including accounts without a saved base model.
+- Correct Z.ai Auth regression expectations and clarify Magpie inline Auth import support.
+
 
 - Read imported source databases with bounded native SQLite queries instead of waiting for a subprocess on the main thread, preventing SwiftUI transaction reentrancy when opening the menu-bar popover.
 - Detect the same GPT/Codex account and workspace across imported sources using declared identity evidence; skip duplicates without merging or deleting existing account settings.
@@ -53,4 +67,5 @@ Refreshed 1.0.0 release; replaces the original 2026-11-05 assets and tag.
 - Homebrew cask installation through `biedongbin/tap/quotanest`, including the Node.js runtime used by quota adapters. Homebrew 7 users can approve only this cask with `brew trust --cask biedongbin/tap/quotanest` before the first install.
 - Ad-hoc application signing; no Apple Developer ID signing or notarization is claimed. The cask removes quarantine only from the installed QuotaNest app.
 
+[1.0.0.1]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1
 [1.0.0]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0

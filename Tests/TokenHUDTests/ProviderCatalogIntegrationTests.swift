@@ -58,7 +58,7 @@ struct ProviderCatalogIntegrationTests {
                                 runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")),
                                 defaults: defaults, settingsURL: settings)
         // Deliberately avoid start(): it installs timers and launches refresh tasks.
-        engine.installScripts()
+        engine.installRuntimeScripts()
         engine.migrateAccounts()
         engine.reloadRegistry()
         let model = SettingsModel(engine: engine, hudDir: hud, userDir: providers, settingsURL: settings,
@@ -209,7 +209,7 @@ struct ProviderCatalogIntegrationTests {
         #expect(!matches.isEmpty)
         for match in matches {
             let range = try #require(Range(match.range, in: script))
-            #expect(FileManager.default.fileExists(atPath: f.hud.appendingPathComponent(String(script[range])).path))
+            #expect(FileManager.default.fileExists(atPath: f.model.engine.runtimeDirectory.appendingPathComponent(String(script[range])).path))
         }
         #expect(f.model.lastRun.isEmpty)
         #expect(f.model.callTestResults.isEmpty)

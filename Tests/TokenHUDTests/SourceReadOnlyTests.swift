@@ -136,7 +136,9 @@ struct SourceReadOnlyTests {
         var raw = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: f.manifest)) as? [String: Any])
         raw["extensionMetadata"] = ["keep": "fixture-value"]
         try JSONSerialization.data(withJSONObject: raw).write(to: f.manifest)
+        #expect(!f.model.engine.hudNeedsExport)
         #expect(f.model.renameDisplayName("linked", name: "  Local alias  "))
+        #expect(f.model.engine.hudNeedsExport)
         let row = try #require(f.model.current)
         #expect(row.id == "linked" && row.name == "Local alias")
         #expect(row.plugin.manifest.sourceReference == before.sourceReference)

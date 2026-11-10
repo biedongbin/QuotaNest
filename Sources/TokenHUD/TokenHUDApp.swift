@@ -55,7 +55,7 @@ struct QuotaNestApp: App {
         case .statusSmoke:
             let diagnostics = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: bundle,
                 userProvidersDir: paths.userProvidersDir, runner: ProviderRunner(nodePath: nil, logDir: paths.hudDir),
-                settingsURL: paths.settingsURL)
+                settingsURL: paths.settingsURL, runtimeDir: paths.runtimeDir)
             diagnostics.reloadRegistry()
             _engine = StateObject(wrappedValue: diagnostics)
             NSApplication.shared.setActivationPolicy(.accessory)
@@ -152,7 +152,8 @@ struct QuotaNestApp: App {
                                     extraPaths: ["/opt/homebrew/bin/node", "/usr/local/bin/node"],
                                     saved: UserDefaults.standard.string(forKey: DataEngine.defaultsNodeKey))
         let engine = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: bundle, userProvidersDir: userDir,
-                                runner: ProviderRunner(nodePath: node, logDir: paths.hudDir), settingsURL: paths.settingsURL)
+                                runner: ProviderRunner(nodePath: node, logDir: paths.hudDir), settingsURL: paths.settingsURL,
+                                runtimeDir: paths.runtimeDir)
         engine.start()
         _engine = StateObject(wrappedValue: engine)
         let panel = PanelController(engine: engine)
@@ -221,6 +222,12 @@ struct QuotaNestApp: App {
                 let overview = model()
                 overview.navPage = .overview
                 shot("accounts-\(Int(width))-\(appearance)", SettingsCenterView(model: overview, engine: fixture.engine),
+                     size: NSSize(width: width, height: 780), dark: dark)
+                // HUD export lives on the settings page; render it so the explicit-write contract is visible.
+                let settingsPage = model()
+                settingsPage.navPage = .settings
+                fixture.engine.markHUDExportNeeded()
+                shot("settings-\(Int(width))-\(appearance)", SettingsCenterView(model: settingsPage, engine: fixture.engine),
                      size: NSSize(width: width, height: 780), dark: dark)
                 for (name, slug, tab) in [("connection", "demo-a", SettingsModel.Tab.config),
                                            ("api-only", "demo-api", .config),
@@ -335,7 +342,11 @@ struct QuotaNestApp: App {
             let appearance = dark ? "dark" : "light"
             shot("menu-\(appearance)", MenuBarView(engine: fixture.engine, panelCtrl: panel, model: quick,
                  onOpenSettings: {}, onTogglePanel: {}, onRefresh: {}, onOpenAccount: { _ in }),
-                 size: NSSize(width: 350, height: 560), dark: dark)
+                 size: NSSize(width: 420, height: 600), dark: dark)
+            if let row = quick.row("demo-a") {
+                shot("local-schedule-\(appearance)", LocalCallScheduleEditor(model: quick, row: row, onClose: {}),
+                     size: NSSize(width: 560, height: 600), dark: dark)
+            }
             for style in PanelStyle.allCases {
                 panel.setStyle(style)
                 shot("floating-style-\(style.rawValue)-\(appearance)",
@@ -673,7 +684,8 @@ struct QuotaNestApp: App {
         try JSONEncoder().encode(UsageCache(generatedAt: now, windows: [WindowBucket(label: "5小时", usedPercentage: 35)], accountId: "fixture-demo-auth")).write(to: authCache)
         defaults.set(examples.map { $0.0 } + ["demo-auth"], forKey: DataEngine.defaultsOrderKey)
         engine = DataEngine(hudDir: paths.hudDir, bundleProvidersDir: templatesDir, userProvidersDir: userDir,
-                            runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")), defaults: defaults, settingsURL: paths.settingsURL)
+                            runner: ProviderRunner(nodePath: nil, logDir: root.appendingPathComponent("logs")), defaults: defaults, settingsURL: paths.settingsURL,
+                            runtimeDir: paths.runtimeDir)
         engine.reloadRegistry()
     }
     func cleanup() { defaults.removePersistentDomain(forName: defaultsName); try? FileManager.default.removeItem(at: root) }

@@ -185,8 +185,27 @@ final class DataEngine: ObservableObject {
     /// Narrow seams for deterministic local-file concurrency and rollback tests.
     var sourceSyncBeforeCommit: (() async -> Void)?
     var sourceSyncWriteManifest: (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }
-    /// 图标默认显示哪家 (slug); nil = 全部取最高
+    private var menuBarChoice: (state: ProviderState, metric: QuotaMetric?)? {
+        let eligible = states.filter { $0.manifest.supportsQuota }
+        if let slug = iconProviderSlug, let state = eligible.first(where: { $0.slug == slug }) {
+            let metrics = QuotaPresentation(state: state).metrics.filter { $0.percentage != nil }
+            let metric: QuotaMetric?
+            if let key = iconMetricKey { metric = metrics.first { $0.selectionKey == key } }
+            else { metric = metrics.max { ($0.percentage ?? 0) < ($1.percentage ?? 0) } }
+            return (state, metric)
+        }
+        return eligible.compactMap { state -> (state: ProviderState, metric: QuotaMetric?)? in
+            guard let metric = QuotaPresentation(state: state).metrics.filter({ $0.percentage != nil })
+                .max(by: { ($0.percentage ?? 0) < ($1.percentage ?? 0) }) else { return nil }
+            return (state, metric)
+        }.max { ($0.metric?.percentage ?? 0) < ($1.metric?.percentage ?? 0) }
+    }
+    var menuBarProviderSlug: String? { menuBarChoice?.state.slug }
+    var menuBarMetric: QuotaMetric? { menuBarChoice?.metric }
+    var menuBarIsOld: Bool { menuBarChoice.map { QuotaPresentation(state: $0.state).isOld } ?? false }
+    /// nil provider retains automatic highest-usage selection; nil period retains legacy per-account behavior.
     @Published var iconProviderSlug: String?
+    @Published private(set) var iconMetricKey: String?
     /// 关闭用量跟踪的供应商 (slug 集合), UserDefaults 持久化
     @Published private(set) var disabledSlugs: Set<String> = []
     /// 余额不显示到悬浮窗/菜单栏的账号 (slug 集合; 不影响查询) — v0.2 三开关之「悬浮窗显示」
@@ -199,8 +218,13 @@ final class DataEngine: ObservableObject {
     @Published private(set) var providerOrder: [String] = []
     /// 已删除缺省实例的模板 slug (tombstone: 防迁移复活)
     @Published private(set) var deletedTemplates: Set<String> = []
+    /// True when local account/selection changes have not been exported to the HUD yet.
+    /// Only the explicit "写入 Claude Code HUD" action clears it; nothing else writes HUD files.
+    @Published private(set) var hudNeedsExport = false
 
     private let hudDir: URL
+    /// App-private runtime dir for its own provider scripts. Never the HUD-owned directory.
+    private let runtimeDir: URL
     private let bundleDir: URL?
     private let userDir: URL
     private let runner: ProviderRunner
@@ -224,26 +248,36 @@ final class DataEngine: ObservableObject {
 
     static let defaultsNodeKey = "quotanest.nodePath"
     static let defaultsIconKey = "quotanest.iconProvider"
+    static let defaultsIconMetricKey = "quotanest.iconMetric"
     static let defaultsDisabledKey = "quotanest.disabledProviders"
     static let defaultsTriggerDisabledKey = "quotanest.triggerDisabled.slugs"
     static let defaultsOrderKey = "quotanest.providerOrder"
     static let defaultsDeletedKey = "quotanest.deletedTemplates"
     static let defaultsFloatingHiddenKey = "quotanest.floatingHidden.slugs"
     static let defaultsHudHiddenKey = "quotanest.hudHidden.slugs"
+    static let defaultsHUDNeedsExportKey = "quotanest.hudNeedsExport"
     static let defaultsSourceAutoSyncKey = "quotanest.sourceAutoSync.enabled"
 
     init(hudDir: URL, bundleProvidersDir: URL?, userProvidersDir: URL,
-         runner: ProviderRunner, defaults: UserDefaults = .standard, settingsURL: URL? = nil) {
+         runner: ProviderRunner, defaults: UserDefaults = .standard, settingsURL: URL? = nil,
+         runtimeDir: URL? = nil) {
         self.hudDir = hudDir
+        self.runtimeDir = runtimeDir
+            ?? hudDir.deletingLastPathComponent().appendingPathComponent(".quotanest-runtime", isDirectory: true)
         self.bundleDir = bundleProvidersDir
         self.userDir = userProvidersDir
         self.runner = runner
+        runner.runtimeDir = self.runtimeDir
         self.defaults = defaults
+        self.hudNeedsExport = defaults.bool(forKey: Self.defaultsHUDNeedsExportKey)
         self.settingsURL = settingsURL ?? URL(fileURLWithPath:
             (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/settings.json")
         self.sourceAutoSyncEnabled = defaults.object(forKey: Self.defaultsSourceAutoSyncKey) == nil
             || defaults.bool(forKey: Self.defaultsSourceAutoSyncKey)
+        self.iconProviderSlug = defaults.string(forKey: Self.defaultsIconKey)
+        self.iconMetricKey = defaults.string(forKey: Self.defaultsIconMetricKey)
         try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: self.runtimeDir, withIntermediateDirectories: true)
     }
 
     /// cacheFile 展开: `~` 前缀 -> HOME; 缺省 hudDir/.{slug}-usage-cache.json
@@ -260,14 +294,15 @@ final class DataEngine: ObservableObject {
     func start() {
         nodeMissing = (runner.nodePath == nil)
         iconProviderSlug = defaults.string(forKey: Self.defaultsIconKey)
+        iconMetricKey = defaults.string(forKey: Self.defaultsIconMetricKey)
         disabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsDisabledKey) ?? [])
         floatingHiddenSlugs = Set(defaults.stringArray(forKey: Self.defaultsFloatingHiddenKey) ?? [])
         hudHiddenSlugs = Set(defaults.stringArray(forKey: Self.defaultsHudHiddenKey) ?? [])
         triggerDisabledSlugs = Set(defaults.stringArray(forKey: Self.defaultsTriggerDisabledKey) ?? [])
         providerOrder = defaults.stringArray(forKey: Self.defaultsOrderKey) ?? []
         deletedTemplates = Set(defaults.stringArray(forKey: Self.defaultsDeletedKey) ?? [])
-        // 固化引擎 (mjs) 随 App 分发, 启动覆盖安装 (幂等升级); 再迁移模板缺省实例
-        Self.installMjs(bundleDir: bundleDir, hudDir: hudDir)
+        // App 自己的 provider 脚本只装到私有 runtime 目录；HUD 目录只在显式导出时写入。
+        Self.installMjs(bundleDir: bundleDir, hudDir: runtimeDir)
         migrateAccounts()
         reloadRegistry()
         Task { [weak self] in await self?.syncImportedSources(force: false) }
@@ -344,9 +379,8 @@ final class DataEngine: ObservableObject {
             }
             if updated + registered > 0 {
                 self.reloadRegistry()
-                if case .failure(let error) = self.writeEnvsForHudSync() {
-                    self.sourceSyncIssues["HUD"] = "来源引用已保存，HUD 同步失败：\(error.localizedDescription)"
-                }
+                // Source sync never writes the HUD: the user exports explicitly.
+                self.markHUDExportNeeded()
             }
             if self.sourceSyncIssues.isEmpty { self.sourceSyncLastSuccess = now }
             self.sourceSyncResource = Self.sourceSyncSummary(updated: updated, registered: registered,
@@ -525,10 +559,13 @@ final class DataEngine: ObservableObject {
         return true
     }
 
-    /// 固化脚本安装: bundle 的 mjs/ 目录覆盖安装到 hudDir (App 分发固化引擎, 幂等升级)
-    nonisolated static func installMjs(bundleDir: URL?, hudDir: URL) {        guard let bundleDir else { return }
+    /// 私有 runtime 脚本安装: bundle 的 mjs/ 目录覆盖安装到 App 私有目录 (幂等升级)。
+    /// Never used for the HUD directory; HUD copies are produced only by `exportHUD()`.
+    nonisolated static func installMjs(bundleDir: URL?, hudDir: URL) {
+        guard let bundleDir else { return }
         let srcDir = bundleDir.deletingLastPathComponent().appendingPathComponent("mjs", isDirectory: true)
         guard let files = try? FileManager.default.contentsOfDirectory(at: srcDir, includingPropertiesForKeys: nil) else { return }
+        try? FileManager.default.createDirectory(at: hudDir, withIntermediateDirectories: true)
         let fm = FileManager.default
         for f in files where f.pathExtension == "mjs" {
             let dst = hudDir.appendingPathComponent(f.lastPathComponent)
@@ -537,10 +574,35 @@ final class DataEngine: ObservableObject {
         }
     }
 
-    /// 分发 mjs 脚本 (statusline + provider) 到 hudDir; 供"写入 Claude Code HUD"按钮调用
-    func installScripts() {
-        Self.installMjs(bundleDir: bundleDir, hudDir: hudDir)
+    /// Explicit, user-initiated export: scripts + envs.json + settings.json in one action.
+    /// This is the only method that writes into the HUD-owned directory.
+    @discardableResult
+    func exportHUD(removingManagedNames: Set<String> = []) -> Result<Void, Error> {
+        do {
+            try HUDSync.sync(plugins: allPlugins, hiddenSlugs: hudHiddenSlugs,
+                             disabledSlugs: disabledSlugs, removingManagedNames: removingManagedNames,
+                             hudDir: hudDir, settingsURL: settingsURL,
+                             mjsSourceDir: HUDSync.bundledMjsDir(bundleProvidersDir: bundleDir))
+            hudNeedsExport = false
+            defaults.set(false, forKey: Self.defaultsHUDNeedsExportKey)
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
     }
+
+    /// Local state changed; the user must press the export button for the HUD to see it.
+    func markHUDExportNeeded() {
+        hudNeedsExport = true
+        defaults.set(true, forKey: Self.defaultsHUDNeedsExportKey)
+    }
+
+    /// Installs the App's own provider mjs into its private runtime dir (never the HUD dir).
+    func installRuntimeScripts() {
+        Self.installMjs(bundleDir: bundleDir, hudDir: runtimeDir)
+    }
+
+    var runtimeDirectory: URL { runtimeDir }
 
     /// 首启迁移: 每个类型模板若无对应用户实例, 按原 slug 生成缺省实例 (幂等)
     /// auth 文件不覆盖 -> 现有凭证/抓取配置无缝保留
@@ -707,12 +769,27 @@ final class DataEngine: ObservableObject {
               let tmplData = try? JSONEncoder().encode(template),
               let tmpl = try? JSONSerialization.jsonObject(with: tmplData) as? [String: Any]
         else { return }
-        let mergeKeys = ["testModel", "testPrompt", "queryUrl", "queryAuth", "queryKeyField",
+        let mergeKeys = ["testModel", "testPrompt", "testMaxTokens", "windowTrigger", "modelCatalog", "queryUrl", "queryAuth", "queryKeyField",
                          "refreshUrl", "refreshProtocol", "refreshAuth", "refreshHeader",
                          "needsCredential", "buckets", "accent", "icon", "intervalSec",
                          "credentialSource", "authCallUrl", "authCallProtocol", "authCallHeader", "authModelsUrl",
                          "inheritQueryUrl", "inheritQueryHeader", "quotaAuthModes"]
         var changed = false
+        if let existing = obj["modelCatalog"] as? [String: Any], existing["models"] != nil,
+           let live = tmpl["modelCatalog"] as? [String: Any], live["url"] != nil {
+            obj["modelCatalog"] = live
+            changed = true
+        }
+        // Provider-declared aliases repair historical defaults without supplier-specific framework branches.
+        if let catalog = template.modelCatalog {
+            if let model = obj["testModel"] as? String, let replacement = catalog.aliases?[model] {
+                obj["testModel"] = replacement; changed = true
+            }
+            if var trigger = obj["windowTrigger"] as? [String: Any], let model = trigger["model"] as? String,
+               let replacement = catalog.aliases?[model] {
+                trigger["model"] = replacement; obj["windowTrigger"] = trigger; changed = true
+            }
+        }
         // v1 GLM 模板误把网页登录 token 声明成 bearer；仅修正已知旧声明。
         if template.queryAuth == "jwt", obj["queryAuth"] as? String == "bearer" {
             obj["queryAuth"] = "jwt"
@@ -918,7 +995,7 @@ final class DataEngine: ObservableObject {
             }
         // 图标指向的家若已不存在, 回退到全部取最高
         if let slug = iconProviderSlug, !states.contains(where: { $0.slug == slug }) {
-            iconProviderSlug = nil
+            setIconProvider(nil)
         }
     }
 
@@ -936,6 +1013,7 @@ final class DataEngine: ObservableObject {
         }
         defaults.set(Array(disabledSlugs), forKey: Self.defaultsDisabledKey)
         reloadRegistry()
+        markHUDExportNeeded()
     }
 
     /// v0.2 「悬浮窗显示」: 只影响悬浮窗/菜单栏展示, 不影响查询与调度
@@ -944,22 +1022,14 @@ final class DataEngine: ObservableObject {
         defaults.set(Array(floatingHiddenSlugs), forKey: Self.defaultsFloatingHiddenKey)
     }
 
-    /// 「同步 HUD」不影响查询；同步失败时保留原开关状态并返回错误。
-    @discardableResult
-    func setHudHidden(_ slug: String, hidden: Bool) -> Result<Void, Error> {
-        let previous = hudHiddenSlugs
+    /// 「HUD 选择」只改本地选择；HUD 目录在显式导出前保持原样。
+    func setHudHidden(_ slug: String, hidden: Bool) {
         if hidden { hudHiddenSlugs.insert(slug) } else { hudHiddenSlugs.remove(slug) }
-        let result = writeEnvsForHudSync()
-        switch result {
-        case .success:
-            defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
-        case .failure:
-            hudHiddenSlugs = previous
-        }
-        return result
+        defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
+        markHUDExportNeeded()
     }
 
-    /// 清理已删除账号的开关偏好，不修改 HUD；调用方在刷新账号列表后另行同步。
+    /// 清理已删除账号的开关偏好；不写 HUD，导出由用户显式触发。
     func forgetAccountSettings(_ slug: String) {
         disabledSlugs.remove(slug)
         floatingHiddenSlugs.remove(slug)
@@ -970,6 +1040,7 @@ final class DataEngine: ObservableObject {
         defaults.set(Array(hudHiddenSlugs), forKey: Self.defaultsHudHiddenKey)
         defaults.set(Array(triggerDisabledSlugs), forKey: Self.defaultsTriggerDisabledKey)
         defaults.removeObject(forKey: Self.intervalKey(slug))
+        markHUDExportNeeded()
     }
 
     // MARK: v0.2 每账号查询间隔覆盖 (UserDefaults; 缺省用 manifest.interval)
@@ -1009,22 +1080,9 @@ final class DataEngine: ObservableObject {
             .map(HUDSync.accountKey)
     }
 
-    /// 每个已选账号均有动态缓存条目，类型模板不再决定 HUD 身份。
+    /// HUD 账号条目在显式导出前是本地选择；这里只做名称投影，不写文件。
     var envsEntryNames: [String] {
         hudSyncNames
-    }
-
-    /// 同步账号投影到 HUD，保留不属于本应用的条目；失败反馈给用户界面。
-    @discardableResult
-    func writeEnvsForHudSync(removingManagedNames: Set<String> = []) -> Result<Void, Error> {
-        do {
-            try HUDSync.sync(plugins: allPlugins, hiddenSlugs: hudHiddenSlugs,
-                             disabledSlugs: disabledSlugs, removingManagedNames: removingManagedNames,
-                             hudDir: hudDir, settingsURL: settingsURL)
-            return .success(())
-        } catch {
-            return .failure(error)
-        }
     }
 
     /// 开关某家「定时触发」; 与用量跟踪独立 (跟踪关 ≠ 定时关)
@@ -1040,14 +1098,28 @@ final class DataEngine: ObservableObject {
     /// 设置图标默认显示哪家; nil = 全部取最高
     func setIconProvider(_ slug: String?) {
         iconProviderSlug = slug
+        iconMetricKey = nil
         defaults.set(slug, forKey: Self.defaultsIconKey)
+        defaults.removeObject(forKey: Self.defaultsIconMetricKey)
     }
 
-    /// 设置供应商显示顺序 (slug 数组); 影响 states 顺序
+    @discardableResult
+    func setIconMetric(provider slug: String, key: String) -> Bool {
+        guard let state = states.first(where: { $0.slug == slug && $0.manifest.supportsQuota }),
+              QuotaPresentation(state: state).metrics.contains(where: { $0.selectionKey == key && $0.percentage != nil }) else { return false }
+        iconProviderSlug = slug
+        iconMetricKey = key
+        defaults.set(slug, forKey: Self.defaultsIconKey)
+        defaults.set(key, forKey: Self.defaultsIconMetricKey)
+        return true
+    }
+
+    /// Display order is local state; the HUD sees it only on the next explicit export.
     func setProviderOrder(_ order: [String]) {
         providerOrder = order
         defaults.set(order, forKey: Self.defaultsOrderKey)
         reloadRegistry()
+        markHUDExportNeeded()
     }
 
     /// 删除缺省模板实例时记 tombstone (迁移不再复活该类型缺省账号)
@@ -1507,12 +1579,9 @@ final class DataEngine: ObservableObject {
                 object["queryFinalError"] = diagnostic.finalError
             }
             try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: p, options: .atomic)
-            if let reference = state.manifest.sourceReference {
-                try HUDSync.refreshReferenceDependencies(slug: state.slug, reference: reference, hudDir: hudDir)
-            }
         } catch {
-            // Existing HUD dependency metadata stays conservative if publishing fails.
-            print("[DataEngine] cache or HUD dependency write failed for \(state.slug)")
+            // The HUD keeps its own cache; a failed App cache write must not touch HUD files.
+            print("[DataEngine] cache write failed for \(state.slug)")
         }
     }
 }

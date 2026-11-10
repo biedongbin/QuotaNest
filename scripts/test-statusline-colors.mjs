@@ -6,25 +6,29 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
+import { entryRevision } from '../Sources/TokenHUD/mjs/hud-runtime.mjs';
+
 const script = fileURLToPath(new URL('../Sources/TokenHUD/mjs/statusline.mjs', import.meta.url));
 function render(colorfgbg, legacy = false, sourceState = null) {
   const root = mkdtempSync(join(tmpdir(), 'tokenhud-hud-colors-'));
   try {
     const hud = join(root, 'hud');
     mkdirSync(hud);
-    const cache = join(hud, 'fixture-cache.json');
-    writeFileSync(cache, JSON.stringify({ generatedAt: Date.now(), stale: true,
-      five_hour: { used_percentage: 12 }, seven_day: { used_percentage: 95 } }));
+    const cache = join(hud, '.personal-glm-hud-cache.json');
     const authSourceFile = join(root, 'login.json');
     if (sourceState === 'changed') {
       writeFileSync(authSourceFile, '{"fixture":true}');
       const future = new Date(Date.now() + 5000);
       utimesSync(authSourceFile, future, future);
     }
-    writeFileSync(join(hud, 'envs.json'), JSON.stringify({ 'personal-glm': {
+    const entry = { schemaVersion: 2,
       label: '个人 GLM', cache, buckets: { five_hour: '5h', seven_day: '周' },
-      source: sourceState === 'api' ? 'api' : 'cache',
-      authSourceFile: ['changed', 'missing'].includes(sourceState) ? authSourceFile : undefined } }));
+      source: sourceState === 'api' ? 'api' : 'cache', credential: { file: authSourceFile } };
+    writeFileSync(join(hud, 'envs.json'), JSON.stringify({ 'personal-glm': entry }));
+    writeFileSync(cache, JSON.stringify({ configuration: entryRevision(entry),
+      generatedAt: Date.now(), lastAttemptAt: Date.now(), stale: true,
+      ...(sourceState === 'missing' ? { error: 'source-missing' }
+        : { five_hour: { used_percentage: 12 }, seven_day: { used_percentage: 95 } }) }));
     writeFileSync(join(root, 'settings.json'), JSON.stringify({ env: { ACCOUNT_ENVS: legacy ? 'Claude-Max' : 'personal-glm' } }));
     const run = spawnSync(process.execPath, [script], { cwd: root, timeout: 3000, encoding: 'utf8',
       env: { ...process.env, CLAUDE_CONFIG_DIR: root, TOKENHUD_HUD_DIR: hud, COLORFGBG: colorfgbg },
@@ -53,14 +57,14 @@ test('legacy labels use normal theme colors instead of bright variants', () => {
   assert.ok(output.includes('\x1b[31m95%'));
 });
 
-test('Auth source switch hides the previous account quota even without App refresh', () => {
+test('source file mtime does not override the independent HUD query result', () => {
   const output = render('0;15', false, 'changed');
-  assert.ok(output.includes('授权已变化，待查询'));
-  assert.ok(!output.includes('95%'));
+  assert.ok(!output.includes('待查询'));
+  assert.ok(output.includes('95%'));
 });
-test('Auth logout hides previous quota and asks for login', () => {
+test('HUD source error renders without previous account numbers', () => {
   const output = render('0;15', false, 'missing');
-  assert.ok(output.includes('需登录'));
+  assert.ok(output.includes('来源记录不可用'));
   assert.ok(!output.includes('95%'));
 });
 test('API-only accounts do not pretend to load unavailable quota', () => {

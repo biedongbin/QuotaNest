@@ -57,6 +57,61 @@ struct ModelCatalogServiceTests {
         #expect(CatalogURLProtocol.state.requests.count == 1)
     }
 
+    @Test func livePlanCatalogUsesPublicSourceAndReflectsChangedRows() async throws {
+        var scoped = connection(headers: "X-Provider-Key: <key>")
+        scoped.modelCatalog = ProviderModelCatalog(url: "https://docs.example.invalid/plan.md", format: "markdown-table", section: "Models", allowedPrefixes: ["plan/"])
+        let first = "## Models\n| Model | Model ID |\n| - | - |\n| A | `plan/a` |\n| B | `plan/b` |\n| Paid | `paid/api` |\nDeprecated: `plan/old`\n## Pricing\n| Model | Model ID |\n| Retired | `plan/retired` |"
+        #expect(try await fetch(scoped, body: first) == ["plan/a", "plan/b"])
+        let request = try #require(CatalogURLProtocol.state.requests.first)
+        #expect(request.url?.absoluteString == "https://docs.example.invalid/plan.md")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Provider-Key") == nil)
+        #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
+        let changed = "## Models\n| Model | Model ID |\n| - | - |\n| C | `plan/newly-added` |"
+        #expect(try await fetch(scoped, body: changed) == ["plan/newly-added"])
+        #expect(CatalogURLProtocol.state.requests.count == 1)
+    }
+
+    @Test func livePlanCatalogFailureHasNoFixedOrPaidFallback() async throws {
+        var scoped = connection()
+        scoped.modelCatalog = ProviderModelCatalog(url: "https://docs.example.invalid/plan.md", format: "markdown-table", section: "Models", allowedPrefixes: ["plan/"])
+        do {
+            _ = try await fetch(scoped, body: "<html>changed structure</html>")
+            Issue.record("Changed documentation must fail explicitly")
+        } catch let error as ModelCatalogError {
+            #expect(error.localizedDescription.contains("未使用固定模型或付费目录"))
+        }
+        #expect(CatalogURLProtocol.state.requests.count == 1)
+        do {
+            _ = try await fetch(scoped, body: "unavailable", status: 503)
+            Issue.record("HTTP failure must not fall back")
+        } catch let error as ModelCatalogError {
+            #expect(error.localizedDescription.contains("HTTP 503"))
+        }
+        #expect(CatalogURLProtocol.state.requests.count == 1)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["QUOTANEST_LIVE_CATALOG_TEST"] == "1"))
+    func officialPlanCatalogLoadsDynamicallyWithoutCredentials() async throws {
+        let manifestURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/TokenHUD/providers/cline/manifest.json")
+        let manifest = try JSONDecoder().decode(ProviderManifest.self, from: Data(contentsOf: manifestURL))
+        let catalog = try #require(manifest.modelCatalog)
+        let connection = ModelCatalogConnection(baseURL: "https://api.cline.bot/api/v1", protocolName: "openai", apiKey: "", headers: "", modelCatalog: catalog)
+        let models = try await ModelCatalogService.fetch(connection: connection)
+        #expect(!models.isEmpty)
+        #expect(models.allSatisfy { catalog.allows($0) })
+        print("Live official plan catalog: \(models.count) models from \(catalog.url ?? "")")
+    }
+
+    @Test func dynamicCatalogCanFilterPlanAndPaidModels() async throws {
+        var scoped = connection()
+        scoped.modelCatalog = ProviderModelCatalog(allowedPrefixes: ["plan/"])
+        let models = try await fetch(scoped, body: #"{"data":[{"id":"paid/chat"},{"id":"plan/chat"}]}"#)
+        #expect(models == ["plan/chat"])
+        #expect(CatalogURLProtocol.state.requests.count == 1)
+    }
+
     @Test func anthropicUsesTheCurrentCallKeyAndProtocolHeaders() async throws {
         _ = try await fetch(connection("https://catalog.example.invalid/api/anthropic/v1", protocolName: "anthropic"))
         let request = try #require(CatalogURLProtocol.state.requests.first)

@@ -40,17 +40,20 @@ struct ModelCatalogControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button(busy ? L10n.tr("拉取中…") : L10n.tr("拉取供应商模型"), systemImage: "arrow.down.circle") { fetch(recommend: false) }
-                    .barButton().disabled(busy)
-                Button(L10n.tr("推荐轻量测试模型"), systemImage: "sparkles") { recommend() }
+                Button(busy ? L10n.tr("拉取中…") : (currentCallConfig()?.modelCatalog?.url != nil ? L10n.tr("拉取套餐模型") : L10n.tr("拉取供应商模型")), systemImage: "arrow.down.circle") { fetch() }
                     .barButton().disabled(busy)
             }
-            Text(L10n.tr("轻量模型建议仅用于连通性测试，不能证明调用会启动 5h 窗口；请确认目标套餐支持。"))
-                .font(Typo.small).foregroundStyle(Palette.muted)
+            if currentCallConfig()?.modelCatalog?.url != nil {
+                Text(L10n.tr("从官方来源实时读取套餐模型；获取失败会报错，不使用固定清单或付费模型替代。"))
+                    .font(Typo.small).foregroundStyle(Palette.muted)
+                if let address = currentCallConfig()?.modelCatalog?.url, let url = URL(string: address) {
+                    Link(L10n.tr("查看模型来源"), destination: url).font(Typo.small)
+                }
+            }
             if !models.isEmpty {
                     Button(L10n.tr("选择模型（%@）", String(describing: models.count))) {
                         if cachedConnectionIsCurrent() { showModels.toggle() }
-                        else { reset(); fetch(recommend: false) }
+                        else { reset(); fetch() }
                     }.barButton(.ghost)
                         .popover(isPresented: $showModels) {
                             VStack(spacing: 10) {
@@ -60,8 +63,7 @@ struct ModelCatalogControls: View {
                                         ForEach(filteredModels, id: \.self) { id in
                                             Button {
                                                 guard select(id) else { return }
-                                                feedback = savedAccount == nil ? L10n.resource("已选择 \(id)，保存后生效")
-                                                    : L10n.resource("已选择 \(id)，仅用于本次测试")
+                                                feedback = L10n.resource("已选择 \(id)，保存后生效")
                                                 showModels = false
                                             } label: {
                                                 Text(id).font(Typo.mono).lineLimit(2)
@@ -124,23 +126,7 @@ struct ModelCatalogControls: View {
         request?.cancel(); generation = UUID(); busy = false
         models = []; loadedConnection = nil; loadedResolved = nil; feedback = L10n.resource(""); failure = nil; copied = false
     }
-    private func recommend() {
-        guard currentCallConfig()?.authMode != "auth", loadedConnection == connection, !models.isEmpty, cachedConnectionIsCurrent() else {
-            fetch(recommend: true); return
-        }
-        applyRecommendation()
-    }
-    private func applyRecommendation() {
-        guard let suggestion = ModelCatalogService.recommendation(from: models) else {
-            feedback = L10n.resource("未找到可推荐的文本模型，请手动填写测试模型")
-            return
-        }
-        guard select(suggestion.model) else { return }
-        feedback = savedAccount == nil
-            ? L10n.resource("轻量连通性测试建议 \(suggestion.model)：\(suggestion.reason)；保存后生效")
-            : L10n.resource("已选择 \(suggestion.model)，仅用于本次测试")
-    }
-    private func fetch(recommend: Bool) {
+    private func fetch() {
         guard let snapshot = connection else { return }
         request?.cancel()
         let token = UUID(); generation = token
@@ -162,9 +148,10 @@ struct ModelCatalogControls: View {
                     return
                 }
                 models = result; loadedConnection = snapshot; loadedResolved = resolved
-                feedback = L10n.resource("已拉取 \(String(result.count)) 个模型；请确认目标套餐支持所选模型")
-                if recommend { applyRecommendation() }
-                else { showModels = true }
+                feedback = config.modelCatalog?.url != nil
+                    ? L10n.resource("已载入 \(String(result.count)) 个套餐模型")
+                    : L10n.resource("已拉取 \(String(result.count)) 个模型；请确认目标套餐支持所选模型")
+                showModels = true
             } catch {
                 guard !Task.isCancelled, generation == token, connection == snapshot else { return }
                 models = []; loadedConnection = nil; loadedResolved = nil; feedback = L10n.resource("")

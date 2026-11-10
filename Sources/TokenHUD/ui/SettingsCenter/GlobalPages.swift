@@ -92,7 +92,7 @@ struct GlobalSettingsPage: View {
                             Text(hudSelectionSummary)
                                 .foregroundStyle(Palette.inkSecondary).textSelection(.enabled)
                             Spacer(minLength: 8)
-                            Button(L10n.tr("同步配置"), systemImage: "arrow.triangle.2.circlepath") { model.syncHUD() }.barButton()
+                            Button(L10n.tr("写入 Claude Code HUD"), systemImage: "arrow.triangle.2.circlepath") { model.syncHUD() }.barButton()
                         }
                         if model.allAccounts.isEmpty {
                             Text(L10n.tr("暂无供应商账号，请先添加或导入。"))
@@ -100,24 +100,19 @@ struct GlobalSettingsPage: View {
                         }
                         HUDAccountFlowLayout {
                             ForEach(model.allAccounts) { row in
-                                Toggle(isOn: Binding(
-                                    get: { !engine.hudHiddenSlugs.contains(row.id) },
-                                    set: { model.toggleHudSync(row.id, synced: $0) })) {
-                                    HStack(spacing: 6) {
-                                        ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 16)
-                                        Text(row.name).lineLimit(1)
-                                        if !row.enabled {
-                                            Text(L10n.tr("已停用"))
-                                                .font(Typo.small).foregroundStyle(Palette.muted)
-                                        }
-                                    }
+                                Toggle(isOn: hudToggleBinding(row)) {
+                                    hudToggleLabel(row)
                                 }
                                 .toggleStyle(.checkbox)
-                                .help(row.enabled ? row.name : row.name + " · " + L10n.tr("已停用，启用后显示"))
-                                .accessibilityIdentifier("settings.hud-account.\(row.id)")
+                                .help(hudToggleHelp(row))
+                                .accessibilityIdentifier("settings.hud-account." + row.id)
                             }
                         }
-                        Text(L10n.tr("与「供应商 → 显示」共用同一设置，修改立即同步到 HUD；停用账号保留选择，启用后恢复显示。"))
+                        if engine.hudNeedsExport {
+                            Label(L10n.tr("有改动尚未写入 HUD；点击右上按钮后生效。"), systemImage: "exclamationmark.circle")
+                                .font(.system(size: 11)).foregroundStyle(Palette.warn)
+                        }
+                        Text(L10n.tr("与「供应商 → 显示」共用同一设置。写入是显式操作：启动、来源同步、查询、开关和排序都不会自动改 HUD；停用账号保留选择，启用后恢复显示。"))
                             .font(.system(size: 11)).foregroundStyle(Palette.muted)
                     }
                 }
@@ -137,6 +132,25 @@ struct GlobalSettingsPage: View {
                 .padding(.horizontal, 20).padding(.bottom, 20)
         }
     }
+    private func hudToggleBinding(_ row: AccountRow) -> Binding<Bool> {
+        Binding(get: { !engine.hudHiddenSlugs.contains(row.id) },
+                set: { model.toggleHudSync(row.id, synced: $0) })
+    }
+
+    private func hudToggleLabel(_ row: AccountRow) -> some View {
+        HStack(spacing: 6) {
+            ProviderLogo(manifest: row.plugin.manifest, slug: row.id, size: 16)
+            Text(row.name).lineLimit(1)
+            if !row.enabled {
+                Text(L10n.tr("已停用")).font(Typo.small).foregroundStyle(Palette.muted)
+            }
+        }
+    }
+
+    private func hudToggleHelp(_ row: AccountRow) -> String {
+        row.enabled ? row.name : row.name + " · " + L10n.tr("已停用，启用后显示")
+    }
+
     static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
 }
 
@@ -183,6 +197,7 @@ private struct HUDAccountFlowLayout: Layout {
 
 struct AccountDisplayOrderSettings: View {
     @ObservedObject var engine: DataEngine
+    @State private var syncError: String?
     private var ordered: [PluginProvider] {
         let byID = Dictionary(uniqueKeysWithValues: engine.allPlugins.map { ($0.slug, $0) })
         let saved = engine.providerOrder.compactMap { byID[$0] }
@@ -217,8 +232,11 @@ struct AccountDisplayOrderSettings: View {
                             .barButton().disabled(index == ordered.count - 1).accessibilityLabel(L10n.tr("下移 %@", provider.manifest.fullName))
                     }.font(Typo.body)
                 }
-                Text(L10n.tr("勾选控制悬浮窗与菜单快览显示；用上下箭头排序，立即保存。隐藏账号保留位置。"))
+                Text(L10n.tr("勾选控制悬浮窗与菜单快览显示；用上下箭头排序。顺序写入本机设置，点击「写入 Claude Code HUD」后才同步到 HUD。隐藏账号保留位置。"))
                     .font(Typo.small).foregroundStyle(Palette.muted)
+                if let syncError {
+                    Text(syncError).font(Typo.small).foregroundStyle(Palette.danger)
+                }
             }
         }
     }
@@ -227,6 +245,7 @@ struct AccountDisplayOrderSettings: View {
         guard let index = ids.firstIndex(of: slug), ids.indices.contains(index + offset) else { return }
         ids.swapAt(index, index + offset)
         engine.setProviderOrder(ids)
+        syncError = nil
     }
 }
 

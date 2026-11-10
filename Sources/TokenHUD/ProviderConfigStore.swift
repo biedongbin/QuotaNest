@@ -31,10 +31,25 @@ struct ProviderConfig {
     var refreshHeader = ""
     var refreshProtocol = "anthropic"
     var testModel = ""
+    var modelCatalog: ProviderModelCatalog?
+    /// Local call preference; never changes an imported tool's model or credentials.
+    var callModelOverride: String?
+    var windowModelOverride: String?
+    /// Saved base-model intent, separate from a temporary/verification call preference.
+    var savedScheduleModel: String?
     var testPrompt = defaultPrompt
     var testMaxTokens = defaultMaxTokens
     var scheduleTimes: [String] = []
     var quotaMode = "none"
+
+    /// Existing local plans win; saved base selections precede template defaults.
+    func effectiveScheduleModel(manifest: ProviderManifest) -> String {
+        let declared = manifest.windowTrigger.flatMap { $0.period == "five_hour" ? $0.model : nil }
+        let selected = [windowModelOverride, savedScheduleModel, declared, testModel]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+        return modelCatalog?.canonicalModel(selected) ?? selected
+    }
 
     static let defaultPrompt = "只回复OK"
     static let defaultMaxTokens = 16
@@ -43,6 +58,7 @@ struct ProviderConfig {
 enum ProviderConfigStore {
     static func applyingManifest(_ manifest: ProviderManifest, to config: ProviderConfig) -> ProviderConfig {
         var c = config
+        c.modelCatalog = manifest.modelCatalog
         c.sourceReference = manifest.sourceReference
         c.sourceTemplate = manifest.template
         c.sourceEndpointIsFixed = manifest.template != nil
@@ -68,6 +84,7 @@ enum ProviderConfigStore {
         c.authMode = obj["authMode"] as? String ?? ((obj["refreshApiKey"] as? String)?.isEmpty == false ? "apikey" : ((manifest.authMode == "auth" || (manifest.credentialSource != nil && manifest.queryAuth == "header")) ? "auth" : "apikey"))
         let legacySource = manifest.credentialSource?.fileConfigKey.flatMap { obj[$0] as? String }
         c.authCredentialFile = obj["authCredentialFile"] as? String ?? legacySource ?? ""
+        c.modelCatalog = manifest.modelCatalog
         c.sourceReference = manifest.sourceReference
         c.sourceTemplate = manifest.template
         c.sourceEndpointIsFixed = manifest.template != nil
@@ -98,9 +115,12 @@ enum ProviderConfigStore {
         } else if manifest.queryAuth == "bearer" || manifest.queryAuth == nil, manifest.refreshAuth != "cookie" {
             c.refreshKey = bearer(headers["Authorization"] as? String)
         }
-        c.testModel = obj["testModel"] as? String ?? manifest.testModel ?? ""
+        c.savedScheduleModel = obj["testModel"] as? String
+        c.callModelOverride = obj["callModelOverride"] as? String
+        c.windowModelOverride = obj["windowModelOverride"] as? String
+        c.testModel = c.callModelOverride ?? obj["testModel"] as? String ?? manifest.testModel ?? ""
         c.testPrompt = obj["testPrompt"] as? String ?? manifest.testPrompt ?? ProviderConfig.defaultPrompt
-        c.testMaxTokens = obj["testMaxTokens"] as? Int ?? ProviderConfig.defaultMaxTokens
+        c.testMaxTokens = obj["testMaxTokens"] as? Int ?? manifest.testMaxTokens ?? ProviderConfig.defaultMaxTokens
         c.scheduleTimes = obj["scheduleTimes"] as? [String] ?? []
         if manifest.isSourceConfigurationReadOnly {
             c.refreshKey = ""
@@ -126,8 +146,11 @@ enum ProviderConfigStore {
                 throw ProviderAuthenticationError(message: "导入来源只读，不能覆盖来源文件")
             }
             // Rebuild from a whitelist: no inherited source key, APIkeyRef, headers or context survives.
-            let object: [String: Any] = ["schemaVersion": 4,
+            var object: [String: Any] = ["schemaVersion": 4,
                 "sourceReference": try JSONSerialization.jsonObject(with: JSONEncoder().encode(reference))]
+            object["callModelOverride"] = c.callModelOverride
+            object["windowModelOverride"] = c.windowModelOverride
+            if !c.scheduleTimes.isEmpty { object["scheduleTimes"] = c.scheduleTimes }
             let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
             try FileManager.default.createDirectory(at: authFile.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: authFile, options: .atomic)
@@ -155,7 +178,14 @@ enum ProviderConfigStore {
         obj["refreshApiKey"] = c.authMode == "auth" ? (obj["refreshApiKey"] as? String ?? "") : c.refreshKey
         obj["apiBaseURL"] = c.apiBaseURL
         obj["refreshUrl"] = c.refreshUrl
-        obj["testModel"] = c.testModel
+        // read() exposes the verification override as testModel; never persist it as base intent.
+        if c.callModelOverride != nil {
+            obj["testModel"] = c.savedScheduleModel ?? (obj["testModel"] as? String)
+        } else {
+            obj["testModel"] = c.testModel
+        }
+        obj["callModelOverride"] = c.callModelOverride
+        obj["windowModelOverride"] = c.windowModelOverride
         obj["testPrompt"] = c.testPrompt
         obj["testMaxTokens"] = c.testMaxTokens
         obj["scheduleTimes"] = c.scheduleTimes.isEmpty ? nil : c.scheduleTimes

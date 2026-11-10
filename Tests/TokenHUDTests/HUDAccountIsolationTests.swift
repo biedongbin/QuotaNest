@@ -6,7 +6,8 @@ import Testing
 struct HUDAccountIsolationTests {
     private func account(_ slug: String, name: String = "CC-GLM", displayName: String,
                          template: String? = "glm", hud: URL) -> PluginProvider {
-        PluginProvider(slug: slug,
+        HUDFixtures.writeWrapper(hud.appendingPathComponent(slug))
+        return PluginProvider(slug: slug,
             manifest: ProviderManifest(name: name, label: "GLM", displayName: displayName,
                                        buckets: ["five_hour": "5h"],
                                        cacheFile: hud.appendingPathComponent(".\(slug)-usage-cache.json").path,
@@ -34,16 +35,16 @@ struct HUDAccountIsolationTests {
                               to: root.appendingPathComponent("envs.json"))
         let plugins = [account("glm", displayName: "主账号", hud: root),
                        account("glm-second", displayName: "备用账号", hud: root)]
-        try HUDSync.sync(plugins: plugins, hiddenSlugs: [], disabledSlugs: [], hudDir: root, settingsURL: settings)
+        try HUDSync.sync(plugins: plugins, hiddenSlugs: [], disabledSlugs: [], hudDir: root, settingsURL: settings, mjsSourceDir: HUDFixtures.runtime)
         let object = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any]
         let env = object?["env"] as? [String: Any]
         #expect(env?["ACCOUNT_ENVS"] as? String == "Claude-Max,glm,external,glm-second")
         #expect(object?["theme"] as? String == "dark")
-        var entries = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: root.appendingPathComponent("envs.json")))
+        var entries = try HUDSync.decodeEntries(Data(contentsOf: root.appendingPathComponent("envs.json")))
         #expect(entries["external"]?.cache == "/external")
         #expect(entries["glm"] != nil && entries["glm-second"] != nil)
-        try HUDSync.sync(plugins: plugins, hiddenSlugs: ["glm"], disabledSlugs: [], hudDir: root, settingsURL: settings)
-        entries = try JSONDecoder().decode([String: EnvsEntry].self, from: Data(contentsOf: root.appendingPathComponent("envs.json")))
+        try HUDSync.sync(plugins: plugins, hiddenSlugs: ["glm"], disabledSlugs: [], hudDir: root, settingsURL: settings, mjsSourceDir: HUDFixtures.runtime)
+        entries = try HUDSync.decodeEntries(Data(contentsOf: root.appendingPathComponent("envs.json")))
         #expect(entries["glm"] == nil)
         #expect(entries["glm-second"] != nil)
         #expect(entries["external"] != nil)

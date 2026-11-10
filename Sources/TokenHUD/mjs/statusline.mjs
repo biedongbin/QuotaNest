@@ -2,7 +2,8 @@
 // 自定义 statusLine：第1行 目录|ctx|模型|分支；第2行 多环境限额(env1 5h·周 | env2 ...)
 // 铁律：快、永不崩溃、永不阻塞网络。顶层 try/catch 兜底。
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { entryRevision, hudCachePath, HUD_ERRORS, usageFresh, attemptFresh } from './hud-runtime.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -123,21 +124,22 @@ const ENV_REGISTRY = {
   'Cline':      { label: 'Cline', source: 'cache', cache: join(HUD_DIR, '.cline-usage-cache.json'), auth: join(HUD_DIR, '.cline-usage-auth.json'), provider: CLINE_PROVIDER, buckets: { five_hour: '5h', seven_day: '周', monthly: '月' } },
 };
 
-// 动态 env 注册: ~/.claude/hud/envs.json (TokenHUD 写出), 条目与内置 registry 同构
-// 缺 auth → maybeSpawnUsage 自动跳过 spawn (只读缓存), 与现有逻辑兼容
+// Explicitly exported accounts own their query configuration and cache. Legacy
+// dynamic projections need one explicit re-export; they never read B's cache.
 try {
   const envsJson = JSON.parse(readFileSync(join(HUD_DIR, 'envs.json'), 'utf8'));
   for (const [key, cfg] of Object.entries(envsJson)) {
-    if (ENV_REGISTRY[key]) continue; // 内置优先, 不覆盖
-    if (key.startsWith('_')) continue; // 元数据 key (_schemaVersion), 非供应商条目
+    if (key.startsWith('_') || !cfg || typeof cfg !== 'object') continue;
+    if (ENV_REGISTRY[key] && cfg.schemaVersion !== 2) continue;
+    let cache;
+    try { cache = hudCachePath(HUD_DIR, key); } catch { continue; }
     ENV_REGISTRY[key] = {
       label: cfg.label || key,
       source: cfg.source === 'api' ? 'api' : 'cache',
-      cache: cfg.cache, // 绝对路径
-      authSourceFile: typeof cfg.authSourceFile === 'string' ? cfg.authSourceFile : null,
-      sourceReferenceDependencies: cfg.sourceReferenceDependencies,
-      auth: join(HUD_DIR, '.never-exists'), // 不存在 → 不 spawn
-      spawnEnv: {},
+      cache,
+      independent: cfg.schemaVersion === 2,
+      needsExport: cfg.schemaVersion !== 2,
+      configuration: entryRevision(cfg),
       buckets: cfg.buckets || { seven_day: '周' },
     };
   }
@@ -216,17 +218,6 @@ function readAccountEnvs() {
   } catch { return []; }
 }
 
-// 展示新鲜度: 按最近成功快照时间 (generatedAt, 失败不推进)
-function usageFresh(cache) {
-  return !!(cache && cache.generatedAt && Date.now() - cache.generatedAt < USAGE_TTL_MS);
-}
-
-// spawn 抑制: 按最近尝试时间 (lastAttemptAt, 旧缓存回退 generatedAt), 失败也在 TTL 内不重 spawn
-function attemptFresh(cache) {
-  const t = cache?.lastAttemptAt ?? cache?.generatedAt;
-  return !!(t && Date.now() - t < USAGE_TTL_MS);
-}
-
 function maybeSpawnUsage(cache, authFile, spawnEnv = {}, providerPath = USAGE_PROVIDER) {
   if (attemptFresh(cache)) return;
   try { readFileSync(authFile, 'utf8'); } catch { return; } // auth 文件不存在不 spawn
@@ -235,6 +226,18 @@ function maybeSpawnUsage(cache, authFile, spawnEnv = {}, providerPath = USAGE_PR
       stdio: 'ignore', detached: true,
       env: { ...process.env, ...spawnEnv },
     });
+    child.unref();
+  } catch {}
+}
+
+function maybeSpawnIndependent(cache, slug) {
+  if (attemptFresh(cache)) return;
+  try {
+    const child = spawn(process.execPath, [join(HUD_DIR, 'ref-usage-provider.mjs'), slug], {
+      stdio: 'ignore', detached: true,
+      env: { ...process.env, TOKENHUD_HUD_DIR: HUD_DIR },
+    });
+    child.on('error', () => {});
     child.unref();
   } catch {}
 }
@@ -260,33 +263,9 @@ function renderEnvQuota(envKey, stdin) {
     fiveHour = rl.five_hour;
     sevenDay = rl.seven_day;
   } else {
-    const cache = readJsonSafe(cfg.cache);
-    if (cfg.sourceReferenceDependencies != null) {
-      const deps = cfg.sourceReferenceDependencies;
-      let valid = deps && typeof deps === 'object' && !Array.isArray(deps)
-        && Object.keys(deps).length > 0 && typeof cache?.sourceRevision === 'string'
-        && cache.sourceRevision.length > 0 && Number.isFinite(cache.generatedAt);
-      if (valid) {
-        for (const [path, recorded] of Object.entries(deps)) {
-          let current = 0;
-          try { current = statSync(path).mtimeMs; } catch { /* Optional WAL may be absent. */ }
-          if (!Number.isFinite(recorded) || Math.floor(current) !== Math.floor(recorded)
-              || current > cache.generatedAt || (path === cfg.authSourceFile && current === 0)) {
-            valid = false;
-            break;
-          }
-        }
-      }
-      if (!valid) return `${labelSeg} ${wrap(C.yellow, '来源变更，待查询')}`;
-    } else if (cfg.authSourceFile) {
-      try {
-        if (statSync(cfg.authSourceFile).mtimeMs > (cache?.generatedAt || 0)) {
-          return `${labelSeg} ${wrap(C.yellow, '授权已变化，待查询')}`;
-        }
-      } catch {
-        return `${labelSeg} ${wrap(C.yellow, '需登录')}`;
-      }
-    }
+    if (cfg.needsExport) return `${labelSeg} ${wrap(C.yellow, '请重新写入 HUD')}`;
+    let cache = readJsonSafe(cfg.cache);
+    if (cfg.independent && cache?.configuration !== cfg.configuration) cache = null;
     if (cache?.error === 'auth') error = 'auth';
     else if (cache?.error) error = String(cache.error);
     fiveHour = cache?.five_hour || null;
@@ -294,7 +273,8 @@ function renderEnvQuota(envKey, stdin) {
     monthly = cache?.monthly || null;
     windows = Array.isArray(cache?.windows) ? cache.windows : [];
     stale = cache?.stale === true || !!cache?.error || !usageFresh(cache);
-    maybeSpawnUsage(cache, cfg.auth, cfg.spawnEnv, cfg.provider || USAGE_PROVIDER);
+    if (cfg.independent) maybeSpawnIndependent(cache, envKey);
+    else maybeSpawnUsage(cache, cfg.auth, cfg.spawnEnv, cfg.provider || USAGE_PROVIDER);
   }
 
   if (error === 'auth') return `${labelSeg} ${wrap(C.yellow, '需登录')}`;
@@ -311,7 +291,7 @@ function renderEnvQuota(envKey, stdin) {
     buckets.push(renderBucket(cfg.buckets.monthly, monthly, stale));
   }
   if (buckets.length) return `${labelSeg} ${buckets.join(BUCKET_SEP)}`;
-  if (error) return `${labelSeg} ${dim(error)}`;
+  if (error) return `${labelSeg} ${dim(HUD_ERRORS[error] || (cfg.independent ? '查询失败' : error))}`;
   return `${labelSeg} ${dim(cfg.source === 'cache' ? '加载中' : '—')}`;
 }
 

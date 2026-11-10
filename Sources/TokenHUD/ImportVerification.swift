@@ -204,8 +204,9 @@ enum ImportVerification {
                 return row
             }
             let bundle = Bundle.appResources.resourceURL?.appendingPathComponent("providers")
-            // Same installation path as installScripts(), without constructing or starting an engine.
-            DataEngine.installMjs(bundleDir: bundle, hudDir: hud)
+            // The App runs provider scripts from its private runtime dir, never from the HUD dir.
+            let runtime = directory.appendingPathComponent("runtime", isDirectory: true)
+            DataEngine.installMjs(bundleDir: bundle, hudDir: runtime)
             guard let plugin = ProviderRegistry.scan(dir: providers).first(where: { $0.slug == slug }) else {
                 row.quota = .registry
                 row.after = dependencies.map(hashFile); row.sourceUnchanged = unchanged(row.before, row.after)
@@ -222,7 +223,7 @@ enum ImportVerification {
                 return row
             }
             let launcher = try installTransportGuard(node: node, directory: directory)
-            let runner = ProviderRunner(nodePath: launcher.path, logDir: hud)
+            let runner = ProviderRunner(nodePath: launcher.path, logDir: hud, runtimeDir: runtime)
             let trace = hud.appendingPathComponent("verification-transport.json")
             var attempts: [Attempt] = []
             let result = await runner.runWithRetries(plugin, attempt: { plugin in

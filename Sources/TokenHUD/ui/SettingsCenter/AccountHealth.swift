@@ -83,11 +83,8 @@ enum AccountHealthAssessment {
             return .issue(reason: L10n.tr("请填写基础接入的服务地址"))
         }
         if scheduleEnabled && !config.scheduleTimes.isEmpty {
-            let callURL = resolved.authMode == "auth" ? (resolved.authCallURL ?? "") : resolved.refreshUrl
-            if !SettingsValidation.isValidURL(callURL) { return .issue(reason: L10n.tr("调用计划缺少有效调用地址")) }
-            if resolved.testModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return .issue(reason: L10n.tr("调用计划未配置模型"))
-            }
+            do { _ = try RefreshTrigger.scheduleRequest(config: resolved, manifest: manifest) }
+            catch { return .issue(reason: L10n.errorDescription(error)) }
         }
         return .healthy
     }

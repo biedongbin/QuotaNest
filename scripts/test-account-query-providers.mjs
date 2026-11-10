@@ -7,6 +7,7 @@ import { join, resolve, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { normalizeUsage } from '../Sources/TokenHUD/mjs/usage-normalize.mjs';
+import { entryRevision } from '../Sources/TokenHUD/mjs/hud-runtime.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(repo, 'Sources/TokenHUD/mjs');
@@ -107,12 +108,13 @@ try {
   count++;
 
   writeFileSync(join(temp, 'settings.json'), JSON.stringify({ env: { ACCOUNT_ENVS: 'glm-one,glm-two,Claude-Max' } }));
-  writeFileSync(join(hud, 'envs.json'), JSON.stringify({
-    'glm-one': { label: 'GLM one', cache: cacheFile, buckets: {} },
-    'glm-two': { label: 'GLM two', cache: join(temp, 'second-cache.json'), buckets: {} },
-  }));
-  writeFileSync(cacheFile, JSON.stringify({ generatedAt: Date.now(), windows: [{ label: '2小时', used_percentage: 31 }, { label: '美元', amount: 5, limit: 10, unit: 'USD' }] }));
-  writeFileSync(join(temp, 'second-cache.json'), JSON.stringify({ generatedAt: Date.now(), windows: [{ label: '本月', used_percentage: 42 }] }));
+  const hudEntries = {
+    'glm-one': { schemaVersion: 2, label: 'GLM one', cache: join(hud, '.glm-one-hud-cache.json'), buckets: {} },
+    'glm-two': { schemaVersion: 2, label: 'GLM two', cache: join(hud, '.glm-two-hud-cache.json'), buckets: {} },
+  };
+  writeFileSync(join(hud, 'envs.json'), JSON.stringify(hudEntries));
+  writeFileSync(hudEntries['glm-one'].cache, JSON.stringify({ configuration: entryRevision(hudEntries['glm-one']), generatedAt: Date.now(), windows: [{ label: '2小时', used_percentage: 31 }, { label: '美元', amount: 5, limit: 10, unit: 'USD' }] }));
+  writeFileSync(hudEntries['glm-two'].cache, JSON.stringify({ configuration: entryRevision(hudEntries['glm-two']), generatedAt: Date.now(), windows: [{ label: '本月', used_percentage: 42 }] }));
   const rendered = spawnSync(process.execPath, [join(source, 'statusline.mjs')], { env, input: JSON.stringify({ cwd: temp, rate_limits: { five_hour: { used_percentage: 6 } } }), encoding: 'utf8', timeout: 5000 });
   assert.equal(rendered.status, 0, rendered.stderr);
   const text = rendered.stdout.replace(/\x1b\[[0-9;]*m/g, '');

@@ -7,7 +7,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/English-Read_in_English-blue?style=for-the-badge" alt="English" /></a>
 </p>
 <p align="center">
-  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/版本-1.0.0-blue?style=flat-square" alt="版本 1.0.0" /></a>
+  <a href="https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1"><img src="https://img.shields.io/badge/版本-1.0.0.1-blue?style=flat-square" alt="版本 1.0.0.1" /></a>
   <img src="https://img.shields.io/badge/平台-macOS_14+-lightgrey?style=flat-square" alt="macOS 14 及以上" />
   <img src="https://img.shields.io/badge/原生界面-SwiftUI-orange?style=flat-square" alt="SwiftUI 原生界面" />
   <img src="https://img.shields.io/badge/内置供应商类型-55-blue?style=flat-square" alt="55 个内置供应商类型" />
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/1610e425-4907-4c66-9429-bfac23de6a3e
 | 能力 | 具体用途 |
 | --- | --- |
 | 四种悬浮样式 | 卡片、玻璃、紧凑、列表；任意位置拖动，点击显示标题，离开 5 秒后隐藏。 |
-| Claude Code HUD | 在全局设置或账号展示页勾选输出账号，两处共用同一配置。 |
+| Claude Code HUD | 在全局设置或账号展示页勾选输出账号，两处共用同一配置；点击“写入 Claude Code HUD”后才导出。 |
 | 定时小调用 | 按本机时间执行请求，尝试启动适用套餐的动态用量窗口；请求消耗额度，不保证开启或重置窗口。 |
 | 只读导入 | 引用 9router、cc-switch、CPAMP、Magpie 的既有记录，保留原始记录 ID 和 provider ID。 |
 | 多账号概览 | 集中查看额度窗口、余额、重置时间、旧数据和配置状态。 |
@@ -69,7 +69,7 @@ cask 支持 **macOS 14+ 的 Apple Silicon 和 Intel**，并安装额度适配脚
 
 后续版本使用 `brew upgrade --cask quotanest`。如需安装到用户目录，可附加 `--appdir="$HOME/Applications"`；交给 Homebrew 管理前，请先退出并移走旧的手工安装 App 包。账号数据独立存储，不在 App 包内。
 
-**手动下载：** 从 [Release v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0) 下载 [QuotaNest-1.0.0-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0/QuotaNest-1.0.0-universal.zip)，按 `SHA256SUMS` 校验后解压，将 `QuotaNest.app` 放入 Applications。首次启动可能需要在“系统设置 → 隐私与安全性”中允许打开。
+**手动下载：** 从 [Release v1.0.0.1](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1) 下载 [QuotaNest-1.0.0.1-universal.zip](https://github.com/biedongbin/QuotaNest/releases/download/v1.0.0.1/QuotaNest-1.0.0.1-universal.zip)，按 `SHA256SUMS` 校验后解压，将 `QuotaNest.app` 放入 Applications。首次启动可能需要在“系统设置 → 隐私与安全性”中允许打开。
 
 ### 从源码构建
 
@@ -142,7 +142,7 @@ open ~/Applications/QuotaNest.app
 | 9router | 按 `providerConnections` 原主键与 provider 身份引用，认证结构必须已适配。 |
 | cc-switch | 当前支持 Claude 命名空间，按 `id + app_type` 识别；其他命名空间显示不支持。 |
 | CPAMP | 按文件名和类型引用已支持的 CPA JSON 授权文件。 |
-| Magpie | 支持已适配的 provider Key 与插件凭证槽，保留原 provider ID，可选择 portable 配置目录；原生 CLI／Keychain 持有的登录不导入。 |
+| Magpie | 支持已适配的 provider Key 与插件凭证槽，保留原 provider ID，可选择 portable 配置目录；原生登录记录具有可读内联 Auth 快照且匹配适配格式时可导入；仅存于 Keychain 或需要续期的登录不支持。 |
 
 导入账号的连接字段只读，请到来源工具维护凭证；本地仍可控制启停、显示、查询和删除关联。删除关联不删除源数据。
 
@@ -176,7 +176,7 @@ open ~/Applications/QuotaNest.app
 
 ### 6. 勾选 Claude Code HUD 账号及调整设置
 
-“设置与外观 → Claude Code HUD”支持横向勾选并自动换行，与账号的“展示”页共用同一状态。修改立即同步，HUD 写入失败会恢复原选择；停用账号保留偏好，重新启用后恢复。
+“设置与外观 → Claude Code HUD”支持横向勾选并自动换行，与账号的“展示”页共用同一状态。勾选只保存在本机，点击“写入 Claude Code HUD”后才一次性导出脚本、来源引用与查询配置；启动、查询、来源同步、排序、启停和删除都不会自动改写 HUD。HUD 是独立查询者：由 Claude Code 渲染触发，按自身最小 60 秒 TTL 直接读取来源记录并写自己的缓存。
 
 ![语言、紧凑下拉框与 HUD 选择](docs/screenshots/zh-CN/settings.png)
 
@@ -192,7 +192,7 @@ open ~/Applications/QuotaNest.app
 
 **不需要安装 Claude。** 没有 Claude 也会在本地生成草稿；已有登录的 `gh` 可直接提交，缺少 `gh` 或认证不可用时可复制草稿、在浏览器中完成反馈。App 不自动安装任何工具。
 
-本版由 App 完全在本机生成诊断，即使安装了 Claude 也不调用它。受限 CLI 原型仅保留在测试代码中：隐私隔离检查已通过，但严格运行时的 DNS／TLS 尚未验证可用，因此不作为 App 操作开放。完整边界见[反馈与隐私说明](docs/issue-feedback-proposal.md)。反馈功能已包含在补齐后的 **v1.0.0** 下载包中；已安装原 1.0.0 的用户请更新 tap 后执行 `brew reinstall --cask quotanest`，获取替换后的安装包。
+本版由 App 完全在本机生成诊断，即使安装了 Claude 也不调用它。受限 CLI 原型仅保留在测试代码中：隐私隔离检查已通过，但严格运行时的 DNS／TLS 尚未验证可用，因此不作为 App 操作开放。完整边界见[反馈与隐私说明](docs/issue-feedback-proposal.md)。反馈功能已包含在 **v1.0.0.1** 下载包中；已安装旧版的用户请更新 tap 后执行 `brew upgrade --cask quotanest`，获取最新安装包。
 
 侧边栏“设置与外观”上方提供**一键 Star**。仅在点击后使用本机已登录的 `gh` 为 QuotaNest 加星；缺少工具或登录时提供项目页入口，不会自动替用户 Star。
 
@@ -231,7 +231,7 @@ open ~/Applications/QuotaNest.app
 ## 更新日志
 
 - **[更新日志](CHANGELOG.zh-CN.md)** — 按版本号归档的功能与发布记录。
-- **[v1.0.0](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0)** — 当前正式版本与安装包。
+- **[v1.0.0.1](https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1)** — 当前正式版本与安装包。
 
 ## 致谢
 

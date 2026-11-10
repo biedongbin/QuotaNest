@@ -18,8 +18,17 @@ struct CallTestResult {
     let sourceLabel: String
     let message: String
     let date: Date
+    var maxTokens: Int? = nil
 
     var title: String {
+        if sourceLabel == "5h 窗口调用" {
+            switch phase {
+            case .running: return L10n.tr("5h 开窗调用中")
+            case .success: return L10n.tr("5h 开窗调用成功")
+            case .failure: return L10n.tr("5h 开窗调用未成功")
+            case .uncertain: return L10n.tr("调用结果不确定")
+            }
+        }
         switch phase {
         case .running: return L10n.tr("测试进行中")
         case .success: return L10n.tr("测试成功")
@@ -29,6 +38,8 @@ struct CallTestResult {
     }
 
     var isError: Bool { phase == .failure || phase == .uncertain }
+    var feedbackExpiresAt: Date? { phase == .running ? nil : date.addingTimeInterval(isError ? 8 : 5) }
+    func feedbackIsVisible(at now: Date = Date()) -> Bool { feedbackExpiresAt.map { now < $0 } ?? true }
 
     static func targetDescription(_ raw: String) -> String {
         guard var components = URLComponents(string: raw),
@@ -64,6 +75,12 @@ struct CallTestResultView: View {
                     pasteboard.clearContents()
                     copyLabel = pasteboard.setString(result.message, forType: .string) ? "已复制" : "复制失败"
                 }.barButton().help(L10n.tr("复制已脱敏的完整结果"))
+            }
+            Text(L10n.tr("实际请求模型：%@", result.model))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(Palette.inkSecondary).textSelection(.enabled)
+            if let limit = result.maxTokens {
+                Text(L10n.tr("输出上限：%@ tokens", String(limit))).font(.system(size: 10.5)).foregroundStyle(Palette.muted)
             }
             CallResponseText(message: result.message)
                 .frame(height: result.message.count > 280 || result.message.contains("\n") ? 190 : 70)

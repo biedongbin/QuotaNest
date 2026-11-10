@@ -20,8 +20,23 @@
   "refreshUrl": "https://api.cline.bot/api/v1/chat/completions",
   "refreshProtocol": "openai",
   "refreshAuth": "bearer",
-  "testModel": "@preset/cline-new27-20261022-sonnet55-vertex-global-r1",
+  "testModel": "cline-pass/deepseek-v4.1-flash-1017",
+  "modelCatalog": {
+    "allowedPrefixes": ["cline-pass/"],
+    "url": "https://docs.cline.bot/getting-started/clinepass.md",
+    "format": "markdown-table",
+    "section": "Models",
+    "aliases": {
+      "@preset/cline-new27-20261022-sonnet55-vertex-global-r1": "cline-pass/deepseek-v4.1-flash-1017",
+      "deepseek/deepseek-v4.1-flash-1017": "cline-pass/deepseek-v4.1-flash-1017"
+    }
+  },
   "testPrompt": "OK",
+  "testMaxTokens": 1024,
+  "windowTrigger": {
+    "period": "five_hour",
+    "model": "cline-pass/deepseek-v4.1-flash-1017"
+  },
   "authMode": "apikey",
   "quotaAuthModes": [
     "apikey"

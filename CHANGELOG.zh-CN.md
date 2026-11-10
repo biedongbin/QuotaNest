@@ -2,11 +2,25 @@
 
 [English](CHANGELOG.md) | 简体中文
 
-所有更新按发布版本归档，版本号遵循 [Semantic Versioning](https://semver.org/)。尚未归属正式版本的改动放在 `Unreleased`；已发布内容保留在对应版本号和日期下。
+所有更新按发布版本归档，版本采用三段数字及可选的第四段修订号。尚未归属正式版本的改动放在 `Unreleased`；已发布内容保留在对应版本号和日期下。
 
 ## Unreleased
 
+## [1.0.0.1] — 2026-11-10
+
+### 新增
+
+- 显式导出独立 Claude Code HUD 运行时；App 退出后仍可直接读取来源凭证并查询供应商。
+- 配置本地调用计划模型和时间，统一编辑、账号健康与实际执行的模型选择。
+
 ### 修复
+
+- HUD 额度缓存按实际请求 workspace 隔离，正确读取 cc-switch 复合主键，回收 worker 锁时不再误删新进程的声明。
+- 系统时钟回拨后恢复 HUD 查询，导出时保留第三方配置扩展字段。
+- 待导出提示跨重启保留，补齐改名与导入后的提示。
+- 保存验证模型不改变定时调用模型，包括未保存基础模型字段的账号。
+- 修正 Z.ai Auth 测试契约，明确 Magpie 内联 Auth 快照导入范围。
+
 
 - 导入来源数据库改用有超时和只读保护的原生 SQLite 读取，避免主线程等待子进程时重入 SwiftUI，导致点击菜单栏图标卡死或崩溃。
 - 按声明的账号主体和 workspace 跨来源识别 GPT/Codex 重复账号，默认跳过，不自动合并或删除已有账号设置。
@@ -53,4 +67,5 @@
 - 通过 `biedongbin/tap/quotanest` 提供 Homebrew cask 安装，包含额度适配脚本所需的 Node.js 运行时依赖。Homebrew 7 用户首次安装前，可用 `brew trust --cask biedongbin/tap/quotanest` 仅授权这个 cask。
 - 应用采用 ad-hoc 签名，未声称 Apple Developer ID 签名或公证；cask 仅移除已安装 QuotaNest 应用的隔离属性。
 
+[1.0.0.1]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0.1
 [1.0.0]: https://github.com/biedongbin/QuotaNest/releases/tag/v1.0.0

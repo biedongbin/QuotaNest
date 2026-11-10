@@ -7,6 +7,7 @@ struct ModelCatalogConnection: Equatable, Sendable {
     let apiKey: String
     let headers: String
     var modelsURL: String? = nil
+    var modelCatalog: ProviderModelCatalog? = nil
 }
 
 extension ModelCatalogConnection {
@@ -14,7 +15,7 @@ extension ModelCatalogConnection {
     init(callConfig config: ProviderConfig) {
         self.init(baseURL: config.apiBaseURL, protocolName: config.refreshProtocol,
                   apiKey: config.refreshKey, headers: config.refreshHeader,
-                  modelsURL: config.authMode == "auth" ? config.authModelsURL : nil)
+                  modelsURL: config.authMode == "auth" ? config.authModelsURL : nil, modelCatalog: config.modelCatalog)
     }
 }
 
@@ -97,7 +98,13 @@ enum ModelCatalogService {
             guard (200..<300).contains(http.statusCode) else {
                 throw ModelCatalogError.http(status: http.statusCode, body: text)
             }
-            return try models(in: body, safeText: text)
+            let discovered: [String]
+            if connection.modelCatalog?.format == "markdown-table" {
+                discovered = try markdownModels(text, section: connection.modelCatalog?.section ?? "")
+            } else {
+                discovered = try models(in: body, safeText: text)
+            }
+            return try scopedModels(discovered, catalog: connection.modelCatalog)
         } catch let error as ModelCatalogError {
             throw error
         } catch is CancellationError {
@@ -108,6 +115,49 @@ enum ModelCatalogService {
             if Task.isCancelled { throw CancellationError() }
             throw ModelCatalogError.transport("无法读取模型列表：" + redacted(error.localizedDescription, connection: connection))
         }
+    }
+
+    private static func markdownModels(_ text: String, section: String) throws -> [String] {
+        guard !section.isEmpty else { throw ModelCatalogError.invalidConnection("模型文档来源缺少章节配置") }
+        var active = false, headingLevel = 0
+        var idColumn: Int?
+        var result: [String] = []
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") {
+                let level = line.prefix(while: { $0 == "#" }).count
+                let title = line.dropFirst(level).trimmingCharacters(in: .whitespaces)
+                if active && level <= headingLevel { break }
+                if title.caseInsensitiveCompare(section) == .orderedSame { active = true; headingLevel = level }
+                continue
+            }
+            guard active, line.hasPrefix("|"), line.hasSuffix("|") else { continue }
+            let cells = line.dropFirst().dropLast().components(separatedBy: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            if let column = cells.firstIndex(where: { $0.caseInsensitiveCompare("Model ID") == .orderedSame }) {
+                idColumn = column; continue
+            }
+            guard let column = idColumn, cells.indices.contains(column) else { continue }
+            let value = cells[column].trimmingCharacters(in: CharacterSet(charactersIn: "` "))
+            guard !value.isEmpty, value != "-", !value.allSatisfy({ $0 == "-" || $0 == ":" }),
+                  value.range(of: #"^[A-Za-z0-9._:/-]+$"#, options: .regularExpression) != nil else { continue }
+            result.append(value)
+        }
+        guard !result.isEmpty else {
+            throw ModelCatalogError.invalidResponse("官方模型清单结构已变化或为空；未使用固定模型或付费目录")
+        }
+        return result
+    }
+
+    private static func scopedModels(_ models: [String], catalog: ProviderModelCatalog?) throws -> [String] {
+        let filtered = Array(Set(models.filter { !$0.isEmpty && catalog?.allows($0) != false })).sorted()
+        guard !filtered.isEmpty else {
+            if catalog?.url != nil {
+                throw ModelCatalogError.invalidResponse("官方目录未返回有效套餐模型；未回退到固定清单或付费目录")
+            }
+            throw ModelCatalogError.emptyModels
+        }
+        return filtered
     }
 
     static func recommendation(from models: [String]) -> ModelRecommendation? {
@@ -130,6 +180,20 @@ enum ModelCatalogService {
     }
 
     private static func request(for connection: ModelCatalogConnection) throws -> URLRequest {
+        if let source = connection.modelCatalog?.url {
+            guard let url = URL(string: source), url.scheme == "https", url.host != nil,
+                  url.user == nil, url.password == nil else {
+                throw ModelCatalogError.invalidConnection("公开模型目录必须使用有效的 HTTPS 地址")
+            }
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 12)
+            request.httpMethod = "GET"
+            request.httpShouldHandleCookies = false
+            request.setValue(connection.modelCatalog?.format == "markdown-table" ? "text/markdown,text/plain" : "application/json", forHTTPHeaderField: "Accept")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            request.setValue("QuotaNest/1.0", forHTTPHeaderField: "User-Agent")
+            // Public catalog requests never receive the account's key or custom auth headers.
+            return request
+        }
         let protocolName = connection.protocolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard ["openai", "anthropic", "responses"].contains(protocolName) else {
             throw ModelCatalogError.invalidConnection("当前调用协议未提供模型列表支持。")

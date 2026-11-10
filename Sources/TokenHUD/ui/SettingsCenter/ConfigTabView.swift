@@ -41,6 +41,43 @@ struct ProviderCapabilityPresentation {
     }
 }
 
+/// Two connection cards share the available width; narrow details stack them vertically.
+/// An adaptive grid can reserve three or four columns even though only two cards exist.
+private struct ConnectionCardsLayout: Layout {
+    private let spacing: CGFloat = 12
+    private let minimumColumnWidth: CGFloat = 420
+
+    private func measurements(width: CGFloat, subviews: Subviews) -> (columns: Int, columnWidth: CGFloat, heights: [CGFloat]) {
+        let columns = width >= minimumColumnWidth * 2 + spacing ? 2 : 1
+        let columnWidth = max(0, (width - CGFloat(columns - 1) * spacing) / CGFloat(columns))
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height }
+        return (columns, columnWidth, heights)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minimumColumnWidth
+        let layout = measurements(width: width, subviews: subviews)
+        var height: CGFloat = 0
+        for row in stride(from: 0, to: subviews.count, by: layout.columns) {
+            if row > 0 { height += spacing }
+            height += layout.heights[row..<min(row + layout.columns, subviews.count)].max() ?? 0
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let layout = measurements(width: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in stride(from: 0, to: subviews.count, by: layout.columns) {
+            for index in row..<min(row + layout.columns, subviews.count) {
+                subviews[index].place(at: CGPoint(x: bounds.minX + CGFloat(index - row) * (layout.columnWidth + spacing), y: y),
+                    anchor: .topLeading, proposal: ProposedViewSize(width: layout.columnWidth, height: layout.heights[index]))
+            }
+            y += (layout.heights[row..<min(row + layout.columns, subviews.count)].max() ?? 0) + spacing
+        }
+    }
+}
+
 struct ConfigTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
@@ -54,7 +91,7 @@ struct ConfigTabView: View {
     private var canCall: Bool { capability.canCall(using: config.authMode) }
     private var readOnly: Bool { row.plugin.manifest.isSourceConfigurationReadOnly }
     private var resolvedCall: ProviderConfig? { try? ProviderAuthentication.resolveCall(config) }
-    private var testReady: Bool { model.callConfigured(row, modelOverride: readOnly ? temporaryModel : nil) }
+    private var testReady: Bool { model.callConfigured(row, modelOverride: temporaryModel) }
     private var quotaAddress: String {
         do {
             let resolved = try ProviderAuthentication.resolveQuota(config)
@@ -70,9 +107,9 @@ struct ConfigTabView: View {
                 actionHeader(compact: true)
             }
             if readOnly { sourceDetails }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
-                apiConnection
-                quotaConnection
+            ConnectionCardsLayout {
+                apiConnection.frame(maxWidth: .infinity, alignment: .leading)
+                quotaConnection.frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .onAppear { temporaryModel = resolvedCall?.testModel ?? "" }
@@ -172,16 +209,24 @@ struct ConfigTabView: View {
                     }
                     if canCall {
                         KeyValueRow(L10n.tr("模型"), mono: true) {
-                            let modelName = row.plugin.manifest.sourceReference == nil ? config.testModel : resolvedCall?.testModel ?? ""
+                            let modelName = temporaryModel.isEmpty ? (resolvedCall?.testModel ?? config.testModel) : temporaryModel
                             Text(modelName.isEmpty ? L10n.tr("未指定") : modelName)
                         }
                     }
                     if row.builtin && canCall { Label(L10n.tr("供应商类型固定服务地址与协议"), systemImage: "lock").font(.callout).foregroundStyle(.secondary) }
-                    if readOnly && canCall {
-                        TextField(L10n.tr("临时测试模型"), text: $temporaryModel)
-                            .fieldBox().accessibilityIdentifier("account.source-test-model")
+                    if canCall {
+                        HStack {
+                            TextField(L10n.tr("调用模型"), text: $temporaryModel)
+                                .fieldBox().accessibilityIdentifier("account.source-test-model")
+                            Button(L10n.tr("保存模型")) {
+                                if model.saveCallModel(row.id, model: temporaryModel) {
+                                    temporaryModel = resolvedCall?.testModel ?? temporaryModel
+                                }
+                            }.barButton().disabled(temporaryModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .accessibilityIdentifier("account.save-call-model")
+                        }
                         ModelCatalogControls(model: model, savedAccount: row, modelSelection: $temporaryModel)
-                        Text(L10n.tr("模型只用于本次测试，不修改来源配置或调用计划。"))
+                        Text(L10n.tr("保存到 QuotaNest 本地；不修改来源认证。验证使用输入框中的模型，5h 开窗使用供应商声明的套餐模型。"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
@@ -189,13 +234,13 @@ struct ConfigTabView: View {
                               systemImage: testReady ? "checkmark.circle" : "info.circle")
                             .font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button(model.callRunning.contains(row.id) ? L10n.tr("测试中…") : L10n.tr("测试 API 调用")) {
-                            model.testCall(row.id, modelOverride: readOnly ? temporaryModel : nil)
+                        Button(model.callRunning.contains(row.id) ? L10n.tr("测试中…") : L10n.tr("验证凭证与模型")) {
+                            model.testCall(row.id, modelOverride: temporaryModel)
                         }
                             .disabled(!canCall || !testReady || model.callRunning.contains(row.id))
                             .help(!canCall ? L10n.tr("此类型未接入模型调用，不是来源只读限制。") : L10n.tr("选择模型后发送一次已确认的测试请求。"))
                     }
-                    Text(canCall ? (readOnly ? L10n.tr("使用来源认证和临时模型发送一次请求，会消耗账号额度。") : L10n.tr("使用已保存配置发送一次请求，会消耗账号额度。")) : L10n.tr("可使用已接入的用量查询；此类型当前不提供模型测试或调用计划。")).font(.caption).foregroundStyle(.secondary)
+                    Text(canCall ? L10n.tr("验证会发送一次真实 API 请求，检查当前凭证和所选模型能否调用，并消耗额度。HTTP 5xx 不等于凭证错误；验证成功不保证开启 5h 窗口。") : L10n.tr("可使用已接入的用量查询；此类型当前不提供模型测试或调用计划。")).font(.caption).foregroundStyle(.secondary)
                     if let result = model.callTestResult(for: row.id) { CallTestResultView(result: result) }
                 }
             }
@@ -222,6 +267,11 @@ struct ConfigTabView: View {
 struct TriggerTabView: View {
     @ObservedObject var model: SettingsModel
     let row: AccountRow
+    private struct ScheduleEditRequest: Identifiable {
+        let id = UUID()
+        let initialTimes: [String]?
+    }
+    @State private var scheduleEdit: ScheduleEditRequest?
     private var config: ProviderConfig { model.readConfig(row.plugin) }
     private var canCall: Bool {
         ProviderCapabilityPresentation(manifest: row.plugin.manifest, generic: !row.builtin).canCall(using: config.authMode)
@@ -231,8 +281,9 @@ struct TriggerTabView: View {
             HStack {
                 Text(L10n.tr("调用计划")).font(.headline)
                 Spacer()
-                Button(L10n.tr("编辑计划"), systemImage: "pencil") { model.startEdit() }
-                    .disabled(row.plugin.manifest.isSourceConfigurationReadOnly)
+                Button(L10n.tr("编辑计划"), systemImage: "pencil") { scheduleEdit = ScheduleEditRequest(initialTimes: nil) }
+                    .disabled(!canCall && config.scheduleTimes.isEmpty)
+                    .accessibilityIdentifier("account.edit-local-schedule")
             }
             if row.plugin.manifest.isSourceConfigurationReadOnly {
                 Label(SettingsModel.sourceReadOnlyMessage, systemImage: "lock").font(.callout)
@@ -241,42 +292,64 @@ struct TriggerTabView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(planState, systemImage: "calendar.badge.clock")
                     KeyValueRow(L10n.tr("调用模型"), mono: true) {
-                        let modelName = row.plugin.manifest.sourceReference == nil ? config.testModel
-                            : (try? ProviderAuthentication.resolveCall(config).testModel) ?? ""
+                        let modelName = model.scheduleModel(row)
                         Text(modelName.isEmpty ? L10n.tr("未指定") : modelName)
                     }
                     if !config.scheduleTimes.isEmpty {
                         Text(config.scheduleTimes.joined(separator: "、")).monospacedDigit().textSelection(.enabled)
                     }
+                    RecommendedScheduleTimes { preset in
+                        scheduleEdit = ScheduleEditRequest(initialTimes: preset)
+                    }.disabled(!canCall)
                     Text(canCall ? L10n.tr("在设置时间尝试主动开启动态 5h 使用窗口，不保证供应商必然开窗。使用本机时区 %@，到点发送一次调用并消耗额度。", String(describing: TimeZone.current.identifier)) : L10n.tr("当前认证的模型调用与调度未接入；用量查询可独立使用。"))
                         .font(.callout).foregroundStyle(.secondary)
                     Text(L10n.tr("使用基础接入认证及目标套餐可调用模型。仅执行用户设置的时间，不推断或自动重置窗口。")).font(.system(size: 11)).foregroundStyle(Palette.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let result = model.windowCallResult(for: row.id) {
+                CallTestResultView(result: result)
+            }
             if row.canQuery {
                 GroupBox(L10n.tr("后台额度查询")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Stepper(L10n.tr("查询间隔：%@ 分钟", String(describing: interval)), value: Binding(get: { interval }, set: {
-                            model.engine.setIntervalMinutes(row.id, minutes: $0)
-                        }), in: 1...5)
-                            .disabled(!row.enabled || !model.quotaConfigured(row))
-                        if model.engine.hasIntervalOverride(row.id) {
-                            Button(L10n.tr("恢复供应商默认间隔")) { model.engine.clearIntervalOverride(row.id) }
-                        }
-                        Text(L10n.tr("间隔立即生效。账号停用时后台查询暂停。")).font(.callout).foregroundStyle(.secondary)
-                    }
+                    QueryIntervalControl(engine: model.engine, slug: row.id, manifest: row.plugin.manifest,
+                        enabled: row.enabled && model.quotaConfigured(row))
                 }
             }
         }
+        .sheet(item: $scheduleEdit) { request in
+            LocalCallScheduleEditor(model: model, row: row, initialTimes: request.initialTimes) { scheduleEdit = nil }
+        }
     }
-    private var interval: Int { model.engine.effectiveIntervalMinutes(row.id, manifest: row.plugin.manifest) }
     private var planState: String {
         let capability = ProviderCapabilityPresentation(manifest: row.plugin.manifest, generic: !row.builtin)
         if !capability.canCall(using: config.authMode) { return L10n.tr("当前认证的模型调用与调度未接入") }
-        if !model.callConfigured(row) { return L10n.tr("请先配置 API 调用") }
+        if !model.scheduleConfigured(row) { return L10n.tr("请先配置 API 调用") }
         if config.scheduleTimes.isEmpty { return L10n.tr("未设置调用时间") }
         if model.engine.triggerDisabledSlugs.contains(row.id) { return L10n.tr("计划已关闭") }
         return row.enabled ? L10n.tr("计划已启用") : L10n.tr("账号已停用，计划暂停")
+    }
+}
+
+/// Observe the engine directly: UserDefaults changes are not published by SettingsModel.
+private struct QueryIntervalControl: View {
+    @ObservedObject var engine: DataEngine
+    let slug: String
+    let manifest: ProviderManifest
+    let enabled: Bool
+    private var interval: Int { engine.effectiveIntervalMinutes(slug, manifest: manifest) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Stepper(L10n.tr("查询间隔：%@ 分钟", String(interval)), value: Binding(get: { interval }, set: {
+                engine.setIntervalMinutes(slug, minutes: $0)
+            }), in: 1...5)
+                .disabled(!enabled)
+            if engine.hasIntervalOverride(slug) {
+                Button(L10n.tr("恢复供应商默认间隔")) { engine.clearIntervalOverride(slug) }
+            }
+            Text(L10n.tr("间隔立即生效。账号停用时后台查询暂停。"))
+                .font(.callout).foregroundStyle(.secondary)
+        }
     }
 }
 

@@ -244,8 +244,14 @@ struct DraftFormView: View {
                 }
                 Text(L10n.tr("在所设时间尝试主动开启动态 5h 使用窗口，不保证供应商必然开窗。使用基础接入认证，每次会消耗套餐额度。按本机时区 %@ 执行多个时间点；仅按用户设置调用，不推断或自动重置窗口。", String(describing: TimeZone.current.identifier)))
                     .font(.callout).foregroundStyle(.secondary)
-                Text(L10n.tr("调度使用当前选择模型：%@。模型必须在目标账号套餐内可调用；请在基础接入中选择并测试。", String(describing: draft.values.model.isEmpty ? L10n.tr("尚未指定") : draft.values.model)))
+                Text(L10n.tr("调度使用当前选择模型：%@。模型必须在目标账号套餐内可调用；请在基础接入中选择并测试。", String(describing: model.draftScheduleModel(draft.values).isEmpty ? L10n.tr("尚未指定") : model.draftScheduleModel(draft.values))))
                     .font(.caption).foregroundStyle(.secondary)
+                RecommendedScheduleTimes { preset in
+                    model.draft?.values.times = preset
+                    model.draft?.timeInput = ""
+                    model.errors["time"] = nil
+                    model.errors["times"] = nil
+                }.disabled(!canCall)
                 HStack {
                     TextField("09:00", text: Binding(get: { model.draft?.timeInput ?? "" }, set: { model.draft?.timeInput = $0 }))
                         .fieldBox().frame(width: 100).accessibilityLabel(L10n.tr("添加调用时间，24小时制"))

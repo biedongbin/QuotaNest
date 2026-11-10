@@ -349,6 +349,7 @@ final class ImportCenterModel: ObservableObject {
             guard let index = rows.firstIndex(where: { $0.id == id }) else { continue }
             switch result {
             case .success:
+                engine.markHUDExportNeeded()
                 rows[index].imported = true
                 rows[index].failure = nil
                 rows[index].note = L10n.tr("已导入")

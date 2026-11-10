@@ -23,7 +23,7 @@ struct QuotaPresentation {
     var metrics: [QuotaMetric] {
         QuotaTabView.rows(from: state?.cache).enumerated().map { index, row in
             QuotaMetric(id: index, label: row.label, percentage: row.pct, amount: row.amount,
-                        limit: row.limit, unit: row.unit, period: row.period, resetsAt: row.resetsAt)
+                        limit: row.limit, unit: row.unit, period: row.period, resetsAt: row.resetsAt, selectionKey: row.key)
         }
     }
 }
@@ -37,6 +37,13 @@ struct QuotaMetric: Identifiable {
     let unit: String?
     let period: String?
     let resetsAt: Int?
+    var selectionKey: String = ""
+    var isFiveHour: Bool {
+        let value = (period ?? "").lowercased().replacingOccurrences(of: " ", with: "")
+        let name = label.lowercased().replacingOccurrences(of: " ", with: "")
+        return ["five_hour", "5h", "5hours", "5_hour"].contains(value)
+            || ["5小时", "5h", "5hours"].contains(name)
+    }
     var resetDescription: String? {
         if let reset = formatResetAt(resetsAt) { return reset }
         return period == "balance" ? nil : L10n.tr("重置时间未知")
@@ -199,18 +206,19 @@ struct QuotaTabView: View {
             }
         }
     }
-    static func rows(from cache: UsageCache?) -> [(label: String, pct: Double?, amount: Double?, limit: Double?, unit: String?, period: String?, resetsAt: Int?)] {
+    static func rows(from cache: UsageCache?) -> [(label: String, pct: Double?, amount: Double?, limit: Double?, unit: String?, period: String?, resetsAt: Int?, key: String)] {
         guard let cache else { return [] }
         if let windows = cache.windows, !windows.isEmpty {
             return windows.compactMap { window in
                 guard window.usedPercentage != nil || window.amount != nil || window.limit != nil else { return nil }
-                return (window.displayLabel ?? L10n.tr("额度窗口"), window.usedPercentage, window.amount, window.limit, window.unit, window.period, window.resetsAt)
+                return (window.displayLabel ?? L10n.tr("额度窗口"), window.usedPercentage, window.amount, window.limit, window.unit, window.period, window.resetsAt, window.menuBarSelectionKey)
             }
         }
-        let legacy: [(String, Bucket?)] = [(L10n.tr("5 小时"), cache.fiveHour), (L10n.tr("本周"), cache.sevenDay), (L10n.tr("本月"), cache.monthly)]
-        return legacy.compactMap { label, bucket in
+        let legacy: [(String, String, Bucket?)] = [("five_hour", L10n.tr("5 小时"), cache.fiveHour),
+            ("seven_day", L10n.tr("本周"), cache.sevenDay), ("monthly", L10n.tr("本月"), cache.monthly)]
+        return legacy.compactMap { key, label, bucket in
             guard let bucket, let percentage = bucket.usedPercentage else { return nil }
-            return (label, percentage, nil, nil, nil, nil, bucket.resetsAt)
+            return (label, percentage, nil, nil, nil, nil, bucket.resetsAt, key)
         }
     }
     static func unitLabel(_ amount: Double, _ limit: Double, unit: String?) -> String {
